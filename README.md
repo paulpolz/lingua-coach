@@ -24,64 +24,28 @@ The hard part is not AI — it's encoding a real teaching methodology into a pro
 
 ---
 
-## High-Level Architecture
+## Tech requirements (MVP)
 
-Five layers. The LLM is only one component:
+Interview-locked stack and contracts live in [`docs/requirements/`](./docs/requirements/README.md):
 
-```
-Frontend
-    ↓
-Backend API
-    ↓
-Learning Engine
-    ↓
-LLM Provider Layer
-    ↓
-Database
-```
-
-### Suggested stack (MVP)
-
-| Layer | Choice |
-|-------|--------|
-| Frontend | Next.js, React, Tailwind, shadcn/ui |
-| Backend | FastAPI (Python-first AI tooling) or NestJS |
-| Database | PostgreSQL |
-| LLMs | Multi-provider abstraction (OpenAI, Claude, Gemini) |
-
-**Frontend pages:** onboarding · dashboard · today's lesson · chat · progress · vocabulary · settings
-
-**Backend responsibilities:** auth, subscriptions, lesson generation, progress updates, learner profile, LLM calls, billing
-
-### Six-week shape
+| Area | Doc |
+|------|-----|
+| Backend (FastAPI, Clerk, REST+SSE, 1 lesson/day) | [backend.md](./docs/requirements/backend.md) |
+| AI API (Gemini-only, collapsed 2-call engine) | [ai-api.md](./docs/requirements/ai-api.md) |
+| Database (Postgres, SQLAlchemy+Alembic) | [database.md](./docs/requirements/database.md) |
+| Frontend (Next.js, chat-first plan-driven UI) | [frontend.md](./docs/requirements/frontend.md) |
+| Deployment (local+prod, manual, Alembic) | [deployment.md](./docs/requirements/deployment.md) |
+| Hosting (Vercel + Railway + Cloudflare) | [hosting.md](./docs/requirements/hosting.md) |
 
 ```
-              React / Next.js
-                     │
-               FastAPI Backend
-                     │
-     ┌───────────────┴───────────────┐
- User/Profile Service          Learning Engine
-                                     │
-                            Curriculum Planner
-                                     │
-                            Lesson Generator
-                                     │
-                            Exercise Checker
-                                     │
-                            Progress Analyzer
-     └───────────────┬───────────────┘
-                 PostgreSQL
-                     │
-             LLM Provider Layer
-      OpenAI | Claude | Gemini
+Frontend (Next.js) → FastAPI → Learning engine → Gemini → PostgreSQL
 ```
 
 ---
 
 ## Learning Engine (the product)
 
-Avoid one giant prompt. Use a small orchestrator — each step has its own prompt, inputs, and output schema:
+Avoid one giant prompt. MVP collapses to two call types (lesson JSON + chat/correction); keep module boundaries so a fuller pipeline can grow later:
 
 ```
 Goal Analyzer
@@ -101,7 +65,7 @@ Report Generator
 
 ### Structured outputs
 
-Lessons return JSON the UI can render consistently:
+Lessons return JSON the UI can render consistently (see [ai-api.md](./docs/requirements/ai-api.md)):
 
 ```json
 {
@@ -140,11 +104,7 @@ Don't ask the model to infer everything from conversations. Store structured kno
 | Habits | Preferred lesson length, skip patterns, motivation |
 | Style | Learning style, review schedule |
 
-Every lesson updates this profile. **Real complexity is state, not prompts.**
-
-### Database (store knowledge, not only chats)
-
-Suggested tables: Users · Learning Goals · Sessions · Mistakes · Vocabulary · Grammar Topics · Achievements · Weekly Reports · Conversation History · Lesson Plans
+Every lesson updates this profile. **Real complexity is state, not prompts.** Schema details: [database.md](./docs/requirements/database.md).
 
 ---
 
@@ -177,7 +137,9 @@ No custom model training, GPUs, or inference servers required — the product is
 
 ## Monetization & Cost Control
 
-### Freemium (limit experiences, not tokens)
+MVP ships as a **single product version** with a hard **1 lesson/day** cap (no free/premium split yet). Longer-term freemium thinking still applies:
+
+### Freemium direction (limit experiences, not tokens)
 
 Users don't understand tokens. Limit what they can *do*:
 
@@ -270,9 +232,9 @@ Many adjacent players, few exact matches. "Fully personal AI mentor with a custo
 
 ## Suggested Path If We Build It
 
-1. **Document the system** — goals, session types, correction rules, progress signals (this is the IP).
+1. **Document the system** — goals, session types, correction rules, progress signals (this is the IP). Tech contracts: [`docs/requirements/`](./docs/requirements/README.md).
 2. **Pick one ICP** — e.g. employed adults, B1–B2, job/career English, 6-month horizon.
-3. **MVP** — onboarding → 7-day plan → daily session (text first) → mistake log → weekly recap.
+3. **MVP** — onboarding → course plan → daily focus + chat (text first) → mistake log → dashboard progress.
 4. **Validate with 10–20 strangers** before voice, payments, or mobile.
 5. **Keep the repo private first** — prompts, workflows, evaluation, and pedagogy should not go public until intentional.
 
@@ -291,10 +253,3 @@ packages/
 ```
 
 Optional later hybrid: open-source SDK / UI / demos; keep curriculum engine, user modeling, and evaluation private.
-
-### Open Decisions
-
-- Sketch MVP scope (screens + agent graph)
-- Compare "fork existing Claude skills" vs "rebuild orchestration in code" for speed vs control
-- Confirm FastAPI vs NestJS
-- Define first methodology config (Personal English Coach) as data, not code
