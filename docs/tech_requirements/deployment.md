@@ -11,7 +11,7 @@ Define how the app is built, configured, migrated, and released for `local` and 
 | Process | Role |
 |---------|------|
 | Next.js | Frontend + Clerk-integrated UI |
-| FastAPI | API, SSE chat, in-process today’s-focus jobs |
+| FastAPI | API, SSE chat, in-process on-demand lesson jobs |
 | PostgreSQL | System of record |
 | Clerk | Hosted auth (SaaS; not self-deployed) |
 
@@ -54,7 +54,7 @@ Typical release sequence:
 
 - `GET /health` OK
 - Clerk sign-in works (prod Clerk instance + redirect URLs)
-- One today’s-focus job completes; daily limit enforced
+- One on-demand lesson job completes; active-lesson guard enforced
 - One SSE chat turn streams tokens
 - Gemini key present; focus/lesson JSON validates
 

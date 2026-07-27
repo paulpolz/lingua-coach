@@ -46,7 +46,7 @@ Do **not** rely on sleeping free dynos for chat/SSE. Prefer a small always-on Ra
 ## Hard constraints
 
 1. **SSE / streaming:** proxy must not buffer the full chat response; timeouts ≥ expected chat duration (e.g. 60–120s+)
-2. **Single API instance:** in-process today’s-focus jobs are unsafe across many replicas — one Railway service until a real queue exists
+2. **Single API instance:** in-process on-demand lesson jobs are unsafe across many replicas — one Railway service until a real queue exists
 3. **No serverless-only API:** cold starts and sleep break jobs + streaming UX
 4. **Secrets:** Vercel env (Clerk publishable + API URL); Railway env (DB, Clerk secret, Gemini keys); never commit secrets
 5. **CORS / Clerk:** prod frontend origin (including Cloudflare custom domain) allowlisted on API and in Clerk dashboard

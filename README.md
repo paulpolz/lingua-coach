@@ -26,16 +26,18 @@ The hard part is not AI — it's encoding a real teaching methodology into a pro
 
 ## Tech requirements (MVP)
 
-Interview-locked stack and contracts live in [`docs/requirements/`](./docs/requirements/README.md):
+Interview-locked stack and contracts live in [`docs/tech_requirements/`](./docs/tech_requirements/README.md):
 
 | Area | Doc |
 |------|-----|
-| Backend (FastAPI, Clerk, REST+SSE, 1 lesson/day) | [backend.md](./docs/requirements/backend.md) |
-| AI API (Gemini-only, collapsed 2-call engine) | [ai-api.md](./docs/requirements/ai-api.md) |
-| Database (Postgres, SQLAlchemy+Alembic) | [database.md](./docs/requirements/database.md) |
-| Frontend (Next.js, chat-first plan-driven UI) | [frontend.md](./docs/requirements/frontend.md) |
-| Deployment (local+prod, manual, Alembic) | [deployment.md](./docs/requirements/deployment.md) |
-| Hosting (Vercel + Railway + Cloudflare) | [hosting.md](./docs/requirements/hosting.md) |
+| Customer journeys (onboarding, student, pacing) | [cjm.md](./docs/functional_requirements/cjm.md) |
+| Local MVP gate (setup, contracts, smoke tests) | [implementation-readiness.md](./docs/implementation-readiness.md) |
+| Backend (FastAPI, Clerk, REST+SSE, sequential lessons) | [backend.md](./docs/tech_requirements/backend.md) |
+| AI API (Gemini-only, collapsed 2-call engine) | [ai-api.md](./docs/tech_requirements/ai-api.md) |
+| Database (Postgres, SQLAlchemy+Alembic) | [database.md](./docs/tech_requirements/database.md) |
+| Frontend (Next.js, chat-first plan-driven UI) | [frontend.md](./docs/tech_requirements/frontend.md) |
+| Deployment (local+prod, manual, Alembic) | [deployment.md](./docs/tech_requirements/deployment.md) |
+| Hosting (Vercel + Railway + Cloudflare) | [hosting.md](./docs/tech_requirements/hosting.md) |
 
 ```
 Frontend (Next.js) → FastAPI → Learning engine → Gemini → PostgreSQL
@@ -65,7 +67,7 @@ Report Generator
 
 ### Structured outputs
 
-Lessons return JSON the UI can render consistently (see [ai-api.md](./docs/requirements/ai-api.md)):
+Lessons return JSON the UI can render consistently (see [ai-api.md](./docs/tech_requirements/ai-api.md)):
 
 ```json
 {
@@ -104,7 +106,7 @@ Don't ask the model to infer everything from conversations. Store structured kno
 | Habits | Preferred lesson length, skip patterns, motivation |
 | Style | Learning style, review schedule |
 
-Every lesson updates this profile. **Real complexity is state, not prompts.** Schema details: [database.md](./docs/requirements/database.md).
+Every lesson updates this profile. **Real complexity is state, not prompts.** Schema details: [database.md](./docs/tech_requirements/database.md).
 
 ---
 
@@ -127,7 +129,7 @@ The hard parts are not the UI:
 - **Curriculum logic** — when to reinforce vs advance
 - **Retention** — people churn when sessions feel random or repetitive
 - **Unit economics** — daily LLM (+ voice) usage per user adds up fast
-- **State** — today's lesson must adapt from level, weak grammar, missed vocab, streak/skips, role target, and confidence gaps
+- **State** — each lesson must adapt from level, weak grammar, missed vocab, pace/slips, role target, and confidence gaps
 
 For a pet project: ship a narrow MVP around **one persona** (e.g. "B1→B2, job interview in 6 months, 20 min/day").
 
@@ -137,7 +139,7 @@ No custom model training, GPUs, or inference servers required — the product is
 
 ## Monetization & Cost Control
 
-MVP ships as a **single product version** with a hard **1 lesson/day** cap (no free/premium split yet). Longer-term freemium thinking still applies:
+MVP ships as a **single product version** — no billing or free/premium split. Lessons are **sequential and on-demand** (one in-flight at a time); **plan pacing** uses a 24-hour window per plan day (slip reschedules projection, does not block practice). Longer-term freemium thinking still applies:
 
 ### Freemium direction (limit experiences, not tokens)
 
@@ -232,11 +234,22 @@ Many adjacent players, few exact matches. "Fully personal AI mentor with a custo
 
 ## Suggested Path If We Build It
 
-1. **Document the system** — goals, session types, correction rules, progress signals (this is the IP). Tech contracts: [`docs/requirements/`](./docs/requirements/README.md).
+1. **Document the system** — goals, session types, correction rules, progress signals (this is the IP). Tech contracts: [`docs/tech_requirements/`](./docs/tech_requirements/README.md); **local MVP gate:** [implementation-readiness.md](./docs/implementation-readiness.md).
 2. **Pick one ICP** — e.g. employed adults, B1–B2, job/career English, 6-month horizon.
-3. **MVP** — onboarding → course plan → daily focus + chat (text first) → mistake log → dashboard progress.
+3. **MVP** — onboarding → course plan → sequential lessons + chat (text first) → mistake log → dashboard pace hints.
 4. **Validate with 10–20 strangers** before voice, payments, or mobile.
 5. **Keep the repo private first** — prompts, workflows, evaluation, and pedagogy should not go public until intentional.
+
+### Repo layout (local MVP)
+
+```
+apps/
+  frontend/              # Next.js
+  backend/               # FastAPI + Alembic
+prompts/
+docker-compose.yml
+docs/
+```
 
 ### Suggested repo layout (broader than the MVP)
 
