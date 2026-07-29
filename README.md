@@ -30,6 +30,7 @@ Interview-locked stack and contracts live in [`docs/tech_requirements/`](./docs/
 
 | Area | Doc |
 |------|-----|
+| **Agent skills** (pedagogy IP, source of truth) | [skills/](./skills/README.md) |
 | Customer journeys (onboarding, student, pacing) | [cjm.md](./docs/functional_requirements/cjm.md) |
 | Local MVP gate (setup, contracts, smoke tests) | [implementation-readiness.md](./docs/implementation-readiness.md) |
 | Backend (FastAPI, Clerk, REST+SSE, sequential lessons) | [backend.md](./docs/tech_requirements/backend.md) |
@@ -40,29 +41,40 @@ Interview-locked stack and contracts live in [`docs/tech_requirements/`](./docs/
 | Hosting (Vercel + Railway + Cloudflare) | [hosting.md](./docs/tech_requirements/hosting.md) |
 
 ```
-Frontend (Next.js) → FastAPI → Learning engine → Gemini → PostgreSQL
+Frontend (Next.js) → FastAPI → Learning engine (skills) → Gemini → PostgreSQL
 ```
 
 ---
 
-## Learning Engine (the product)
+## Agent skills (the product)
 
-Avoid one giant prompt. MVP collapses to two call types (lesson JSON + chat/correction); keep module boundaries so a fuller pipeline can grow later:
+Behavior is defined in [`skills/`](./skills/README.md) at repo root — separate from tech requirements, which define how skill outputs persist and render. The agent:
+
+1. **Onboards** the learner (`onboarding_interviewer`) → profile in Postgres
+2. **Plans** the program (`course_composer`) → accepted roadmap in Postgres
+3. **Conducts** daily lessons (`exercise_tutor`) → lesson artifacts + mistakes in Postgres
+4. **Tracks** pace and session outcomes in MVP; full progress feedback loop post-MVP (`feedback_giver`)
+
+All structured outputs are persisted — not inferred from chat history alone. See [database.md](./docs/tech_requirements/database.md).
+
+**MVP skills:** onboarding, course composer, exercise tutor, vocabulary formats. **`feedback_giver` is post-MVP** (progress dashboard, weekly gates, automated replans).
+
+---
+
+## Learning Engine (implementation)
+
+Avoid one giant prompt. MVP collapses to two call types (lesson JSON + chat/correction), each backed by **skill modules** in `skills/`:
 
 ```
-Goal Analyzer
-    ↓
-Curriculum Planner
-    ↓
-Lesson Generator
-    ↓
-Exercise Generator
-    ↓
-Correction Engine
-    ↓
-Progress Analyzer
-    ↓
-Report Generator
+onboarding_interviewer → course_composer → exercise_tutor
+     (profile)              (roadmap)         (lessons + mistakes)
+```
+
+Post-MVP adds `feedback_giver` for progress dashboard and plan adjustments. A fuller internal pipeline can still grow behind the same skill boundaries:
+
+```
+Goal Analyzer → Curriculum Planner → Lesson Generator → Exercise Generator
+    → Correction Engine → Progress Analyzer → Report Generator
 ```
 
 ### Structured outputs
@@ -82,9 +94,9 @@ Lessons return JSON the UI can render consistently (see [ai-api.md](./docs/tech_
 
 ### Pedagogy engine (the IP)
 
-The valuable part is not the frontend — it is the teaching methodology encoded as:
+The valuable part is not the frontend — it is the teaching methodology encoded as **agent skills** ([skills/](./skills/README.md)):
 
-- Skills and workflows
+- Skills and workflows (`onboarding_interviewer`, `course_composer`, `exercise_tutor`, …)
 - Rubrics and evaluation rules
 - Curriculum templates
 - Feedback style
@@ -234,7 +246,7 @@ Many adjacent players, few exact matches. "Fully personal AI mentor with a custo
 
 ## Suggested Path If We Build It
 
-1. **Document the system** — goals, session types, correction rules, progress signals (this is the IP). Tech contracts: [`docs/tech_requirements/`](./docs/tech_requirements/README.md); **local MVP gate:** [implementation-readiness.md](./docs/implementation-readiness.md).
+1. **Document the system** — agent skills, session types, correction rules, progress signals (this is the IP). Skills: [`skills/`](./skills/README.md); tech contracts: [`docs/tech_requirements/`](./docs/tech_requirements/README.md); **local MVP gate:** [implementation-readiness.md](./docs/implementation-readiness.md).
 2. **Pick one ICP** — e.g. employed adults, B1–B2, job/career English, 6-month horizon.
 3. **MVP** — onboarding → course plan → sequential lessons + chat (text first) → mistake log → dashboard pace hints.
 4. **Validate with 10–20 strangers** before voice, payments, or mobile.
@@ -246,7 +258,8 @@ Many adjacent players, few exact matches. "Fully personal AI mentor with a custo
 apps/
   frontend/              # Next.js
   backend/               # FastAPI + Alembic
-prompts/
+skills/                  # agent pedagogy IP (source of truth)
+prompts/                 # runtime prompt pack (derived from skills)
 docker-compose.yml
 docs/
 ```

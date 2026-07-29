@@ -6,6 +6,8 @@ Status: **locked** (interview)
 
 Gemini-backed LLM layer used by the backend learning engine. The product is orchestration and pedagogy — not model training. No custom GPUs, self-hosted inference, or multi-provider routing in MVP.
 
+**Pedagogy source of truth:** [skills/](../../skills/README.md) — loaded into system prompts per mode. Do not duplicate skill logic in code; map modes to skill files.
+
 ## Principles
 
 1. **Public API only** — Google Gemini (AI Studio / Gemini API); do not train models for MVP
@@ -32,12 +34,19 @@ Free-tier Gemini usage is acceptable for MVP; rate limits may require a paid key
 
 ## Orchestration (collapsed)
 
-MVP uses **two call types**:
+MVP uses **two call types**, each backed by agent skills:
 
-1. **Generate next lesson** — one (or repair) completion → structured lesson JSON, informed by **prior lessons, progress, and mistakes**
+| Call type | Skills | Model |
+|-----------|--------|-------|
+| **Generate next lesson** | `exercise_tutor` (+ reads `course_composer` roadmap) | Lesson model |
+| **Chat turn** | `onboarding_interviewer` + `course_composer` (onboarding mode) or `exercise_tutor` (+ `vocabulary_practice_formats` when selected) (lesson mode) | Chat model |
+
+1. **Generate next lesson** — one (or repair) completion → structured lesson JSON (`lessons.payload.curriculum`), informed by **prior lessons, progress, and mistakes**
 2. **Chat turn** — streamed completion for tutor reply in **onboarding** or **lesson** mode (+ optional structured side metadata on completion)
 
-Keep **module/prompt file boundaries** so steps can be split later (planner → generator → checker → progress) without rewriting the product API.
+Keep **skill file boundaries** so steps can be split later without rewriting the product API.
+
+**Post-MVP:** `feedback_giver` as a third call type after lesson accomplish (progress dashboard, weekly gates, replan proposals).
 
 Full README pipeline (Goal Analyzer → … → Report Generator) and Analysis journey outputs are **deferred**.
 
@@ -85,7 +94,7 @@ Requirements:
 
 - Inject a **compact learner profile** (goal, level, time budget, grammar scores, weaknesses) into prompts
 - For lesson generation, inject **prior lesson outcomes** — not unbounded full chat history
-- Pedagogy content (skills, rubrics, lesson templates, feedback style) lives in **repo config / prompt files** (IP)
+- Pedagogy content lives in **[skills/](../../skills/README.md)** — loaded at runtime into prompts (IP)
 - Do not dump full pedagogy IP into production logs
 
 ## Streaming
@@ -108,6 +117,7 @@ Requirements:
 
 ## Out of scope (MVP)
 
+- **`feedback_giver`** call type (post-lesson progress analysis, weekly gates)
 - Multi-provider clients or automatic failover
 - Full multi-step learning pipeline / weekly report generator
 - Analysis journey skill breakdowns and time-to-goal estimation
@@ -117,6 +127,7 @@ Requirements:
 
 ## Dependencies
 
+- Agent skills: [skills/README.md](../../skills/README.md)
 - Consumed by [backend.md](./backend.md) lesson jobs and chat SSE
 - Profile fields defined with [database.md](./database.md)
 - Lesson JSON contract consumed by [frontend.md](./frontend.md)

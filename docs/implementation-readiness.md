@@ -39,7 +39,7 @@ Everything needed to run and manually test both journeys on `localhost`:
 | **Hosting / deploy**   | Vercel, Railway, Cloudflare, custom domain, prod env vars                                        |
 | **Prod auth**          | Clerk Production application, prod redirect URLs                                                 |
 | **Ops**                | CI/CD, staging, Sentry, APM, Railway backups                                                     |
-| **Product (post-MVP)** | Billing, analysis/profile journey, voice, marketing landing page, plan editor UI, abandon-lesson |
+| **Product (post-MVP)** | Billing, **`feedback_giver`** (progress dashboard, weekly gates), analysis/profile journey, voice, marketing landing page, plan editor UI, abandon-lesson |
 | **Infrastructure**     | WebSockets, Redis/Celery, multi API replicas, calendar-assigned lessons                          |
 | **Optional polish**    | GitHub branch protection, shared-types package, JSON Schema CI                                   |
 
@@ -56,11 +56,11 @@ Complete before feature work beyond scaffold.
 | 1   | **Docker** installed      | `docker compose version` works                                                                  |
 | 2   | **Clerk Development** app | Email + magic link enabled; Google OAuth off; allowed origin `http://localhost:3000`            |
 | 3   | **Gemini API key**        | Key from [Google AI Studio](https://aistudio.google.com/); model IDs chosen                     |
-| 4   | **Repo layout**           | `apps/frontend`, `apps/backend`, `docker-compose.yml`, `prompts/` (§9)                          |
+| 4   | **Repo layout**           | `apps/frontend`, `apps/backend`, `skills/`, `prompts/`, `docker-compose.yml` (§9) |
 | 5   | **Env files**             | `apps/frontend/.env.local` + `apps/backend/.env` from §4 (gitignored); `.env.example` committed |
-| 6   | **Postgres up**           | `docker compose up -d` → API connects via `DATABASE_URL`                                        |
-| 7   | **Migrations**            | `alembic upgrade head` creates schema (§12)                                                     |
-| 8   | **Prompt pack v0**        | Minimal prompts in `prompts/` (§10) — can stub first, real copy before dogfooding               |
+| 6   | **Postgres up**           | `docker compose up -d` → API connects via `DATABASE_URL` |
+| 7   | **Migrations**            | `alembic upgrade head` creates schema (§12) |
+| 8   | **Skill pack v0**         | MVP skills in `skills/`; runtime prompts in `prompts/` (§10) |
 
 
 ### Vendor accounts required locally
@@ -108,7 +108,7 @@ flowchart LR
 | User JWT / session    | Clerk-managed; sent per API request              | Postgres                |
 | `GEMINI_API_KEY`      | `apps/backend/.env` only                         | Frontend, Git, DB       |
 | `DATABASE_URL`        | `apps/backend/.env` only                         | Frontend, Git           |
-| Pedagogy prompts      | Git repo (private)                               | Verbose production logs |
+| Pedagogy / skills     | Git repo (`skills/`)                             | Verbose production logs |
 
 
 Clerk JWT verification: JWKS or Clerk SDK with `CLERK_SECRET_KEY`. Do **not** persist JWTs in Postgres.
@@ -479,7 +479,8 @@ lingua-coach/
   apps/
     frontend/            # Next.js
     backend/             # FastAPI + alembic/
-  prompts/               # pedagogy IP
+  skills/                # agent pedagogy IP (source of truth)
+  prompts/               # runtime prompt pack (derived from skills)
   docker-compose.yml
   docs/
 ```
@@ -488,21 +489,26 @@ lingua-coach/
 
 ---
 
-## 10. Pedagogy / prompts
+## 10. Pedagogy / skills
+
+**Source of truth:** [skills/](../skills/README.md) at repo root.
 
 Minimum before meaningful local dogfooding:
 
+| Skill file | Runtime prompt (example) | Purpose |
+|------------|--------------------------|---------|
+| `onboarding_interviewer.md` | `prompts/chat/onboarding.md` | Interview → `profiles` |
+| `course_composer.md` | (same onboarding session) | Roadmap → accept → `learning_plans` |
+| `exercise_tutor.md` | `prompts/chat/lesson.md`, `prompts/lesson/system.md` | Lesson JSON + coaching + artifacts |
+| `vocabulary_practice_formats.md` | embedded in lesson prompt | Week-end vocab drills |
 
-| File                           | Purpose                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------- |
-| `prompts/onboarding/system.md` | Interview; collect goal, level, topics, time budget, `target_plan_days` |
-| `prompts/lesson/system.md`     | Lesson JSON generation                                                  |
-| `prompts/chat/onboarding.md`   | Onboarding chat mode                                                    |
-| `prompts/chat/lesson.md`       | Practice + corrections + `plan_updates`                                 |
-| `config/persona.yaml`          | Default ICP (optional)                                                  |
+**Post-MVP:** `feedback_giver.md` — do not wire until analysis journey ships.
 
+| File | Purpose |
+|------|---------|
+| `config/persona.yaml` | Default ICP (optional) |
 
-Prior-lesson context: last **N=5** accomplished lessons (goal, mistakes, pace).
+Prior-lesson context: last **N=5** accomplished lessons (`lessons.payload` summaries + `mistakes`).
 
 ---
 
@@ -587,7 +593,7 @@ Manual checklist — the definition of done for local MVP:
 - [ ] `.env.example` committed (no secrets)
 - [ ] `docker compose up` → Postgres reachable
 - [ ] API paths use `/api/v1/...`
-- [ ] Prompt pack v0 in `prompts/` (stubs OK for phase 0–1)
+- [ ] Skill pack v0 in `skills/`; runtime stubs in `prompts/` (phase 0–1)
 
 ---
 
@@ -614,6 +620,7 @@ When local smoke tests pass and you want external users, use [deployment.md](./t
 | Doc                                                          | Role                   |
 | ------------------------------------------------------------ | ---------------------- |
 | [cjm.md](./functional_requirements/cjm.md)                   | User journeys          |
+| [skills/README.md](../skills/README.md)                      | Agent pedagogy IP      |
 | [tech_requirements/README.md](./tech_requirements/README.md) | Locked stack index     |
 | [backend.md](./tech_requirements/backend.md)                 | Service behavior       |
 | [database.md](./tech_requirements/database.md)               | Entity design          |

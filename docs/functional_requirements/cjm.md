@@ -4,7 +4,9 @@ Status: **draft**
 
 This document describes the primary user journeys in Lingua Coach — from first visit through chat-guided learning. Each journey is goal-oriented: what the user wants, what they do, and what outcome they reach.
 
-**MVP scope:** Journeys 1 (New user) and 2 (Student) are in scope. Journey 3 (Analysis) is **post-MVP** — captured here for product direction, not first-ship UX.
+**Agent skills** ([skills/README.md](../../skills/README.md)) implement journey steps; artifacts persist per [database.md](../tech_requirements/database.md).
+
+**MVP scope:** Journeys 1 (New user) and 2 (Student) are in scope. Journey 3 (Analysis) and skill `feedback_giver` are **post-MVP** — captured here for product direction, not first-ship UX.
 
 ---
 
@@ -37,7 +39,7 @@ Clerk sign-in → Onboarding chat → Learning plan → Accept plan → Main lea
 2. **Enter the system**
    - After authentication, the user is routed to **onboarding chat** — not the main learning area yet.
 
-3. **Onboarding chat (interview)**
+3. **Onboarding chat (interview)** — skill: `onboarding_interviewer`, then `course_composer`
    - The user interacts with a **chat-based interview** (chat-first product) that reveals:
      - **Goal** — why they are learning and the concrete outcome / horizon (e.g. “conversational at work in 6 months”)
      - **Level** — current English level (e.g. CEFR-ish)
@@ -82,7 +84,7 @@ Main section → Start lesson → Chat-guided practice → Accomplished task (pl
    - If a lesson is **active** (started but not accomplished), the user **resumes** it.
    - If no active lesson, the user clicks **Start lesson** to generate the next one on demand.
 
-2. **Sequential lessons via chat**
+2. **Sequential lessons via chat** — skill: `exercise_tutor` (+ `vocabulary_practice_formats` when used)
    - Lessons are numbered sequentially (**lesson 1, 2, 3, …**) — not tied to calendar dates.
    - Each accomplished lesson counts as **one plan day** toward the schedule set at onboarding.
    - Lessons are **not pre-generated**. Each new lesson is created when the user starts it, informed by the learning plan plus **previous lessons’ progress, results, and errors**.
@@ -109,7 +111,8 @@ Main section → Start lesson → Chat-guided practice → Accomplished task (pl
 5. **Feedback and plan changes**
 
    - At any point during practice (or onboarding), the user can **give feedback** (too hard, wrong topic, need more speaking, etc.) or **request a program change** **in chat**.
-   - The tutor handles the request conversationally; the backend **updates the learning plan** from chat — there are **no dedicated plan editors** in profile or settings. Schedule fields (e.g. target plan days) may change via chat and trigger a recomputed projection.
+   - The tutor handles the request conversationally; the backend **updates the learning plan** from chat (`plan_updates`) — there are **no dedicated plan editors** in profile or settings. Schedule fields (e.g. target plan days) may change via chat and trigger a recomputed projection.
+   - **MVP:** inline tutor feedback in lesson chat + pace hints on dashboard. **Post-MVP:** structured progress updates and weekly gates via `feedback_giver`.
 
 ### Success criteria
 
@@ -121,7 +124,7 @@ Main section → Start lesson → Chat-guided practice → Accomplished task (pl
 
 ## 3. Analysis journey (post-MVP)
 
-> **Out of MVP scope.** Retained as the target experience for a later release. MVP shows **minimal pace hints** on the dashboard (plan days done, on pace / behind, projected completion) — not the full analysis UI.
+> **Out of MVP scope.** Retained as the target experience for a later release, implemented by skill [`feedback_giver`](../../skills/feedback_giver.md). MVP shows **minimal pace hints** on the dashboard (plan days done, on pace / behind, projected completion) — not the full analysis UI.
 
 **Goal:** Understand how learning is going, where strengths and gaps are, and how far the user is from their goal.
 

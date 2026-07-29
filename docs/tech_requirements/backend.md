@@ -6,6 +6,8 @@ Status: **locked** (interview)
 
 FastAPI service that authenticates learners, owns learner state, orchestrates onboarding and sequential lessons, and exposes REST + SSE APIs to the frontend. LLM calls go through the AI API layer; durable state lives in Postgres.
 
+The **learning engine** loads agent skills from [skills/](../../skills/README.md) and maps them to chat modes and lesson jobs. All skill artifacts are persisted per [database.md](./database.md).
+
 ## Stack
 
 | Item | Choice |
@@ -22,17 +24,20 @@ FastAPI service that authenticates learners, owns learner state, orchestrates on
 ### In scope
 
 - Auth bridge (Clerk → Postgres user)
-- Onboarding chat + plan acceptance gate
+- **`onboarding_interviewer`** — onboarding chat + profile persistence
+- **`course_composer`** — plan in chat + acceptance gate
+- **`exercise_tutor`** — sequential lesson generation, coaching, mistakes, session summary
 - Profile / learning goals (read; **writes from chat** and onboarding acceptance)
 - Sequential lesson generation on demand (async job)
 - Lesson stop / finish lifecycle
-- Progress / mistake logging
+- Progress / mistake logging (MVP-light; no `feedback_giver` pipeline)
 - Chat sessions with streamed replies (onboarding + lesson modes)
-- In-chat plan adaptation
+- In-chat plan adaptation (`plan_updates` from chat)
 - **Plan schedule & pacing** — target plan days, 24h on-pace rule, reschedule on slip
 
 ### Out of scope (MVP)
 
+- **`feedback_giver`** — progress dashboard, weekly assessment gates, automated replans, structured progress updates ([feedback_giver.md](../../skills/feedback_giver.md))
 - Billing / subscriptions
 - Free vs premium labels or SKUs
 - Admin panel / product analytics
@@ -174,6 +179,7 @@ Exact paths may be versioned (`/api/v1/...`) at implementation time.
 
 ## Dependencies on other docs
 
+- [skills/README.md](../../skills/README.md) — agent behavior source of truth
 - [ai-api.md](./ai-api.md) — onboarding chat, lesson generation, plan updates, streaming
 - [database.md](./database.md) — schema for users, lessons, jobs, progress, chat
 - [frontend.md](./frontend.md) — Clerk SDK, REST client, SSE consumer, job polling
@@ -182,6 +188,7 @@ Exact paths may be versioned (`/api/v1/...`) at implementation time.
 
 ## Open for later (not MVP)
 
+- **`feedback_giver`** skill pipeline after lesson finish
 - Redis/ARQ (or similar) for durable lesson jobs
 - WebSocket for push (“lesson ready”) or interrupt-generation
 - Analysis / skill breakdown APIs

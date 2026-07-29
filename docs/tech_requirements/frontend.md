@@ -4,7 +4,9 @@ Status: **locked** (interview)
 
 ## Purpose
 
-Chat-first web UI: onboarding interview, plan-driven sequential lessons, and in-chat plan adaptation. Talks only to the FastAPI backend (plus Clerk hosted auth). Does not call LLM providers directly.
+Chat-first web UI for all **MVP agent skill** use cases: onboarding interview, plan composition and acceptance, lesson coaching, and pace tracking. Talks only to the FastAPI backend (plus Clerk hosted auth). Does not call LLM providers directly.
+
+**Agent skills** ([skills/](../../skills/README.md)) define product behavior; this doc defines the UI surfaces that support them. Post-MVP skill `feedback_giver` (progress dashboard, weekly gates) is out of scope — see [Out of scope](#out-of-scope-mvp).
 
 ## Stack
 
@@ -18,6 +20,17 @@ Chat-first web UI: onboarding interview, plan-driven sequential lessons, and in-
 | Hosting target | See [hosting.md](./hosting.md) |
 
 **Boundary:** UI + Clerk publishable keys + HTTP to FastAPI only. No Gemini keys, no direct Postgres access in the browser.
+
+## Skill → UI mapping (MVP)
+
+| Skill | UI surface | User actions | Data from API |
+|-------|------------|--------------|---------------|
+| `onboarding_interviewer` | Onboarding chat | Answer interview clusters; review summary | SSE chat; profile persisted on interview complete |
+| `course_composer` | Same onboarding chat | Refine roadmap in chat; **Accept plan** | Roadmap draft in chat; `POST /onboarding/accept` persists `learning_plans` |
+| `exercise_tutor` | Dashboard + lesson chat | Start / resume / stop / finish lesson; practice in chat | Lesson job poll; `lessons.payload`; SSE tutor; mistakes via backend side effects |
+| `vocabulary_practice_formats` | Lesson chat (embedded) | Partner/solo vocab drills when tutor selects Format A/B | No separate route — tutor delivers in chat |
+
+**Post-MVP (`feedback_giver`):** dedicated progress / analysis page, weekly assessment session type, structured progress update cards — not built in MVP. MVP shows **pace hints only** on dashboard (plan days done, on pace / behind, projection).
 
 ## Interaction model (chat-first, plan-driven)
 
@@ -103,6 +116,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 ## Out of scope (MVP)
 
 - Marketing landing page (Clerk sign-in is entry)
+- **`feedback_giver` UI** — progress dashboard rows, weekly assessment gates, structured progress-update template ([feedback_giver.md](../../skills/feedback_giver.md))
 - Analysis / profile statistics journey (see [cjm.md](../functional_requirements/cjm.md))
 - Dedicated plan editor (settings or profile)
 - Native mobile apps
@@ -120,6 +134,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 
 ## Dependencies
 
+- Agent skills: [skills/README.md](../../skills/README.md)
 - Contracts from [backend.md](./backend.md) and [ai-api.md](./ai-api.md) (lesson JSON + chat SSE + plan updates)
 - Plan/progress fields from [database.md](./database.md)
 - Journeys from [cjm.md](../functional_requirements/cjm.md)
