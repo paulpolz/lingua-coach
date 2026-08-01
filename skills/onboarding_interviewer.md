@@ -45,7 +45,6 @@ Ask **one cluster at a time**. Use follow-ups when answers are vague. Skip quest
 - How much time can you spend on English **on a typical practice day**?
 - Which days are realistic? (weekdays only, every day, flexible)
 - Do you want an intensive program or a sustainable long-term pace?
-- Any periods when you'll be unavailable (travel, exams, crunch at work)?
 
 **Derive:** daily minutes, days per week, optional vs required sessions.
 
