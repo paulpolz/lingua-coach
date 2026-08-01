@@ -296,13 +296,14 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
 
 ### Acceptance
 
-On `POST /onboarding/accept`:
+On `POST /onboarding/accept` the client sends `{ "session_id", "course_roadmap" }` — the structured plan the user accepted in chat (not inferred from transcript):
 
 1. Backend receives final `course_roadmap` JSON (from accept payload or last validated AI emission).
 2. Insert `learning_plans` row (`status = accepted`, `roadmap = course_roadmap`).
 3. Set `profiles.target_plan_days` from `summary.target_plan_days`; compute `projected_completion_at`.
 4. Set `users.onboarding_complete = true`.
-5. Route to **exercise_tutor** for lesson 1.
+5. Delete onboarding `chat_messages` and `chat_session`.
+6. Route to **exercise_tutor** for lesson 1.
 
 Structural replans (`feedback_giver` trigger) update `learning_plans.roadmap` in place or supersede with a new row; emit `plan_updated` progress event.
 

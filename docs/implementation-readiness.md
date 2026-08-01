@@ -137,8 +137,8 @@ DATABASE_URL=postgresql+asyncpg://lingua:lingua@localhost:5432/lingua_coach
 CLERK_SECRET_KEY=sk_test_...
 
 GEMINI_API_KEY=...
-GEMINI_MODEL_CHAT=gemini-2.0-flash        # pick at setup
-GEMINI_MODEL_LESSON=gemini-2.0-pro        # pick at setup
+GEMINI_MODEL_CHAT=gemini-2.0-flash
+GEMINI_MODEL_LESSON=gemini-2.0-pro
 GEMINI_TIMEOUT_SECONDS=120
 
 CORS_ORIGINS=http://localhost:3000
@@ -259,21 +259,18 @@ Ensure Postgres user exists. Idempotent.
 
 #### `POST /api/v1/onboarding/accept`
 
+Explicit product action when the user clicks **Accept plan** in onboarding chat. The client sends the **accepted roadmap JSON** (as composed/refined in chat — see [course_composer.md](../../skills/course_composer.md)) plus the onboarding `session_id`. The backend persists `learning_plans`, sets schedule fields, marks `onboarding_complete`, and **deletes the onboarding chat transcript** (artifacts only).
+
 **Request:**
 
 ```json
 {
   "session_id": "uuid",
-  "plan": {
-    "goal_summary": "...",
-    "level": "B1",
-    "time_budget": { "minutes_per_session": 20, "sessions_per_week": 5, "intensity": "moderate" },
-    "topics": ["..."],
-    "vocab_priorities": ["..."],
-    "target_plan_days": 90
-  }
+  "course_roadmap": { }
 }
 ```
+
+`course_roadmap` is the full accepted structure (`summary`, `milestones`, `weekly_template`, `current_block`, …) — not inferred from chat history at accept time.
 
 **Response `200`:** `{ "onboarding_complete": true, "plan_accepted_at": "..." }`
 
@@ -318,6 +315,8 @@ Ensure Postgres user exists. Idempotent.
 ```
 
 #### `POST /api/v1/lessons/{lesson_id}/finish`
+
+User clicks **Finish lesson** (always available while lesson is `active`). Tutor may set `suggest_finish: true` in chat `done` metadata when all planned exercises are done, but finish still requires this explicit action. Early finish is allowed: slots not completed count as **0%** in `session_summary` and reduce aggregated course-progress completion.
 
 **Response `200`:**
 
@@ -364,6 +363,12 @@ Ensure Postgres user exists. Idempotent.
 
 **Response:** `Content-Type: text/event-stream` — see [§7 SSE](#7-sse-contract).
 
+#### `GET /api/v1/chat/sessions/{session_id}/messages`
+
+**Response `200`:** `{ "messages": [{ "id": "uuid", "role": "user"|"assistant", "content": "...", "created_at": "..." }] }`
+
+Source of truth for chat UI — do not rely on client cache (other devices, cleared storage).
+
 #### `GET /api/v1/health`
 
 **Response `200`:** `{ "status": "ok" }` (no auth).
@@ -398,6 +403,8 @@ data: {
   }
 }
 ```
+
+`suggest_finish`: tutor signals all planned exercises in the lesson curriculum are done; user still taps **Finish lesson** to accomplish.
 
 ### `error`
 
@@ -550,7 +557,7 @@ Logging: structured stdout; `request_id`, `user_id`, `job_id`. Avoid logging ful
 | **5. Finish + pace** | Finish, slip logic, dashboard hints                      | [Local smoke tests](#14-local-smoke-tests) pass |
 
 
-**Local MVP complete** when §14 checklist is green. Production deploy is a separate milestone (§15).
+**Local MVP complete** when §14 checklist is green. Production deploy is a separate milestone — see [Deferred: production](#deferred-production).
 
 ---
 
@@ -571,21 +578,7 @@ Manual checklist — the definition of done for local MVP:
 
 ---
 
-## 15. Open decisions (sprint 0)
-
-
-| Question                     | Local MVP default                                   |
-| ---------------------------- | --------------------------------------------------- |
-| Tutor suggests finish?       | User-only finish; `suggest_finish` hint OK          |
-| Failed lesson                | Retry `POST /lessons/start` when status is `failed` |
-| One chat session per lesson? | Yes; resume same session                            |
-| Onboarding accept body       | Client sends explicit `plan` object                 |
-| Gemini model IDs             | Pick at Clerk/Gemini setup                          |
-
-
----
-
-## 16. Pre-code sign-off (local)
+## 15. Pre-code sign-off (local)
 
 - [ ] Clerk **Development** app; keys in local env
 - [ ] Gemini API key; model IDs set

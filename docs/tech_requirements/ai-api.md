@@ -89,7 +89,7 @@ Requirements:
 - Output: streamed tokens for the reply; optional structured side payload on stream end:
   - `corrections`, `tips`
   - **`plan_updates`** — partial profile / goal fields when user feedback implies plan change (may include `target_plan_days`)
-  - `suggest_finish` — optional hint that lesson objectives seem met (user still finishes explicitly in MVP)
+  - `suggest_finish` — tutor signals all planned exercises in the lesson curriculum are done (user still taps **Finish lesson** in MVP)
 - Persist assistant message after stream completes; backend applies validated `plan_updates`
 - Use the chat-configured Gemini model
 

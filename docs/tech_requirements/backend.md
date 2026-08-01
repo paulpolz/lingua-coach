@@ -79,21 +79,21 @@ The **learning engine** loads agent skills from [skills/](../../skills/README.md
 | → `generating` | `POST /lessons/start` | Job runs; `lesson_number = max + 1` |
 | → `active` | Job success | Lesson JSON persisted; **`started_at` set**; chat session available |
 | Stay `active` | User stops session / leaves chat | No status change; resumable; pace clock keeps running |
-| → `accomplished` | `POST /lessons/{id}/finish` | Progress finalized; **pace evaluated**; schedule may reschedule; next start allowed |
-| Job failure | Worker error | `failed` row or job failed; user can retry start |
+| → `accomplished` | `POST /lessons/{id}/finish` | Progress finalized; **pace evaluated**; schedule may reschedule; next start allowed; **lesson chat transcript deleted** |
+| Job failure | Worker error | Lesson/job → `failed`; user retries `POST /lessons/start` — **not** learner failure; no special MVP screen |
 
 **Stop vs finish (MVP):**
 
 - **Stop:** end chat session; lesson remains **`active`**. User resumes via existing lesson + chat session.
-- **Finish:** explicit user action; mark **`accomplished`**, emit `lesson_completed` progress event, persist aggregated session mistakes. Required before starting the next lesson.
+- **Finish:** explicit **Finish lesson** user action; mark **`accomplished`**, emit `lesson_completed` progress event, persist aggregated session mistakes and `session_summary`. Incomplete slots (early finish) count as **0%** in `session_summary` and reduce aggregated course-progress completion. Delete lesson chat messages after finish.
 
-Tutor may include a `suggest_finish` hint in chat `done` metadata; finishing still requires the explicit finish action in MVP.
+Tutor sets `suggest_finish: true` in chat `done` metadata when all planned exercises in `lessons.payload.curriculum` are done. Finishing still requires the explicit **Finish lesson** action in MVP.
 
 ## Onboarding gate
 
 - New users have `onboarding_complete = false` until plan acceptance.
-- Onboarding uses chat sessions with `type = onboarding`.
-- `POST /onboarding/accept` (or equivalent) persists accepted plan (including **`target_plan_days`**) + sets `onboarding_complete = true` + initial `projected_completion_at`.
+- Onboarding uses **one** chat session with `type = onboarding`.
+- `POST /onboarding/accept` persists accepted `course_roadmap` (including **`target_plan_days`**) + sets `onboarding_complete = true` + initial `projected_completion_at`; **deletes onboarding chat transcript** after persist.
 - Main lesson routes require `onboarding_complete`.
 
 ## Plan adaptation (chat-only)
@@ -154,6 +154,7 @@ POST   /progress/events
 # Chat
 POST   /chat/sessions                  # type: onboarding | lesson
 GET    /chat/sessions/{session_id}
+GET    /chat/sessions/{session_id}/messages   # full transcript for UI resume
 POST   /chat/sessions/{session_id}/messages   # Accept: text/event-stream
 ```
 

@@ -105,7 +105,7 @@ Main section → Start lesson → Chat-guided practice → Accomplished task (pl
    |--------|----------|
    | **Start lesson** | Allowed only when no other lesson is **`generating`** or **`active`**. Backend assigns the next `lesson_number`, runs generation job, sets `started_at` when the lesson becomes active, then opens chat. |
    | **Stop session** | User pauses mid-lesson. Lesson stays **`active`**; chat session ends. User can return and resume later. |
-   | **Finish lesson** | User marks the lesson **accomplished** (explicit action). Lesson status → `accomplished`; progress and mistakes are finalized; pacing evaluated (24h rule); schedule may reschedule. User may start the next lesson. |
+   | **Finish lesson** | User taps **Finish lesson** (always available while active). Tutor sets `suggest_finish` when all planned exercises are done; user may also finish early. Lesson → `accomplished`; `session_summary` records completed vs incomplete slots (incomplete = 0%); progress and mistakes finalized; pacing evaluated (24h rule); schedule may reschedule; chat transcript deleted. User may start the next lesson. |
    | **Resume** | User continues an **`active`** or in-progress **`generating`** lesson from the dashboard — no new generation. |
 
    - Only **one in-flight lesson** (`generating` or `active`) at a time. Starting a new lesson requires the current one to be **accomplished** (or abandoned only if product adds that later — not MVP).

@@ -26,7 +26,7 @@ PostgreSQL is the system of record for users, learner knowledge, lessons, jobs, 
 5. Lessons are **sequential integers** per user — not calendar-dated; **at most one in-flight lesson** (`generating` or `active`) enforced in app (partial unique index optional)
 6. **Plan schedule** is stored as structured fields (target plan days, projection, slip) — not as calendar lesson slots
 7. **Accepted course roadmap** is stored as JSONB on `learning_plans` — chat draft until accept; see [course_composer.md](../../skills/course_composer.md)
-8. **Lesson chat produces artifacts, not a second curriculum store** — persist distilled JSON to `lessons.payload` and `mistakes`; full transcripts live in `chat_messages` only for UI resume
+8. **Lesson chat produces artifacts, not a second curriculum store** — persist distilled JSON to `lessons.payload` and `mistakes`; `chat_messages` holds the live transcript until accept/finish, then is deleted
 9. **Skills are the source of truth for artifact shapes** — MVP skills: `onboarding_interviewer`, `course_composer`, `exercise_tutor`; `feedback_giver` is post-MVP
 
 ## MVP entities
@@ -325,10 +325,12 @@ Canonical store for **recurring error patterns** extracted during lesson chat ([
 
 ### Chat
 
-- `chat_sessions` — user FK, optional lesson FK, **`type`**: `onboarding` | `lesson`
+- `chat_sessions` — user FK, optional lesson FK, **`type`**: `onboarding` | `lesson`; **one session per onboarding and one per lesson**
 - `chat_messages` — session FK, role, content, `created_at`, optional metadata JSON
 
-**Chat vs artifacts:** `chat_messages` holds the live conversation (resume UI, audit). **`lessons.payload`** and **`mistakes`** hold distilled knowledge for the next lesson. Do not rebuild lesson context from unbounded chat history.
+**Chat vs artifacts:** `chat_messages` holds the live conversation for UI resume (load from backend on every visit — do not rely on client cache). **`lessons.payload`** and **`mistakes`** hold distilled knowledge for the next lesson. Do not rebuild lesson context from unbounded chat history.
+
+**Retention:** keep messages for the duration of the conversation only. **Delete** onboarding messages (and session) on `POST /onboarding/accept`; delete lesson messages (and session) on `POST /lessons/{id}/finish`. Artifacts in `profiles`, `learning_plans`, `lessons.payload`, and `mistakes` are the long-term store.
 
 ### Deferred (post-MVP — `feedback_giver`)
 
@@ -382,8 +384,9 @@ Canonical store for **recurring error patterns** extracted during lesson chat ([
 
 | Data | MVP policy |
 |------|------------|
-| Users, profiles, goals, lessons, progress, mistakes, chat | **Retain indefinitely** |
+| Users, profiles, goals, lessons, progress, mistakes | **Retain indefinitely** |
 | Jobs | **Retain** (debugging); no TTL in MVP |
+| Chat sessions + messages | **Delete on onboarding accept or lesson finish** — artifacts only after that |
 | Soft delete | **Not required** for MVP |
 
 ## Security
@@ -399,10 +402,11 @@ onboarding chat (type=onboarding)
     → AI emits learner_profile → upsert profiles + learning_goals (draft)
     → course_composer presents course roadmap in chat (draft)
     → user refines roadmap in same chat
-    → POST /onboarding/accept { course_roadmap }
+    → POST /onboarding/accept { session_id, course_roadmap }
     → insert learning_plans (roadmap JSONB, accepted)
     → profiles.active_learning_plan_id, target_plan_days, projected_completion_at
     → users.onboarding_complete, learning_goals.status=active
+    → delete onboarding chat_messages + chat_session
 ```
 
 Chat transcript is **not** the source of truth — `profiles` (learner facts) and `learning_plans.roadmap` (accepted course structure) are.
@@ -421,6 +425,7 @@ lesson chat (type=lesson) — exercise_tutor skill
     → on finish → lessons.payload.session_summary persisted
     → status accomplished; lesson_completed progress_event
     → pace evaluation on profiles (24h rule); optional light progress JSON patch
+    → delete lesson chat_messages + chat_session
 
 next POST /lessons/start
     → inject prior lessons.payload (curriculum + session_summary) + open mistakes

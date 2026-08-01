@@ -234,15 +234,15 @@ If `learner_profile.constraints.practice_partner` is set, produce a separate bri
 
 ## Completion and exit criteria
 
-A lesson is **accomplished** when:
+A lesson is **ready to finish** when all planned exercises in `curriculum.slots` (and exit criteria) are done. Emit **`suggest_finish: true`** in chat `done` metadata at that point.
 
-- [ ] All required slots attempted (or explicitly deferred with reason)
-- [ ] Exit criteria met — e.g. "produce 5 sentences with [grammar point]", "90s monologue on [topic]", "rewrite writing without repeated errors on focus pattern"
+The learner **always** finishes via the product **Finish lesson** action. Early finish is allowed: slots not completed count as **0%** in `session_summary` (`completed_slots` omits them; no credit in aggregated course-progress completion).
+
+On finish, persist:
+
+- [ ] **`session_summary`** with `completed_slots`, `deferred_items`, and slot-level completion (incomplete slots = 0%)
 - [ ] Recurring patterns logged to **`mistakes`**
-- [ ] **`lessons.payload.session_summary`** written and persisted
-- [ ] Persist **`session_summary`**; emit `lesson_completed` progress event (post-MVP: hand off to **`feedback_giver`**)
-
-**Suggest finish** when criteria are met; learner confirms accomplishment (product may require explicit action).
+- [ ] **`lesson_completed`** progress event (post-MVP: hand off to **`feedback_giver`**)
 
 ### Session summary (`lessons.payload.session_summary`)
 

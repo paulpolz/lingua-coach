@@ -82,6 +82,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 - `GET /lessons/active` — resume flow
 - Progress / pace summary for dashboard: plan days completed, target plan days, on pace / behind, projected completion, optional active-lesson time remaining in 24h window
 - Chat session create/list; onboarding vs lesson session types
+- `GET /chat/sessions/{id}/messages` — load full transcript from backend on every open (other devices, cleared cache)
 
 ### SSE chat
 
@@ -99,7 +100,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 
 - **Pace hint (active lesson):** optional countdown or “on pace / behind” based on `started_at` + 24h window (from API)
 - **Stop session:** leave chat; lesson remains active; dashboard shows Resume; pace clock keeps running
-- **Finish lesson:** confirm action → lesson accomplished → unlock Start for next lesson
+- **Finish lesson:** confirm action → lesson accomplished → unlock Start for next lesson. Always available while lesson is active (early finish OK). Tutor may highlight **Finish lesson** when `suggest_finish` is true (all planned exercises done). Incomplete slots count as 0% in progress aggregation.
 - Show generation progress while lesson job is `pending` / `running`
 - Prefer a short focus card + chat over dumping raw markdown worksheets
 
