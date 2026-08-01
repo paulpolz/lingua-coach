@@ -56,11 +56,11 @@ Complete before feature work beyond scaffold.
 | 1   | **Docker** installed      | `docker compose version` works                                                                  |
 | 2   | **Clerk Development** app | Email + magic link enabled; Google OAuth off; allowed origin `http://localhost:3000`            |
 | 3   | **Gemini API key**        | Key from [Google AI Studio](https://aistudio.google.com/); model IDs chosen                     |
-| 4   | **Repo layout**           | `apps/frontend`, `apps/backend`, `skills/`, `prompts/`, `docker-compose.yml` (§9) |
+| 4   | **Repo layout**           | `apps/frontend`, `apps/backend`, `skills/`, `docker-compose.yml` (§9) |
 | 5   | **Env files**             | `apps/frontend/.env.local` + `apps/backend/.env` from §4 (gitignored); `.env.example` committed |
 | 6   | **Postgres up**           | `docker compose up -d` → API connects via `DATABASE_URL` |
 | 7   | **Migrations**            | `alembic upgrade head` creates schema (§12) |
-| 8   | **Skill pack v0**         | MVP skills in `skills/`; runtime prompts in `prompts/` (§10) |
+| 8   | **Skill pack v0**         | MVP skills in `skills/` (§10) |
 
 
 ### Vendor accounts required locally
@@ -479,8 +479,7 @@ lingua-coach/
   apps/
     frontend/            # Next.js
     backend/             # FastAPI + alembic/
-  skills/                # agent pedagogy IP (source of truth)
-  prompts/               # runtime prompt pack (derived from skills)
+  skills/                # agent pedagogy IP (source of truth; loaded at runtime)
   docker-compose.yml
   docs/
 ```
@@ -495,12 +494,12 @@ lingua-coach/
 
 Minimum before meaningful local dogfooding:
 
-| Skill file | Runtime prompt (example) | Purpose |
-|------------|--------------------------|---------|
-| `onboarding_interviewer.md` | `prompts/chat/onboarding.md` | Interview → `profiles` |
-| `course_composer.md` | (same onboarding session) | Roadmap → accept → `learning_plans` |
-| `exercise_tutor.md` | `prompts/chat/lesson.md`, `prompts/lesson/system.md` | Lesson JSON + coaching + artifacts |
-| `vocabulary_practice_formats.md` | embedded in lesson prompt | Week-end vocab drills |
+| Skill file | Purpose |
+|------------|---------|
+| `onboarding_interviewer.md` | Interview → `profiles` |
+| `course_composer.md` | Roadmap → accept → `learning_plans` (same onboarding session) |
+| `exercise_tutor.md` | Lesson JSON + coaching + artifacts |
+| `vocabulary_practice_formats.md` | Week-end vocab drills (concatenated in lesson chat) |
 
 **Post-MVP:** `feedback_giver.md` — do not wire until analysis journey ships.
 
@@ -593,7 +592,7 @@ Manual checklist — the definition of done for local MVP:
 - [ ] `.env.example` committed (no secrets)
 - [ ] `docker compose up` → Postgres reachable
 - [ ] API paths use `/api/v1/...`
-- [ ] Skill pack v0 in `skills/`; runtime stubs in `prompts/` (phase 0–1)
+- [ ] Skill pack v0 in `skills/` (phase 0–1)
 
 ---
 

@@ -59,4 +59,4 @@ All structured outputs are **persisted to Postgres** — not inferred from chat 
 | [frontend.md](../docs/tech_requirements/frontend.md) | UI surfaces for MVP skill use cases |
 | [cjm.md](../docs/functional_requirements/cjm.md) | User journeys |
 
-Backend reads skills at deploy time (e.g. copy or symlink into `prompts/`).
+Backend loads skill files at runtime as `system_instruction` per call type; dynamic context (profile, history, lesson snippet) is assembled in code — see [ai-api.md](../docs/tech_requirements/ai-api.md).

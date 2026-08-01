@@ -250,7 +250,7 @@ Many adjacent players, few exact matches. "Fully personal AI mentor with a custo
 2. **Pick one ICP** — e.g. employed adults, B1–B2, job/career English, 6-month horizon.
 3. **MVP** — onboarding → course plan → sequential lessons + chat (text first) → mistake log → dashboard pace hints.
 4. **Validate with 10–20 strangers** before voice, payments, or mobile.
-5. **Keep the repo private first** — prompts, workflows, evaluation, and pedagogy should not go public until intentional.
+5. **Keep the repo private first** — skills, workflows, evaluation, and pedagogy should not go public until intentional.
 
 ### Repo layout (local MVP)
 
@@ -258,8 +258,7 @@ Many adjacent players, few exact matches. "Fully personal AI mentor with a custo
 apps/
   frontend/              # Next.js
   backend/               # FastAPI + Alembic
-skills/                  # agent pedagogy IP (source of truth)
-prompts/                 # runtime prompt pack (derived from skills)
+skills/                  # agent pedagogy IP (source of truth; loaded at runtime)
 docker-compose.yml
 docs/
 ```
