@@ -16,6 +16,7 @@ Gemini-backed LLM layer used by the backend learning engine. The product is orch
 4. **Two model IDs in config** — faster/cheaper model for chat; stronger model for lesson JSON
 5. **Transport independence** — browser SSE/REST does not dictate the provider; backend maps Gemini streams into SSE
 6. **Chat-first product** — onboarding, plan refinement, plan adaptation, and practice all use the chat model path
+7. **Text-only MVP** — chat input and output are plain text; no STT, TTS, or multimodal audio/video in MVP call paths
 
 ## Provider strategy (MVP)
 
@@ -82,7 +83,8 @@ Requirements:
 
 ## Chat / correction (onboarding + lesson)
 
-- Input: learner message + compact learner profile + session mode (`onboarding` | `lesson`) + current lesson snippet (lesson mode) + **last N messages** (default **N = 10**)
+- **Modality:** text in, streamed text out — no voice or video payloads in MVP
+- Input: learner message (plain text) + compact learner profile + session mode (`onboarding` | `lesson`) + current lesson snippet (lesson mode) + **last N messages** (default **N = 10**)
 - Output: streamed tokens for the reply; optional structured side payload on stream end:
   - `corrections`, `tips`
   - **`plan_updates`** — partial profile / goal fields when user feedback implies plan change (may include `target_plan_days`)

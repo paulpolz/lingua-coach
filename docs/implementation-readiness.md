@@ -39,7 +39,7 @@ Everything needed to run and manually test both journeys on `localhost`:
 | **Hosting / deploy**   | Vercel, Railway, Cloudflare, custom domain, prod env vars                                        |
 | **Prod auth**          | Clerk Production application, prod redirect URLs                                                 |
 | **Ops**                | CI/CD, staging, Sentry, APM, Railway backups                                                     |
-| **Product (post-MVP)** | Billing, **`feedback_giver`** (progress dashboard, weekly gates), analysis/profile journey, voice, marketing landing page, plan editor UI, abandon-lesson |
+| **Product (post-MVP)** | Billing, **`feedback_giver`** (progress dashboard, weekly gates), analysis/profile journey, **voice / TTS / in-app audio**, marketing landing page, plan editor UI, abandon-lesson |
 | **Infrastructure**     | WebSockets, Redis/Celery, multi API replicas, calendar-assigned lessons                          |
 | **Optional polish**    | GitHub branch protection, shared-types package, JSON Schema CI                                   |
 

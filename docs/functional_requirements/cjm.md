@@ -8,6 +8,8 @@ This document describes the primary user journeys in Lingua Coach — from first
 
 **MVP scope:** Journeys 1 (New user) and 2 (Student) are in scope. Journey 3 (Analysis) and skill `feedback_giver` are **post-MVP** — captured here for product direction, not first-ship UX.
 
+**MVP modality:** All journeys use **text chat only** — typed messages in, streamed tutor text out. Onboarding, plan refinement, and lesson practice share the same text chat surface. Speaking and listening skills are practiced **in text** (e.g. typed monologues, role-play turns, comprehension questions; optional links to external reading/listening). Voice input, text-to-speech, and video are **post-MVP**.
+
 ---
 
 ## Journey overview
@@ -88,7 +90,7 @@ Main section → Start lesson → Chat-guided practice → Accomplished task (pl
    - Lessons are numbered sequentially (**lesson 1, 2, 3, …**) — not tied to calendar dates.
    - Each accomplished lesson counts as **one plan day** toward the schedule set at onboarding.
    - Lessons are **not pre-generated**. Each new lesson is created when the user starts it, informed by the learning plan plus **previous lessons’ progress, results, and errors**.
-   - The user practices through **chat** with the AI tutor, which guides them through the lesson focus, corrects mistakes, and tracks completion. Structured exercise content from the lesson JSON is delivered **in chat**, not as a separate worksheet UI.
+   - The user practices through **text chat** with the AI tutor, which guides them through the lesson focus, corrects mistakes, and tracks completion. Structured exercise content from the lesson JSON is delivered **in chat**, not as a separate worksheet UI. “Speaking” and “listening” slots mean **typed production and text-based comprehension** in MVP — not microphone or in-app audio.
 
 3. **Plan schedule and pacing**
 
@@ -182,6 +184,7 @@ flowchart LR
 
 | CJM term | Meaning |
 |----------|---------|
+| **Text chat (MVP)** | All learner–tutor interaction is typed text in chat; no voice, TTS, or video in MVP |
 | **Goal** | Why the user is learning + concrete outcome / horizon (formerly “intention” + “learning goal”) |
 | **Time budget** | Available practice time and program intensity / pace (formerly separate “time budget” and “intensity”) |
 | **Schedule** | Estimated **plan days** (≈ accomplished lessons) to reach the goal; **not** a calendar grid |

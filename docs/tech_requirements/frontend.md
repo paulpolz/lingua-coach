@@ -34,6 +34,8 @@ Chat-first web UI for all **MVP agent skill** use cases: onboarding interview, p
 
 ## Interaction model (chat-first, plan-driven)
 
+**MVP modality:** Text chat only. The user types messages; the tutor replies via streamed text (SSE). No voice capture, playback, or video in MVP. Skill areas such as speaking and listening are exercised through **typed answers** and text-based prompts (plus optional external links for reading/listening content).
+
 1. **Onboarding** is a **chat interview** that creates the **course plan** (goal, level, topics, vocab priorities, time budget, **schedule** / target plan days).
 2. **Plan refinement and acceptance** happen in the **same onboarding chat**; user must accept before entering the main flow.
 3. **Lesson loop** is **chat**: user starts a lesson on demand → backend generates sequential lesson JSON → tutor guides practice using plan + lesson focus + prior progress.
@@ -120,7 +122,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 - Analysis / profile statistics journey (see [cjm.md](../functional_requirements/cjm.md))
 - Dedicated plan editor (settings or profile)
 - Native mobile apps
-- Voice capture / playback
+- Voice capture / playback / text-to-speech (all learner–tutor interaction is typed text in MVP)
 - Offline mode
 - Admin UI
 - Billing / plan comparison screens

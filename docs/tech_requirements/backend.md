@@ -31,7 +31,7 @@ The **learning engine** loads agent skills from [skills/](../../skills/README.md
 - Sequential lesson generation on demand (async job)
 - Lesson stop / finish lifecycle
 - Progress / mistake logging (MVP-light; no `feedback_giver` pipeline)
-- Chat sessions with streamed replies (onboarding + lesson modes)
+- Chat sessions with streamed **text** replies (onboarding + lesson modes); messages are plain text only — no audio/video upload or STT/TTS in MVP
 - In-chat plan adaptation (`plan_updates` from chat)
 - **Plan schedule & pacing** — target plan days, 24h on-pace rule, reschedule on slip
 

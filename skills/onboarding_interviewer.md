@@ -61,7 +61,7 @@ Ask **one cluster at a time**. Use follow-ups when answers are vague. Skip quest
 - Budget for paid courses or tutors? (none / limited / flexible)
 - Access to a practice partner? (friend, colleague, spouse — how often, how long)
 - Preferred learning style — structured vs conversational, correction-heavy vs fluency-first?
-- Any accessibility or format preferences? (text-only, voice later, mobile, short sessions)
+- Any accessibility or format preferences? (MVP is **text chat only**; note if they expect voice later — post-MVP — or need mobile-friendly short sessions)
 
 ### 6. Motivation and context (optional)
 

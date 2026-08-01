@@ -46,6 +46,7 @@ All structured outputs are **persisted to Postgres** — not inferred from chat 
 - **Adapt but never lower the goal** — pace adjusts; target outcome does not.
 - **Output-first** — speak/write before (or alongside) rule explanation.
 - **Structured learner memory** — profile, errors, and progress are data, not chat history.
+- **Text chat in MVP** — all learner–tutor interaction is typed text; speaking/listening are practiced in text until voice ships.
 - **Fixed ritual, personalized content** — daily shape stays constant; topics adapt to performance.
 
 ## Related docs
