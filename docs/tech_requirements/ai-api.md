@@ -24,6 +24,7 @@ Gemini-backed LLM layer used by the backend learning engine. The product is orch
 |------|------|
 | Provider | **Gemini** only |
 | Client | Single Gemini SDK/HTTP client |
+| API surface | **`generateContent`** (stream for chat) — not Interactions API / managed agents |
 | Chat / onboarding / corrections | Config key e.g. `GEMINI_MODEL_CHAT` (flash-class) |
 | Lesson generation | Config key e.g. `GEMINI_MODEL_LESSON` (stronger / pro-class) |
 | Fallbacks / other vendors | **Out of MVP** |
@@ -75,7 +76,7 @@ Lesson generation must return JSON the frontend can render:
 
 Requirements:
 
-- Input context must include learner profile, active plan, and **summaries from previous lessons** (results, recurring mistakes)
+- Input context must include learner profile, active plan, and **summaries from the last N accomplished lessons** (default **N = 5**; results, recurring mistakes) — see [database.md](./database.md)
 - Validate against a schema (Pydantic) before persisting
 - On invalid JSON: **one** repair retry (same or lesson model), then fail the job with a clear error
 - Prefer Gemini structured-output / JSON mode when available for the lesson model
@@ -92,12 +93,19 @@ Requirements:
 - Persist assistant message after stream completes; backend applies validated `plan_updates`
 - Use the chat-configured Gemini model
 
-## Context & memory
+## Request lifecycle & memory
 
-- Inject a **compact learner profile** (goal, level, time budget, grammar scores, weaknesses) into prompts
-- For lesson generation, inject **prior lesson outcomes** — not unbounded full chat history
-- Pedagogy content lives in **[skills/](../../skills/README.md)** — loaded at runtime into prompts (IP)
-- Do not dump full pedagogy IP into production logs
+Gemini is **stateless** — no session memory on Google's side. Each call: FastAPI loads context from Postgres + skills → one Gemini request → persist artifacts back to Postgres ([database.md](./database.md), [backend.md](./backend.md)).
+
+| Tier | Source | Used for |
+|------|--------|----------|
+| Short-term | Last **N = 10** `chat_messages` (`CHAT_CONTEXT_MESSAGES`) | Conversational continuity |
+| Long-term | Profile, roadmap, `lessons.payload` summaries, `mistakes` | Lesson generation + coaching context |
+
+**Prompt assembly:** `system_instruction` ← skill file(s) for the call type (concatenate in orchestration-table order); `contents` ← optional profile/plan block + message history + new user turn.
+
+- Pedagogy lives in **[skills/](../../skills/README.md)** — loaded at runtime (IP); do not log full prompts in production
+- **No RAG in MVP** — structured SQL fetch + injection, not vector retrieval over document corpora
 
 ## Streaming
 
@@ -120,6 +128,7 @@ Requirements:
 ## Out of scope (MVP)
 
 - **`feedback_giver`** call type (post-lesson progress analysis, weekly gates)
+- RAG / vector retrieval; Gemini managed agents (Interactions API)
 - Multi-provider clients or automatic failover
 - Full multi-step learning pipeline / weekly report generator
 - Analysis journey skill breakdowns and time-to-goal estimation
