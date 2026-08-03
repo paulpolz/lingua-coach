@@ -5,7 +5,7 @@ Local development layout for Lingua Coach.
 ## Prerequisites
 
 - Docker
-- Python 3.11+
+- Python 3.11+ ([uv](https://docs.astral.sh/uv/))
 - Node.js 20+
 
 ## Start Postgres
@@ -20,11 +20,9 @@ docker compose up -d
 
 ```bash
 cd apps/backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv sync
 cp .env.example .env   # then fill in secrets
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Health check: `GET http://localhost:8000/api/v1/health`
