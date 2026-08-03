@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.config import settings
+from app.core.errors import APIError, api_error_handler
 
 app = FastAPI(title="Lingua Coach API", version="0.1.0")
+
+app.add_exception_handler(APIError, api_error_handler)
 
 app.add_middleware(
     CORSMiddleware,
