@@ -4,6 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { syncUser } from "@/lib/api";
 import {
   acceptOnboarding,
   createChatSession,
@@ -19,12 +20,12 @@ const SESSION_STORAGE_KEY = "lingua-coach:onboarding-session-id";
 
 type LoadState = "loading" | "ready" | "error";
 
-function readStoredSessionId(): string | null {
-  if (typeof window === "undefined") return null;
+function clearStoredSessionId(): void {
+  if (typeof window === "undefined") return;
   try {
-    return window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   } catch {
-    return null;
+    // sessionStorage unavailable — nothing to clear.
   }
 }
 
@@ -71,12 +72,16 @@ export default function OnboardingChat() {
       setLoadError(null);
       try {
         const token = await getToken();
-        let id = readStoredSessionId();
-        if (!id) {
-          const session = await createChatSession(token, "onboarding");
-          id = session.id;
-          writeStoredSessionId(id);
-        }
+        // Ensure the Postgres user row exists even when /onboarding is opened
+        // directly (bypassing `/`, which normally calls sync).
+        await syncUser(token);
+
+        // Always create-or-resume via the backend — it returns this user's
+        // canonical onboarding session. A cached sessionStorage id may belong
+        // to a previous Clerk account in the same browser tab.
+        const session = await createChatSession(token, "onboarding");
+        const id = session.id;
+        writeStoredSessionId(id);
         if (cancelled) return;
         setSessionId(id);
 
@@ -110,6 +115,7 @@ export default function OnboardingChat() {
   const retryInit = useCallback(() => {
     // Drop any stale/invalid cached session id and re-run the mount effect
     // by forcing a full reload — simplest reliable retry for this MVP page.
+    clearStoredSessionId();
     if (typeof window !== "undefined") {
       window.location.reload();
     }
