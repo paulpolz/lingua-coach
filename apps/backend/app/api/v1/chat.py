@@ -169,7 +169,13 @@ async def list_chat_messages(
     messages = result.scalars().all()
     return ChatMessagesListResponse(
         messages=[
-            ChatMessageOut(id=str(m.id), role=m.role.value, content=m.content, created_at=m.created_at)
+            ChatMessageOut(
+                id=str(m.id),
+                role=m.role.value,
+                content=m.content,
+                created_at=m.created_at,
+                metadata=m.metadata_json,
+            )
             for m in messages
         ]
     )

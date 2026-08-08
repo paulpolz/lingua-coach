@@ -84,6 +84,8 @@ ONBOARDING_EXTRACTION_CONTRACT = """\
 ---
 Backend output contract (follow exactly; this is not shown to the user):
 
+Conversation rule: Never ask more than one question in a single reply.
+
 1. Once the onboarding interview above is fully complete and you have\
  everything needed for the "Output: learner profile" section, include in\
  your reply a single fenced code block formatted exactly as:

@@ -34,6 +34,9 @@ class ChatMessageOut(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    # Optional structured side-payload persisted on assistant turns
+    # (corrections, tips, course_roadmap_draft, …). Null for user turns.
+    metadata: dict | None = None
 
 
 class ChatMessagesListResponse(BaseModel):

@@ -1,50 +1,56 @@
 "use client";
 
 import type { CourseRoadmap } from "@/lib/chat";
+import Button from "@/components/ui/Button";
 
 interface PlanSummaryCardProps {
   roadmap: CourseRoadmap;
   onAccept: () => void;
+  onChange: () => void;
   isAccepting: boolean;
   acceptError: string | null;
 }
 
 /**
- * Readable summary of a `course_roadmap` v1 draft (docs/tech_requirements/database.md).
- * Deliberately shows a subset of fields (goal, level, plan length, milestones,
- * weekly template) rather than the full JSON — per frontend.md's "thin brief,
- * not a full worksheet" guidance.
+ * Readable summary of a `course_roadmap` v1 draft.
+ * Accept → dashboard; Change → dismiss card and continue refining in chat.
  */
-export default function PlanSummaryCard({ roadmap, onAccept, isAccepting, acceptError }: PlanSummaryCardProps) {
+export default function PlanSummaryCard({
+  roadmap,
+  onAccept,
+  onChange,
+  isAccepting,
+  acceptError,
+}: PlanSummaryCardProps) {
   const { summary, milestones, weekly_template: weeklyTemplate } = roadmap;
 
   return (
-    <div className="mx-auto w-full max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm sm:p-5 dark:border-emerald-800 dark:bg-emerald-950/40">
+    <div className="w-full rounded-2xl border border-success/30 bg-success-soft p-4 shadow-sm sm:p-5">
       <div className="mb-3 flex items-center gap-2">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success text-xs font-semibold text-white">
           ✓
         </span>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-success">
           Proposed plan
         </h2>
       </div>
 
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-zinc-500 dark:text-zinc-400">Goal</dt>
-          <dd className="font-medium text-zinc-900 dark:text-zinc-100">{summary.goal_outcome}</dd>
+          <dt className="text-muted">Goal</dt>
+          <dd className="font-medium text-foreground">{summary.goal_outcome}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500 dark:text-zinc-400">Horizon</dt>
-          <dd className="font-medium text-zinc-900 dark:text-zinc-100">{summary.goal_horizon}</dd>
+          <dt className="text-muted">Horizon</dt>
+          <dd className="font-medium text-foreground">{summary.goal_horizon}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500 dark:text-zinc-400">Starting level</dt>
-          <dd className="font-medium text-zinc-900 dark:text-zinc-100">{summary.starting_level}</dd>
+          <dt className="text-muted">Starting level</dt>
+          <dd className="font-medium text-foreground">{summary.starting_level}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500 dark:text-zinc-400">Target plan length</dt>
-          <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+          <dt className="text-muted">Target plan length</dt>
+          <dd className="font-medium text-foreground">
             {summary.target_plan_days} days
             {summary.target_plan_days_range
               ? ` (${summary.target_plan_days_range[0]}–${summary.target_plan_days_range[1]})`
@@ -54,29 +60,27 @@ export default function PlanSummaryCard({ roadmap, onAccept, isAccepting, accept
       </dl>
 
       {summary.pace_description ? (
-        <p className="mt-3 text-sm text-zinc-700 dark:text-zinc-300">{summary.pace_description}</p>
+        <p className="mt-3 text-sm text-foreground/80">{summary.pace_description}</p>
       ) : null}
 
       {milestones?.length > 0 ? (
         <div className="mt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Milestones
-          </h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Milestones</h3>
           <ol className="mt-2 space-y-2">
             {milestones.map((milestone) => (
-              <li key={milestone.index} className="rounded-lg bg-white/70 p-2.5 text-sm dark:bg-zinc-900/40">
+              <li key={milestone.index} className="rounded-lg bg-surface/70 p-2.5 text-sm">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                  <span className="font-medium text-foreground">
                     {milestone.index + 1}. {milestone.title}
                   </span>
                   {milestone.estimated_plan_days ? (
-                    <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                    <span className="shrink-0 text-xs text-muted">
                       ~{milestone.estimated_plan_days}d
                     </span>
                   ) : null}
                 </div>
                 {milestone.success_criteria ? (
-                  <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{milestone.success_criteria}</p>
+                  <p className="mt-1 text-xs text-muted">{milestone.success_criteria}</p>
                 ) : null}
               </li>
             ))}
@@ -86,14 +90,14 @@ export default function PlanSummaryCard({ roadmap, onAccept, isAccepting, accept
 
       {weeklyTemplate ? (
         <div className="mt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
             Weekly session ({weeklyTemplate.minutes_per_session} min)
           </h3>
           <ul className="mt-2 flex flex-wrap gap-2">
             {weeklyTemplate.activities?.map((activity) => (
               <li
                 key={activity.id}
-                className="rounded-full bg-white/70 px-2.5 py-1 text-xs text-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-300"
+                className="rounded-full bg-surface/70 px-2.5 py-1 text-xs text-foreground/80"
               >
                 {activity.label} · {activity.minutes}m
               </li>
@@ -103,19 +107,17 @@ export default function PlanSummaryCard({ roadmap, onAccept, isAccepting, accept
       ) : null}
 
       {acceptError ? (
-        <p className="mt-4 rounded-lg bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-          {acceptError}
-        </p>
+        <p className="mt-4 rounded-lg bg-danger-soft p-2 text-sm text-danger">{acceptError}</p>
       ) : null}
 
-      <button
-        type="button"
-        onClick={onAccept}
-        disabled={isAccepting}
-        className="mt-4 w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-      >
-        {isAccepting ? "Accepting…" : "Accept plan"}
-      </button>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Button onClick={onAccept} disabled={isAccepting} className="sm:min-w-[8rem]">
+          {isAccepting ? "Accepting…" : "Accept"}
+        </Button>
+        <Button variant="secondary" onClick={onChange} disabled={isAccepting} className="sm:min-w-[8rem]">
+          Change
+        </Button>
+      </div>
     </div>
   );
 }

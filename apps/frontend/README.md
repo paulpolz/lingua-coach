@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Environment
+
+Copy `.env.example` to `.env.local` and fill in Clerk keys plus `NEXT_PUBLIC_API_URL`.
+
+Post-auth redirects should point at `/onboarding` (see `NEXT_PUBLIC_CLERK_*_REDIRECT_URL` in `.env.example`). The onboarding page sends completed users to `/dashboard`. [`PostAuthRedirect`](./components/PostAuthRedirect.tsx) on the sign-in page and [`RootAuthGate`](./components/RootAuthGate.tsx) on `/` handle Clerk finishing auth on the client before the server session cookie is ready.
+
 ## Getting Started
 
 First, run the development server:

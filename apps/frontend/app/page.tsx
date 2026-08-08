@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
+import RootAuthGate from "@/components/RootAuthGate";
 import { syncUser } from "@/lib/api";
 
 /**
@@ -14,7 +15,7 @@ export default async function RootPage() {
   const { userId, getToken } = await auth();
 
   if (!userId) {
-    redirect("/sign-in");
+    return <RootAuthGate />;
   }
 
   const token = await getToken();

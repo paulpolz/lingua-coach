@@ -13,6 +13,7 @@ import {
   type Lesson,
   type LessonCurriculum,
 } from "@/lib/lessons";
+import ChatComposer from "@/components/ChatComposer";
 import ChatMessageBubble, { type DisplayMessage } from "@/components/ChatMessageBubble";
 
 interface LessonChatProps {
@@ -67,10 +68,8 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [lastFailedContent, setLastFailedContent] = useState<string | null>(null);
 
-  // Latest `suggest_finish` value from the most recent `done` event — drives
-  // the (still-disabled) Finish lesson button's highlight. Lost on reload
-  // since GET /chat/sessions/{id}/messages doesn't return metadata; that's
-  // acceptable for MVP (the tutor re-signals it again once slots are done).
+  // Latest `suggest_finish` — restored from transcript metadata on reload
+  // when available (GET /messages now returns metadata).
   const [suggestFinish, setSuggestFinish] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [focusCardOpen, setFocusCardOpen] = useState(true);
@@ -120,8 +119,16 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
             id: message.id,
             role: message.role,
             content: message.content,
+            metadata: message.metadata ?? null,
           }))
         );
+        // Restore the latest suggest_finish signal from transcript metadata.
+        for (let i = transcript.length - 1; i >= 0; i--) {
+          if (transcript[i].metadata?.suggest_finish) {
+            setSuggestFinish(true);
+            break;
+          }
+        }
         setLoadState("ready");
       } catch (error) {
         if (cancelled) return;
@@ -217,14 +224,6 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
     void sendMessage(content);
   }, [input, sendMessage]);
 
-  const handleSubmit = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      submitInput();
-    },
-    [submitInput]
-  );
-
   const handleRetrySend = useCallback(() => {
     if (!lastFailedContent) return;
     void sendMessage(lastFailedContent);
@@ -307,7 +306,7 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
           <div className="flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
               {messages.length === 0 ? (
-                <p className="mt-8 text-center text-sm text-zinc-500">
+                <p className="mt-8 text-center text-sm text-muted">
                   {curriculum?.lesson_goal
                     ? `Say hello to start practicing: ${curriculum.lesson_goal}`
                     : "Say hello to start this lesson."}
@@ -322,45 +321,14 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
             </div>
           </div>
 
-          <div className="border-t border-zinc-200 bg-white/95 p-3 backdrop-blur sm:p-4 dark:border-zinc-800 dark:bg-zinc-950/95">
-            <div className="mx-auto w-full max-w-2xl">
-              {sendError ? (
-                <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                  <span>{sendError}</span>
-                  <button
-                    type="button"
-                    onClick={handleRetrySend}
-                    className="shrink-0 font-medium underline underline-offset-2"
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : null}
-              <form onSubmit={handleSubmit} className="flex items-end gap-2">
-                <textarea
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      submitInput();
-                    }
-                  }}
-                  placeholder="Type your message…"
-                  rows={1}
-                  disabled={isSending}
-                  className="flex-1 resize-none rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900"
-                />
-                <button
-                  type="submit"
-                  disabled={isSending || !input.trim()}
-                  className="shrink-0 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                >
-                  {isSending ? "…" : "Send"}
-                </button>
-              </form>
-            </div>
-          </div>
+          <ChatComposer
+            value={input}
+            onChange={setInput}
+            onSubmit={submitInput}
+            isSending={isSending}
+            error={sendError}
+            onRetry={handleRetrySend}
+          />
         </>
       )}
     </div>
