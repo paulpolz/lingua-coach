@@ -84,6 +84,15 @@ function clearStoredSessionId(): void {
   }
 }
 
+function readStoredSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function writeStoredSessionId(id: string): void {
   if (typeof window === "undefined") return;
   try {
@@ -223,9 +232,12 @@ export default function OnboardingChat() {
         const token = await waitForToken(getToken);
         await syncUser(token);
 
-        const session = await createChatSession(token, "onboarding");
-        const id = session.id;
-        writeStoredSessionId(id);
+        let id = readStoredSessionId();
+        if (!id) {
+          const session = await createChatSession(token, "onboarding");
+          id = session.id;
+          writeStoredSessionId(id);
+        }
         if (cancelled) return;
         setSessionId(id);
 

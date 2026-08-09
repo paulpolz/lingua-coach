@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, Index, Text
+from sqlalchemy import ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,6 +13,21 @@ class ChatSession(Base, TimestampMixin):
     """One session per onboarding, one per lesson. Deleted on accept/finish."""
 
     __tablename__ = "chat_sessions"
+    __table_args__ = (
+        Index(
+            "uq_chat_sessions_one_onboarding_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("type = 'onboarding'"),
+        ),
+        Index(
+            "uq_chat_sessions_one_lesson_per_user_lesson",
+            "user_id",
+            "lesson_id",
+            unique=True,
+            postgresql_where=text("type = 'lesson' AND lesson_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -99,6 +100,89 @@ async def _get_lesson_for_session(db: AsyncSession, session: ChatSession, user: 
     return lesson
 
 
+async def _fetch_onboarding_session(db: AsyncSession, user_id: uuid.UUID) -> ChatSession | None:
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.user_id == user_id,
+            ChatSession.type == ChatSessionType.onboarding,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _fetch_lesson_session(
+    db: AsyncSession, user_id: uuid.UUID, lesson_id: uuid.UUID
+) -> ChatSession | None:
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.user_id == user_id,
+            ChatSession.type == ChatSessionType.lesson,
+            ChatSession.lesson_id == lesson_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _get_or_create_onboarding_session(db: AsyncSession, user: User) -> ChatSession:
+    """One onboarding session per user — enforced by partial unique index + upsert."""
+    stmt = (
+        insert(ChatSession)
+        .values(user_id=user.id, type=ChatSessionType.onboarding, lesson_id=None)
+        .on_conflict_do_nothing(
+            index_elements=["user_id"],
+            index_where=(ChatSession.type == ChatSessionType.onboarding),
+        )
+        .returning(ChatSession.id)
+    )
+    result = await db.execute(stmt)
+    new_id = result.scalar_one_or_none()
+    await db.commit()
+
+    if new_id is not None:
+        session = await db.get(ChatSession, new_id)
+        assert session is not None
+        return session
+
+    session = await _fetch_onboarding_session(db, user.id)
+    if session is None:
+        raise RuntimeError("onboarding chat session missing after upsert conflict")
+    return session
+
+
+async def _get_or_create_lesson_session(
+    db: AsyncSession, user: User, lesson: Lesson
+) -> ChatSession:
+    """One lesson chat session per (user, lesson) — enforced by partial unique index + upsert."""
+    stmt = (
+        insert(ChatSession)
+        .values(
+            user_id=user.id,
+            type=ChatSessionType.lesson,
+            lesson_id=lesson.id,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["user_id", "lesson_id"],
+            index_where=(
+                (ChatSession.type == ChatSessionType.lesson) & (ChatSession.lesson_id.is_not(None))
+            ),
+        )
+        .returning(ChatSession.id)
+    )
+    result = await db.execute(stmt)
+    new_id = result.scalar_one_or_none()
+    await db.commit()
+
+    if new_id is not None:
+        session = await db.get(ChatSession, new_id)
+        assert session is not None
+        return session
+
+    session = await _fetch_lesson_session(db, user.id, lesson.id)
+    if session is None:
+        raise RuntimeError("lesson chat session missing after upsert conflict")
+    return session
+
+
 @router.post("/sessions", status_code=201, response_model=ChatSessionResponse)
 async def create_chat_session(
     body: ChatSessionCreateRequest,
@@ -106,17 +190,7 @@ async def create_chat_session(
     db: AsyncSession = Depends(get_db),
 ) -> ChatSessionResponse:
     if body.type == "onboarding":
-        result = await db.execute(
-            select(ChatSession).where(
-                ChatSession.user_id == user.id, ChatSession.type == ChatSessionType.onboarding
-            )
-        )
-        session = result.scalar_one_or_none()
-        if session is None:
-            session = ChatSession(user_id=user.id, type=ChatSessionType.onboarding, lesson_id=None)
-            db.add(session)
-            await db.commit()
-            await db.refresh(session)
+        session = await _get_or_create_onboarding_session(db, user)
         return ChatSessionResponse(id=str(session.id), type="onboarding", lesson_id=None)
 
     # type == "lesson"
@@ -138,21 +212,7 @@ async def create_chat_session(
             "LESSON_NOT_ACTIVE",
         )
 
-    # database.md "one session per onboarding and one session per lesson" —
-    # idempotently reuse the existing row for this lesson if present.
-    result = await db.execute(
-        select(ChatSession).where(
-            ChatSession.user_id == user.id,
-            ChatSession.type == ChatSessionType.lesson,
-            ChatSession.lesson_id == lesson.id,
-        )
-    )
-    session = result.scalar_one_or_none()
-    if session is None:
-        session = ChatSession(user_id=user.id, type=ChatSessionType.lesson, lesson_id=lesson.id)
-        db.add(session)
-        await db.commit()
-        await db.refresh(session)
+    session = await _get_or_create_lesson_session(db, user, lesson)
     return ChatSessionResponse(id=str(session.id), type="lesson", lesson_id=str(lesson.id))
 
 

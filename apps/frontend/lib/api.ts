@@ -7,7 +7,14 @@
  * app/(protected)/*.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+function getApiBaseUrl(): string {
+  // Server Components / SSR in Docker Compose reach the backend via the
+  // internal service name; the browser still uses NEXT_PUBLIC_API_URL.
+  if (typeof window === "undefined" && process.env.API_URL) {
+    return process.env.API_URL;
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+}
 
 export class ApiError extends Error {
   status: number;
@@ -35,7 +42,7 @@ export async function apiFetch(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  return fetch(`${getApiBaseUrl()}${path}`, { ...init, headers });
 }
 
 /**

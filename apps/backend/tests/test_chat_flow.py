@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -56,6 +57,20 @@ async def test_create_onboarding_session_is_idempotent(client: AsyncClient, as_p
     resp2 = await client.post("/api/v1/chat/sessions", json={"type": "onboarding"})
     assert resp2.status_code == 201
     assert resp2.json()["id"] == body1["id"]
+
+
+async def test_create_onboarding_session_concurrent_posts_return_same_id(
+    client: AsyncClient, as_principal
+) -> None:
+    await _sync_user(client, as_principal, "clerk_onboarding_race")
+
+    resp1, resp2 = await asyncio.gather(
+        client.post("/api/v1/chat/sessions", json={"type": "onboarding"}),
+        client.post("/api/v1/chat/sessions", json={"type": "onboarding"}),
+    )
+    assert resp1.status_code == 201
+    assert resp2.status_code == 201
+    assert resp1.json()["id"] == resp2.json()["id"]
 
 
 async def test_create_lesson_session_returns_404_for_unknown_lesson(

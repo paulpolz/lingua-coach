@@ -2,8 +2,14 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# apps/backend/app/config.py -> apps/backend -> apps -> repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# apps/backend/app/config.py -> apps/backend -> apps -> repo root.
+# In Docker dev the backend is mounted at /app, so parents[3] does not exist;
+# skills are mounted at /skills (parents[2] == / -> /skills).
+_config_path = Path(__file__).resolve()
+try:
+    _REPO_ROOT = _config_path.parents[3]
+except IndexError:
+    _REPO_ROOT = _config_path.parents[2]
 _DEFAULT_SKILLS_DIR = str(_REPO_ROOT / "skills")
 
 
