@@ -10,6 +10,7 @@
  */
 
 import { apiFetch, toApiError } from "@/lib/api";
+import { reportClientError } from "@/lib/reportError";
 
 // ---------------------------------------------------------------------------
 // Chat sessions + messages (readiness §6)
@@ -263,6 +264,16 @@ function dispatchSSEEvent(event: ParsedSSEEvent, handlers: StreamChatMessageHand
   }
 }
 
+function reportStreamError(data: SSEErrorData, sessionId: string): void {
+  reportClientError({
+    code: data.code,
+    message: data.message,
+    surface: "api",
+    path: typeof window !== "undefined" ? window.location.pathname : undefined,
+    meta: { session_id: sessionId },
+  });
+}
+
 /**
  * `POST /api/v1/chat/sessions/{id}/messages` with `Accept: text/event-stream`.
  *
@@ -281,6 +292,14 @@ export async function streamChatMessage(
   handlers: StreamChatMessageHandlers,
   signal?: AbortSignal
 ): Promise<void> {
+  const wrapped: StreamChatMessageHandlers = {
+    ...handlers,
+    onError: (data) => {
+      reportStreamError(data, sessionId);
+      handlers.onError?.(data);
+    },
+  };
+
   let response: Response;
   try {
     response = await apiFetch(`/api/v1/chat/sessions/${sessionId}/messages`, token, {
@@ -291,7 +310,7 @@ export async function streamChatMessage(
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
-    handlers.onError?.({
+    wrapped.onError?.({
       code: "NETWORK_ERROR",
       message: error instanceof Error ? error.message : "Could not reach the server.",
     });
@@ -299,13 +318,14 @@ export async function streamChatMessage(
   }
 
   if (!response.ok) {
+    // toApiError already reports telemetry for HTTP failures.
     const apiError = await toApiError(response, "Message failed");
     handlers.onError?.({ code: apiError.code ?? "HTTP_ERROR", message: apiError.message });
     return;
   }
 
   if (!response.body) {
-    handlers.onError?.({ code: "NO_BODY", message: "Server response had no body to stream." });
+    wrapped.onError?.({ code: "NO_BODY", message: "Server response had no body to stream." });
     return;
   }
 
@@ -321,7 +341,7 @@ export async function streamChatMessage(
       buffer += decoder.decode(value, { stream: true });
       const { events, remainder } = extractSSEEvents(buffer);
       buffer = remainder;
-      for (const event of events) dispatchSSEEvent(event, handlers);
+      for (const event of events) dispatchSSEEvent(event, wrapped);
     }
 
     // Flush any trailing bytes the decoder buffered internally, then treat a
@@ -329,11 +349,11 @@ export async function streamChatMessage(
     buffer += decoder.decode();
     if (buffer.trim().length > 0) {
       const { events } = extractSSEEvents(`${buffer}\n\n`);
-      for (const event of events) dispatchSSEEvent(event, handlers);
+      for (const event of events) dispatchSSEEvent(event, wrapped);
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
-    handlers.onError?.({
+    wrapped.onError?.({
       code: "STREAM_READ_ERROR",
       message: error instanceof Error ? error.message : "Lost connection while streaming the reply.",
     });

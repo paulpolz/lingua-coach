@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     app_env: str = "local"
+    log_level: str = "INFO"
+    metrics_enabled: bool = True
     database_url: str = "postgresql+asyncpg://lingua:lingua@localhost:5432/lingua_coach"
     clerk_secret_key: str = ""
     # Explicit Clerk JWT issuer override (exact match). If unset, any issuer

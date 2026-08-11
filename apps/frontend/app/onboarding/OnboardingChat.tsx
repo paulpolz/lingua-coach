@@ -4,7 +4,8 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { syncUser } from "@/lib/api";
+import { syncUser, ApiError } from "@/lib/api";
+import { reportClientError } from "@/lib/reportError";
 import { waitForToken } from "@/lib/wait-for-token";
 import {
   acceptOnboarding,
@@ -257,6 +258,13 @@ export default function OnboardingChat() {
             : "Could not reach the server. Is the backend running?"
         );
         setLoadState("error");
+        if (!(error instanceof ApiError)) {
+          reportClientError({
+            code: "ONBOARDING_LOAD_ERROR",
+            message: error instanceof Error ? error.message : "Onboarding load failed",
+            surface: "onboarding",
+          });
+        }
       }
     }
 

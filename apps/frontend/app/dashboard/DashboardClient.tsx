@@ -17,6 +17,7 @@ import {
   type Lesson,
 } from "@/lib/lessons";
 import { getProgress, type Progress } from "@/lib/progress";
+import { reportClientError } from "@/lib/reportError";
 import PaceSummary from "./PaceSummary";
 
 // Poll cadence + timeout guard for lesson generation (frontend.md "Do not
@@ -131,10 +132,16 @@ export default function DashboardClient() {
         }
       } catch (error) {
         if (cancelled) return;
+        const message =
+          error instanceof Error ? error.message : "Could not reach the server. Is the backend running?";
         setState({
           phase: "load-error",
-          message:
-            error instanceof Error ? error.message : "Could not reach the server. Is the backend running?",
+          message,
+        });
+        reportClientError({
+          code: "DASHBOARD_LOAD_ERROR",
+          message,
+          surface: "dashboard",
         });
       }
     }

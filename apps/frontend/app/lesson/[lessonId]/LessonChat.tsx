@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createChatSession, getChatMessages, streamChatMessage, type ChatMessage } from "@/lib/chat";
+import { reportClientError } from "@/lib/reportError";
 import {
   describeFinishResult,
   finishLesson,
@@ -138,6 +139,12 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
             : "Could not reach the server. Is the backend running?"
         );
         setLoadState("error");
+        reportClientError({
+          code: "LESSON_CHAT_LOAD_ERROR",
+          message: error instanceof Error ? error.message : "Lesson chat load failed",
+          surface: "lesson",
+          meta: { lesson_id: lessonId },
+        });
       }
     }
 
@@ -241,6 +248,12 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
         await stopLesson(token, lessonId);
       } catch (error) {
         console.error("Failed to stop lesson session (non-blocking):", error);
+        reportClientError({
+          code: "LESSON_STOP_ERROR",
+          message: error instanceof Error ? error.message : "Failed to stop lesson",
+          surface: "lesson",
+          meta: { lesson_id: lessonId },
+        });
       }
     })();
     router.push("/dashboard");

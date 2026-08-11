@@ -1,6 +1,11 @@
 # Local dev stack. Requires env files before first run:
 #   cp apps/backend/.env.example apps/backend/.env
 #   cp apps/frontend/.env.example apps/frontend/.env.local
+#
+# App only:
+#   docker compose up
+# App + monitoring (Prometheus / Loki / Grafana):
+#   docker compose --profile monitoring up
 services:
   postgres:
     image: postgres:16-alpine
@@ -59,8 +64,64 @@ services:
     depends_on:
       - backend
 
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.55.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    depends_on:
+      - backend
+
+  loki:
+    profiles: [monitoring]
+    image: grafana/loki:3.0.0
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infra/monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    profiles: [monitoring]
+    image: grafana/promtail:3.0.0
+    volumes:
+      - ./infra/monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:11.0.0
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+
 volumes:
   lingua_pg_data:
   backend_venv:
   frontend_node_modules:
   frontend_next:
+  prometheus_data:
+  loki_data:
+  grafana_data:

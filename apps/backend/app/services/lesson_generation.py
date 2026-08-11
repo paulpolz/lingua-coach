@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import record_llm_retry
 from app.db.session import AsyncSessionLocal
 from app.models.enums import JobStatus, LearningPlanStatus, LessonStatus
 from app.models.job import Job
@@ -72,9 +73,19 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
 
         try:
             prompt = await _build_generation_prompt(db, user_id=user_id, lesson_number=lesson.lesson_number)
-            curriculum = await _generate_curriculum(prompt)
+            curriculum = await _generate_curriculum(prompt, job_id=job_id, lesson_id=lesson_id)
         except Exception as exc:  # noqa: BLE001 - normalize any failure into a failed job/lesson
-            logger.warning("lesson_generation job=%s failed: %s", job_id, exc)
+            logger.warning(
+                "lesson_generation failed: %s",
+                exc,
+                extra={
+                    "event": "lesson_generation_failed",
+                    "job_id": str(job_id),
+                    "lesson_id": str(lesson_id),
+                    "user_id": str(user_id),
+                    "request_id": str(job_id),
+                },
+            )
             job.status = JobStatus.failed
             job.error = str(exc)
             lesson.status = LessonStatus.failed
@@ -191,8 +202,15 @@ def _build_repair_prompt(original_prompt: str, invalid_raw: str, error: Exceptio
     )
 
 
-async def _generate_curriculum(prompt: str) -> LessonCurriculum:
+async def _generate_curriculum(
+    prompt: str, *, job_id: uuid.UUID | None = None, lesson_id: uuid.UUID | None = None
+) -> LessonCurriculum:
     system_instruction = f"{get_system_instruction('lesson')}\n\n{LESSON_GENERATION_CONTRACT}"
+    correlation = {
+        "job_id": str(job_id) if job_id else None,
+        "lesson_id": str(lesson_id) if lesson_id else None,
+        "request_id": str(job_id) if job_id else None,
+    }
 
     # Note: `response_schema=LessonCurriculum` (Gemini's structured-output
     # mode) was tried here but the live API rejects the schema Gemini's own
@@ -210,6 +228,11 @@ async def _generate_curriculum(prompt: str) -> LessonCurriculum:
         return _parse_curriculum(raw)
     except (json.JSONDecodeError, ValidationError) as exc:
         # ai-api.md: exactly one repair retry on invalid JSON/schema, then fail.
+        record_llm_retry(call_type="lesson_json", reason="schema_repair")
+        logger.info(
+            "lesson_curriculum_schema_repair",
+            extra={"event": "llm_retry", "reason": "schema_repair", **correlation},
+        )
         repair_prompt = _build_repair_prompt(prompt, raw, exc)
         raw_retry = await gemini.generate_json(
             system_instruction=system_instruction,

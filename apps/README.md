@@ -30,7 +30,30 @@ This starts Postgres, the FastAPI backend (port 8000), and the Next.js frontend 
 Verify:
 
 - Health: `GET http://localhost:8000/api/v1/health`
+- Metrics: `GET http://localhost:8000/metrics`
 - App: `http://localhost:3000`
+
+### Local monitoring (optional profile)
+
+Prometheus, Loki, Promtail, and Grafana are opt-in via Compose profile:
+
+```bash
+docker compose --profile monitoring up --build
+```
+
+| Service | URL |
+|---------|-----|
+| Grafana | http://localhost:3001 (anonymous Viewer, or `admin` / `admin`) |
+| Prometheus | http://localhost:9090 |
+| Loki | http://localhost:3100 |
+
+Pre-provisioned dashboards: **API Overview**, **LLM & Token Burn**, **Errors & Correlation**. To debug a request, copy `X-Request-ID` from the browser Network tab and filter logs with:
+
+```
+{service="backend"} | json | request_id="<uuid>"
+```
+
+See [`docs/mvp/monitoring_20260811/monitoring_20260811.md`](../docs/mvp/monitoring_20260811/monitoring_20260811.md) for the prod Railway log runbook.
 
 To run migrations manually (e.g. after pulling new migration files without restarting the stack):
 

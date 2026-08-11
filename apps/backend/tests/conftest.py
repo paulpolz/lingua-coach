@@ -165,7 +165,7 @@ def mock_gemini_error(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
         from app.services.gemini import GeminiError
 
         async def _fake_stream_chat(*, system_instruction: str, history: list, **_kw):
-            raise GeminiError(message)
+            raise GeminiError(message, code="LLM_TIMEOUT", error_type="timeout")
             yield  # pragma: no cover - makes this an async generator
 
         monkeypatch.setattr("app.api.v1.chat.stream_chat", _fake_stream_chat)
@@ -204,7 +204,7 @@ def mock_generate_json_error(monkeypatch: pytest.MonkeyPatch) -> Callable[[str],
         from app.services.gemini import GeminiError
 
         async def _fake_generate_json(*, system_instruction: str, history: list, **_kw) -> str:
-            raise GeminiError(message)
+            raise GeminiError(message, code="LLM_TIMEOUT", error_type="timeout")
 
         monkeypatch.setattr("app.services.gemini.generate_json", _fake_generate_json)
 

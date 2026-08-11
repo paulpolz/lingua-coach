@@ -7,11 +7,15 @@ multi-provider abstraction in MVP.
 On timeout/failure, every public function raises `GeminiError`; the API layer
 maps this to SSE `error` events (chat) or HTTP `502` (lesson generation,
 Phase 3).
+
+Also records Prometheus LLM metrics and structured `llm_call` logs (tokens,
+latency, status) when available from Gemini `usage_metadata`.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Literal
@@ -21,10 +25,23 @@ from google.genai import types
 from google.genai.errors import APIError as GenAIAPIError
 
 from app.config import settings
+from app.core.logging import get_logger
+from app.core.metrics import record_llm_call
+
+logger = get_logger(__name__)
 
 
 class GeminiError(RuntimeError):
-    """Raised on any Gemini request failure or timeout."""
+    """Raised on any Gemini request failure or timeout.
+
+    `code` is a machine-readable SSE/API error code (e.g. `LLM_TIMEOUT`).
+    `error_type` is a short metrics label (`timeout`, `api_error`, …).
+    """
+
+    def __init__(self, message: str, *, code: str = "LLM_ERROR", error_type: str = "error") -> None:
+        super().__init__(message)
+        self.code = code
+        self.error_type = error_type
 
 
 @dataclass(frozen=True)
@@ -41,12 +58,25 @@ class ChatTurn:
 
 _client: genai.Client | None = None
 
+_CONTEXT_LIMIT_MARKERS = (
+    "context length",
+    "maximum context",
+    "token limit",
+    "too many tokens",
+    "context_length",
+    "RESOURCE_EXHAUSTED",
+)
+
 
 def _get_client() -> genai.Client:
     global _client
     if _client is None:
         if not settings.gemini_api_key:
-            raise GeminiError("GEMINI_API_KEY is not configured")
+            raise GeminiError(
+                "GEMINI_API_KEY is not configured",
+                code="LLM_CONFIG_ERROR",
+                error_type="config_error",
+            )
         _client = genai.Client(api_key=settings.gemini_api_key)
     return _client
 
@@ -56,6 +86,60 @@ def _to_contents(history: list[ChatTurn]) -> list[types.Content]:
         types.Content(role=turn.role, parts=[types.Part.from_text(text=turn.text)])
         for turn in history
     ]
+
+
+def _classify_genai_error(exc: GenAIAPIError) -> tuple[str, str]:
+    message = str(exc)
+    lowered = message.lower()
+    if any(marker.lower() in lowered or marker in message for marker in _CONTEXT_LIMIT_MARKERS):
+        return "LLM_CONTEXT_LIMIT", "context_limit"
+    return "LLM_API_ERROR", "api_error"
+
+
+def _usage_tokens(usage: object | None) -> tuple[int, int]:
+    if usage is None:
+        return 0, 0
+    input_tokens = int(getattr(usage, "prompt_token_count", None) or 0)
+    output_tokens = int(getattr(usage, "candidates_token_count", None) or 0)
+    if not output_tokens:
+        total = int(getattr(usage, "total_token_count", None) or 0)
+        if total and input_tokens:
+            output_tokens = max(total - input_tokens, 0)
+    return input_tokens, output_tokens
+
+
+def _emit_llm_observability(
+    *,
+    call_type: str,
+    model: str,
+    status: str,
+    duration_seconds: float,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    error_type: str | None = None,
+) -> None:
+    record_llm_call(
+        call_type=call_type,
+        model=model,
+        status=status,
+        duration_seconds=duration_seconds,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+    logger.info(
+        "llm_call",
+        extra={
+            "event": "llm_call",
+            "provider": "gemini",
+            "call_type": call_type,
+            "model": model,
+            "status": status,
+            "latency_ms": round(duration_seconds * 1000, 2),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "error_type": error_type,
+        },
+    )
 
 
 async def stream_chat(
@@ -74,6 +158,10 @@ async def stream_chat(
     client = _get_client()
     model_id = model or settings.gemini_model_chat
     timeout = timeout_seconds if timeout_seconds is not None else settings.gemini_timeout_seconds
+    call_type = "chat"
+    started = time.perf_counter()
+    input_tokens = 0
+    output_tokens = 0
 
     try:
         async with asyncio.timeout(timeout):
@@ -83,17 +171,62 @@ async def stream_chat(
                 config=types.GenerateContentConfig(system_instruction=system_instruction),
             )
             async for chunk in stream:
+                usage = getattr(chunk, "usage_metadata", None)
+                if usage is not None:
+                    input_tokens, output_tokens = _usage_tokens(usage)
                 text = getattr(chunk, "text", None)
                 if text:
                     yield text
     except TimeoutError as exc:
-        raise GeminiError(f"Gemini request timed out after {timeout}s") from exc
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type="timeout",
+        )
+        raise GeminiError(
+            f"Gemini request timed out after {timeout}s",
+            code="LLM_TIMEOUT",
+            error_type="timeout",
+        ) from exc
     except GenAIAPIError as exc:
-        raise GeminiError(f"Gemini API error: {exc}") from exc
-    except GeminiError:
+        code, error_type = _classify_genai_error(exc)
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type=error_type,
+        )
+        raise GeminiError(f"Gemini API error: {exc}", code=code, error_type=error_type) from exc
+    except GeminiError as exc:
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type=exc.error_type,
+        )
         raise
     except Exception as exc:  # noqa: BLE001 - normalize all failures to GeminiError
-        raise GeminiError(f"Gemini request failed: {exc}") from exc
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type="error",
+        )
+        raise GeminiError(f"Gemini request failed: {exc}", code="LLM_ERROR", error_type="error") from exc
+
+    _emit_llm_observability(
+        call_type=call_type,
+        model=model_id,
+        status="ok",
+        duration_seconds=time.perf_counter() - started,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 async def generate_json(
@@ -119,6 +252,8 @@ async def generate_json(
     client = _get_client()
     model_id = model or settings.gemini_model_lesson
     timeout = timeout_seconds if timeout_seconds is not None else settings.gemini_timeout_seconds
+    call_type = "lesson_json"
+    started = time.perf_counter()
 
     config_kwargs: dict = {
         "system_instruction": system_instruction,
@@ -135,15 +270,71 @@ async def generate_json(
                 config=types.GenerateContentConfig(**config_kwargs),
             )
     except TimeoutError as exc:
-        raise GeminiError(f"Gemini request timed out after {timeout}s") from exc
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type="timeout",
+        )
+        raise GeminiError(
+            f"Gemini request timed out after {timeout}s",
+            code="LLM_TIMEOUT",
+            error_type="timeout",
+        ) from exc
     except GenAIAPIError as exc:
-        raise GeminiError(f"Gemini API error: {exc}") from exc
-    except GeminiError:
+        code, error_type = _classify_genai_error(exc)
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type=error_type,
+        )
+        raise GeminiError(f"Gemini API error: {exc}", code=code, error_type=error_type) from exc
+    except GeminiError as exc:
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type=exc.error_type,
+        )
         raise
     except Exception as exc:  # noqa: BLE001 - normalize all failures to GeminiError
-        raise GeminiError(f"Gemini request failed: {exc}") from exc
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type="error",
+        )
+        raise GeminiError(f"Gemini request failed: {exc}", code="LLM_ERROR", error_type="error") from exc
 
+    input_tokens, output_tokens = _usage_tokens(getattr(response, "usage_metadata", None))
     text = getattr(response, "text", None)
     if not text:
-        raise GeminiError("Gemini returned an empty response for a JSON-mode request")
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model_id,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            error_type="empty_response",
+        )
+        raise GeminiError(
+            "Gemini returned an empty response for a JSON-mode request",
+            code="LLM_EMPTY_RESPONSE",
+            error_type="empty_response",
+        )
+
+    _emit_llm_observability(
+        call_type=call_type,
+        model=model_id,
+        status="ok",
+        duration_seconds=time.perf_counter() - started,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
     return text

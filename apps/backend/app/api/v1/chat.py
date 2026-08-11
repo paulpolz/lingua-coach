@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.config import settings
 from app.core.errors import APIError
+from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models.chat import ChatMessage, ChatSession
 from app.models.enums import ChatMessageRole, ChatSessionType, LearningGoalStatus, LessonStatus
@@ -49,6 +50,8 @@ from app.services.skills import (
     ONBOARDING_EXTRACTION_CONTRACT,
     get_system_instruction,
 )
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -474,7 +477,7 @@ async def _onboarding_event_stream(
             full_text_parts.append(chunk)
             yield _sse("token", {"text": chunk})
     except GeminiError as exc:
-        yield _sse("error", {"code": "LLM_TIMEOUT", "message": str(exc)})
+        yield _sse("error", {"code": exc.code, "message": str(exc)})
         return
 
     raw_text = "".join(full_text_parts)
@@ -491,6 +494,16 @@ async def _onboarding_event_stream(
                 goal_summary=learner_profile.goal.outcome, level=learner_profile.level.self_assessed
             )
         except Exception:  # noqa: BLE001 - never fail the chat turn on a persistence hiccup
+            logger.warning(
+                "onboarding_profile_persist_failed",
+                exc_info=True,
+                extra={
+                    "event": "db_persist_failed",
+                    "surface": "onboarding",
+                    "user_id": str(user.id),
+                    "session_id": str(session.id),
+                },
+            )
             await db.rollback()
 
     assistant_message = ChatMessage(
@@ -543,7 +556,7 @@ async def _lesson_event_stream(
             full_text_parts.append(chunk)
             yield _sse("token", {"text": chunk})
     except GeminiError as exc:
-        yield _sse("error", {"code": "LLM_TIMEOUT", "message": str(exc)})
+        yield _sse("error", {"code": exc.code, "message": str(exc)})
         return
 
     raw_text = "".join(full_text_parts)
@@ -563,6 +576,17 @@ async def _lesson_event_stream(
             await _apply_lesson_plan_updates(db, user=user, plan_updates=plan_updates)
         await db.commit()
     except Exception:  # noqa: BLE001 - never fail the chat turn on a persistence hiccup
+        logger.warning(
+            "lesson_metadata_persist_failed",
+            exc_info=True,
+            extra={
+                "event": "db_persist_failed",
+                "surface": "lesson",
+                "user_id": str(user.id),
+                "session_id": str(session.id),
+                "lesson_id": str(lesson.id),
+            },
+        )
         await db.rollback()
 
     assistant_message = ChatMessage(
