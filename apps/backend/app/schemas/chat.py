@@ -62,16 +62,37 @@ class PlanUpdates(BaseModel):
     grammar_mastery: dict[str, int] | None = None
 
 
+class LessonPlanTask(BaseModel):
+    """One item on the pinned lesson checklist (`json:lesson_plan`)."""
+
+    id: str
+    label: str
+    minutes: int = Field(ge=0)
+
+
+class LessonPlan(BaseModel):
+    tasks: list[LessonPlanTask] = Field(min_length=1)
+
+
+class TaskUpdate(BaseModel):
+    """Coach-confirmed completions for the pinned checklist (`json:task_update`)."""
+
+    completed_task_ids: list[str] = Field(default_factory=list)
+
+
 class ChatDoneMetadata(BaseModel):
     """`done` event `metadata` — readiness §7 fields + coordination rule #3's
     `course_roadmap_draft` extension (onboarding-mode only; always `null` in
-    lesson mode)."""
+    lesson mode). `lesson_plan` / `task_update` are lesson-mode extras
+    (always `null` in onboarding)."""
 
     corrections: list[CorrectionItem] = Field(default_factory=list)
     tips: list[str] = Field(default_factory=list)
     plan_updates: PlanUpdates | None = None
     suggest_finish: bool = False
     course_roadmap_draft: CourseRoadmap | None = None
+    lesson_plan: LessonPlan | None = None
+    task_update: TaskUpdate | None = None
 
 
 class LessonMistakeItem(BaseModel):

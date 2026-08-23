@@ -52,6 +52,7 @@ from app.schemas.lesson import (
 from app.services.lesson_generation import run_lesson_generation_job
 from app.services.pace import compute_lesson_pace_status, compute_projected_completion
 from app.services.rate_limit import check_and_record
+from app.services.report_writer import update_reports_after_lesson
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
@@ -397,6 +398,15 @@ async def finish_lesson(
             )
         )
         schedule_updated = True
+
+    await update_reports_after_lesson(
+        db,
+        user=user,
+        lesson=lesson,
+        session_summary=session_summary,
+        profile=profile,
+        now=now,
+    )
 
     # Retention (database.md "Lesson data flow" / "Chat" retention rules):
     # delete this lesson's chat transcript + session on finish — mirrors

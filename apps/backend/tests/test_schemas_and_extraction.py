@@ -93,3 +93,33 @@ def test_strip_structured_blocks_keeps_markdown_removes_json() -> None:
     assert "json:course_roadmap" not in cleaned
     assert "Here is your roadmap in plain language." in cleaned
     assert "Does this work for you?" in cleaned
+
+
+def test_extract_lesson_plan_and_task_update() -> None:
+    text = (
+        "Today we will:\n\n"
+        + _fenced("lesson_plan", {"tasks": [{"id": "warmup", "label": "Warm-up", "minutes": 5}]})
+        + "\n"
+        + _fenced("task_update", {"completed_task_ids": ["warmup"]})
+    )
+    plan = extraction.extract_lesson_plan(text)
+    update = extraction.extract_task_update(text)
+    assert plan is not None
+    assert plan.tasks[0].id == "warmup"
+    assert plan.tasks[0].minutes == 5
+    assert update is not None
+    assert update.completed_task_ids == ["warmup"]
+    cleaned = extraction.strip_structured_blocks(text)
+    assert "json:lesson_plan" not in cleaned
+    assert "json:task_update" not in cleaned
+    assert "Today we will:" in cleaned
+
+
+def test_extract_report_ops_json_from_raw_object() -> None:
+    raw = (
+        '{"ops": [{"report_type": "progress", "op": "append_entry",'
+        ' "section_id": "update_log", "markdown": "x"}]}'
+    )
+    data = extraction.extract_report_ops_json(raw)
+    assert data is not None
+    assert data["ops"][0]["section_id"] == "update_log"

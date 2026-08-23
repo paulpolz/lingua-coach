@@ -36,6 +36,16 @@ from app.models.user import User
 from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LESSON_CURRICULUM
 
 
+@pytest.fixture(autouse=True)
+def _noop_report_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Finish tests should not hit Gemini for report patches (120s timeout)."""
+
+    async def _noop(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr("app.api.v1.lessons.update_reports_after_lesson", _noop)
+
+
 async def _sync_user(client: AsyncClient, as_principal, clerk_user_id: str) -> str:
     as_principal(clerk_user_id)
     resp = await client.post("/api/v1/auth/sync")

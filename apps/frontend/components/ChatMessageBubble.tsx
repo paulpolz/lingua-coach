@@ -1,6 +1,35 @@
 "use client";
 
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
+
 import type { ChatMessageMetadata } from "@/lib/chat";
+
+const chatMarkdownComponents: Components = {
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5 marker:text-tutor">{children}</ul>,
+  ol: ({ children }) => (
+    <ol className="my-2 list-decimal space-y-1 pl-5 marker:text-tutor">{children}</ol>
+  ),
+  li: ({ children }) => <li className="leading-snug">{children}</li>,
+  h1: ({ children }) => <h1 className="mb-2 text-base font-bold">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-2 text-sm font-bold">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-1.5 text-sm font-bold">{children}</h3>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-border pl-3 text-muted">{children}</blockquote>
+  ),
+  code: ({ children, className }) =>
+    className ? (
+      <code className="my-2 block overflow-x-auto rounded-md bg-surface-muted px-2 py-1 font-mono text-[0.85em]">
+        {children}
+      </code>
+    ) : (
+      <code className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
+    ),
+};
 
 /** A message rendered in a chat transcript — either persisted or still streaming in. */
 export interface DisplayMessage {
@@ -49,13 +78,19 @@ export default function ChatMessageBubble({ message }: { message: DisplayMessage
               <span className="ml-1">Coach is thinking…</span>
             </span>
           </p>
-        ) : (
+        ) : isUser ? (
           <p className="whitespace-pre-wrap">
             {message.content}
+          </p>
+        ) : (
+          <div className="chat-markdown">
+            <Markdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
+              {message.content}
+            </Markdown>
             {message.isStreaming ? (
               <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle opacity-70" />
             ) : null}
-          </p>
+          </div>
         )}
 
         {!isUser && metadata?.corrections && metadata.corrections.length > 0 ? (

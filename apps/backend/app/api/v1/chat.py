@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,13 +127,22 @@ async def _fetch_lesson_session(
 
 
 async def _get_or_create_onboarding_session(db: AsyncSession, user: User) -> ChatSession:
-    """One onboarding session per user — enforced by partial unique index + upsert."""
+    """One onboarding session per user — enforced by partial unique index + upsert.
+
+    `index_where` must be the same SQL as the unique index predicate
+    (`type = 'onboarding'`). A bound enum (`type = $1::chat_session_type`)
+    does not match, and Postgres raises InvalidColumnReferenceError.
+    """
+    existing = await _fetch_onboarding_session(db, user.id)
+    if existing is not None:
+        return existing
+
     stmt = (
         insert(ChatSession)
         .values(user_id=user.id, type=ChatSessionType.onboarding, lesson_id=None)
         .on_conflict_do_nothing(
             index_elements=["user_id"],
-            index_where=(ChatSession.type == ChatSessionType.onboarding),
+            index_where=text("type = 'onboarding'"),
         )
         .returning(ChatSession.id)
     )
@@ -156,6 +165,10 @@ async def _get_or_create_lesson_session(
     db: AsyncSession, user: User, lesson: Lesson
 ) -> ChatSession:
     """One lesson chat session per (user, lesson) — enforced by partial unique index + upsert."""
+    existing = await _fetch_lesson_session(db, user.id, lesson.id)
+    if existing is not None:
+        return existing
+
     stmt = (
         insert(ChatSession)
         .values(
@@ -165,9 +178,7 @@ async def _get_or_create_lesson_session(
         )
         .on_conflict_do_nothing(
             index_elements=["user_id", "lesson_id"],
-            index_where=(
-                (ChatSession.type == ChatSessionType.lesson) & (ChatSession.lesson_id.is_not(None))
-            ),
+            index_where=text("type = 'lesson' AND lesson_id IS NOT NULL"),
         )
         .returning(ChatSession.id)
     )
@@ -506,29 +517,24 @@ async def _onboarding_event_stream(
             )
             await db.rollback()
 
-    assistant_message = ChatMessage(
-        session_id=session.id,
-        role=ChatMessageRole.assistant,
-        content=clean_text,
-        metadata_json={
-            "corrections": [],
-            "tips": [],
-            "plan_updates": plan_updates.model_dump() if plan_updates else None,
-            "suggest_finish": False,
-            "course_roadmap_draft": roadmap_draft.model_dump() if roadmap_draft else None,
-        },
-    )
-    db.add(assistant_message)
-    await db.commit()
-    await db.refresh(assistant_message)
-
     done_metadata = ChatDoneMetadata(
         corrections=[],
         tips=[],
         plan_updates=plan_updates,
         suggest_finish=False,
         course_roadmap_draft=roadmap_draft,
+        lesson_plan=None,
+        task_update=None,
     )
+    assistant_message = ChatMessage(
+        session_id=session.id,
+        role=ChatMessageRole.assistant,
+        content=clean_text,
+        metadata_json=json.loads(done_metadata.model_dump_json()),
+    )
+    db.add(assistant_message)
+    await db.commit()
+    await db.refresh(assistant_message)
     yield _sse(
         "done",
         {
@@ -568,6 +574,8 @@ async def _lesson_event_stream(
     plan_updates: PlanUpdates | None = turn.plan_updates if turn else None
     suggest_finish: bool = turn.suggest_finish if turn else False
     mistakes: list[LessonMistakeItem] = turn.mistakes if turn else []
+    lesson_plan = extraction.extract_lesson_plan(raw_text)
+    task_update = extraction.extract_task_update(raw_text)
 
     try:
         for item in mistakes:
@@ -589,31 +597,24 @@ async def _lesson_event_stream(
         )
         await db.rollback()
 
-    assistant_message = ChatMessage(
-        session_id=session.id,
-        role=ChatMessageRole.assistant,
-        content=clean_text,
-        metadata_json={
-            "corrections": [c.model_dump() for c in corrections],
-            "tips": tips,
-            "plan_updates": plan_updates.model_dump() if plan_updates else None,
-            "suggest_finish": suggest_finish,
-            # Onboarding-only field (course roadmap draft) — always present
-            # as null in lesson mode to keep the metadata schema uniform.
-            "course_roadmap_draft": None,
-        },
-    )
-    db.add(assistant_message)
-    await db.commit()
-    await db.refresh(assistant_message)
-
     done_metadata = ChatDoneMetadata(
         corrections=corrections,
         tips=tips,
         plan_updates=plan_updates,
         suggest_finish=suggest_finish,
         course_roadmap_draft=None,
+        lesson_plan=lesson_plan,
+        task_update=task_update,
     )
+    assistant_message = ChatMessage(
+        session_id=session.id,
+        role=ChatMessageRole.assistant,
+        content=clean_text,
+        metadata_json=json.loads(done_metadata.model_dump_json()),
+    )
+    db.add(assistant_message)
+    await db.commit()
+    await db.refresh(assistant_message)
     yield _sse(
         "done",
         {

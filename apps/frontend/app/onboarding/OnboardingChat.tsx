@@ -4,13 +4,9 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { syncUser, ApiError } from "@/lib/api";
-import { reportClientError } from "@/lib/reportError";
 import { waitForToken } from "@/lib/wait-for-token";
 import {
   acceptOnboarding,
-  createChatSession,
-  getChatMessages,
   streamChatMessage,
   type ChatMessage,
   type CourseRoadmap,
@@ -20,14 +16,16 @@ import ChatMessageBubble, { type DisplayMessage } from "@/components/ChatMessage
 import Button from "@/components/ui/Button";
 import PlanSummaryCard from "./PlanSummaryCard";
 
-const SESSION_STORAGE_KEY = "lingua-coach:onboarding-session-id";
 const START_TRIGGER = "Hello";
 const CHANGE_PLAN_PROMPT =
   "What would you like to change in your plan? You can adjust milestones, pace, topics, or weekly balance.";
 
-type LoadState = "loading" | "ready" | "error";
-
 type PlanStatus = "active" | "superseded";
+
+interface OnboardingChatProps {
+  initialSessionId: string;
+  initialMessages: ChatMessage[];
+}
 
 type ChatTimelineItem =
   | ({ kind: "message"; isPlanStream?: boolean } & DisplayMessage)
@@ -82,33 +80,6 @@ function PlanGeneratingPlaceholder() {
       </div>
     </div>
   );
-}
-
-function clearStoredSessionId(): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
-  } catch {
-    // sessionStorage unavailable — nothing to clear.
-  }
-}
-
-function readStoredSessionId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredSessionId(id: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, id);
-  } catch {
-    // sessionStorage unavailable — in-memory state still works.
-  }
 }
 
 function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[] {
@@ -168,14 +139,17 @@ function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[
   return items;
 }
 
-export default function OnboardingChat() {
+export default function OnboardingChat({
+  initialSessionId,
+  initialMessages,
+}: OnboardingChatProps) {
   const { getToken } = useAuth();
   const router = useRouter();
 
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [timeline, setTimeline] = useState<ChatTimelineItem[]>([]);
+  const sessionId = initialSessionId;
+  const [timeline, setTimeline] = useState<ChatTimelineItem[]>(() =>
+    buildTimelineFromTranscript(initialMessages)
+  );
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -185,7 +159,7 @@ export default function OnboardingChat() {
 
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [hasStarted, setHasStarted] = useState(() => initialMessages.length > 0);
   const [justUpdated, setJustUpdated] = useState(false);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -210,7 +184,7 @@ export default function OnboardingChat() {
     activePlan && timeline.some((item) => isStreamingPlanMessage(item))
   );
 
-  const showIntro = loadState === "ready" && visibleMessageCount === 0 && !hasStarted && !isSending;
+  const showIntro = visibleMessageCount === 0 && !hasStarted && !isSending;
 
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -231,64 +205,6 @@ export default function OnboardingChat() {
     prevPlanSourceIdRef.current = sourceId;
     setJustUpdated(false);
   }, [activePlan?.sourceMessageId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function init() {
-      setLoadState("loading");
-      setLoadError(null);
-      try {
-        const token = await waitForToken(getToken);
-        await syncUser(token);
-
-        let id = readStoredSessionId();
-        if (!id) {
-          const session = await createChatSession(token, "onboarding");
-          id = session.id;
-          writeStoredSessionId(id);
-        }
-        if (cancelled) return;
-        setSessionId(id);
-
-        const transcript = await getChatMessages(token, id);
-        if (cancelled) return;
-        const built = buildTimelineFromTranscript(transcript);
-        setTimeline(built);
-        if (transcript.length > 0) {
-          setHasStarted(true);
-        }
-        setLoadState("ready");
-      } catch (error) {
-        if (cancelled) return;
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Could not reach the server. Is the backend running?"
-        );
-        setLoadState("error");
-        if (!(error instanceof ApiError)) {
-          reportClientError({
-            code: "ONBOARDING_LOAD_ERROR",
-            message: error instanceof Error ? error.message : "Onboarding load failed",
-            surface: "onboarding",
-          });
-        }
-      }
-    }
-
-    init();
-    return () => {
-      cancelled = true;
-    };
-  }, [getToken]);
-
-  const retryInit = useCallback(() => {
-    clearStoredSessionId();
-    if (typeof window !== "undefined") {
-      window.location.reload();
-    }
-  }, []);
 
   const sendMessage = useCallback(
     async (content: string, options?: { silent?: boolean }) => {
@@ -322,7 +238,7 @@ export default function OnboardingChat() {
         },
       ]);
 
-      const token = await getToken();
+      const token = await waitForToken(getToken);
 
       await streamChatMessage(token, sessionId, content, {
         onToken: (text) => {
@@ -415,7 +331,7 @@ export default function OnboardingChat() {
     setIsAccepting(true);
     setAcceptError(null);
     try {
-      const token = await getToken();
+      const token = await waitForToken(getToken);
       const result = await acceptOnboarding(token, sessionId, activePlan.roadmap);
       if (result.onboarding_complete) {
         router.push("/dashboard");
@@ -496,28 +412,6 @@ export default function OnboardingChat() {
       onRetry={handleRetrySend}
     />
   );
-
-  if (loadState === "loading") {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-tutor" />
-        <p className="text-sm text-muted">Starting your onboarding chat…</p>
-      </div>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="max-w-md text-sm text-danger">
-          Could not load onboarding chat. Is the backend running? ({loadError})
-        </p>
-        <Button variant="secondary" onClick={retryInit}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
 
   if (activePlan) {
     return (

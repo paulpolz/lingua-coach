@@ -142,6 +142,8 @@ async def test_post_message_streams_token_and_done_events(
         "plan_updates",
         "suggest_finish",
         "course_roadmap_draft",
+        "lesson_plan",
+        "task_update",
     }
     assert done_data["metadata"]["course_roadmap_draft"] is None
     assert done_data["metadata"]["suggest_finish"] is False

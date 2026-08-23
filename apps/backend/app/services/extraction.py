@@ -13,13 +13,16 @@ import re
 
 from pydantic import ValidationError
 
-from app.schemas.chat import LessonTurnExtraction
+from app.schemas.chat import LessonPlan, LessonTurnExtraction, TaskUpdate
 from app.schemas.learner_profile import LearnerProfile
 from app.schemas.roadmap import CourseRoadmap
 
 _LEARNER_PROFILE_BLOCK = re.compile(r"```json:learner_profile\s*\n(.*?)```", re.DOTALL)
 _COURSE_ROADMAP_BLOCK = re.compile(r"```json:course_roadmap\s*\n(.*?)```", re.DOTALL)
 _LESSON_TURN_BLOCK = re.compile(r"```json:lesson_turn\s*\n(.*?)```", re.DOTALL)
+_LESSON_PLAN_BLOCK = re.compile(r"```json:lesson_plan\s*\n(.*?)```", re.DOTALL)
+_TASK_UPDATE_BLOCK = re.compile(r"```json:task_update\s*\n(.*?)```", re.DOTALL)
+_REPORT_OPS_BLOCK = re.compile(r"```json:report_ops\s*\n(.*?)```", re.DOTALL)
 
 
 def extract_learner_profile(text: str) -> LearnerProfile | None:
@@ -65,6 +68,48 @@ def extract_lesson_turn(text: str) -> LessonTurnExtraction | None:
     return None
 
 
+def extract_lesson_plan(text: str) -> LessonPlan | None:
+    """Return the last valid `lesson_plan` block in `text`, if any."""
+    matches = _LESSON_PLAN_BLOCK.findall(text)
+    for raw in reversed(matches):
+        try:
+            data = json.loads(raw)
+            return LessonPlan.model_validate(data)
+        except (json.JSONDecodeError, ValidationError):
+            continue
+    return None
+
+
+def extract_task_update(text: str) -> TaskUpdate | None:
+    """Return the last valid `task_update` block in `text`, if any."""
+    matches = _TASK_UPDATE_BLOCK.findall(text)
+    for raw in reversed(matches):
+        try:
+            data = json.loads(raw)
+            return TaskUpdate.model_validate(data)
+        except (json.JSONDecodeError, ValidationError):
+            continue
+    return None
+
+
+def extract_report_ops_json(text: str) -> dict | None:
+    """Return the last parseable `report_ops` JSON object, or the whole text
+    if it is already a JSON object (JSON-mode completions)."""
+    matches = _REPORT_OPS_BLOCK.findall(text)
+    candidates = list(reversed(matches))
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        candidates.append(stripped)
+    for raw in candidates:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def strip_structured_blocks(text: str) -> str:
     """Remove the backend-only JSON marker blocks, keeping the conversational
     reply (including any markdown roadmap presentation) intact for display
@@ -72,4 +117,7 @@ def strip_structured_blocks(text: str) -> str:
     text = _LEARNER_PROFILE_BLOCK.sub("", text)
     text = _COURSE_ROADMAP_BLOCK.sub("", text)
     text = _LESSON_TURN_BLOCK.sub("", text)
+    text = _LESSON_PLAN_BLOCK.sub("", text)
+    text = _TASK_UPDATE_BLOCK.sub("", text)
+    text = _REPORT_OPS_BLOCK.sub("", text)
     return text.strip()

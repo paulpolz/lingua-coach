@@ -56,7 +56,12 @@ export async function apiFetch(
     headers.set("X-Request-ID", createRequestId());
   }
 
-  return fetch(`${getApiBaseUrl()}${path}`, { ...init, headers });
+  return fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+    // Authenticated GETs must not be cached across users by the Next.js RSC fetch cache.
+    cache: "no-store",
+  });
 }
 
 /**

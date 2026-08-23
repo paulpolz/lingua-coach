@@ -39,3 +39,10 @@ class ChatSessionType(str, enum.Enum):
 class ChatMessageRole(str, enum.Enum):
     user = "user"
     assistant = "assistant"
+
+
+class UserReportType(str, enum.Enum):
+    progress = "progress"
+    errors_log = "errors_log"
+    roadmap = "roadmap"
+    four_week_plan = "four_week_plan"

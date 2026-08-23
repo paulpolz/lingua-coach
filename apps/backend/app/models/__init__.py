@@ -10,6 +10,7 @@ from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.models.progress_event import ProgressEvent
 from app.models.user import User
+from app.models.user_report import UserReport
 
 __all__ = [
     "Base",
@@ -23,4 +24,5 @@ __all__ = [
     "Mistake",
     "ChatSession",
     "ChatMessage",
+    "UserReport",
 ]

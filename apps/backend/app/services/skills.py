@@ -70,6 +70,11 @@ def clear_cache() -> None:
     _read_skill_file.cache_clear()
 
 
+def load_skill(name: str) -> str:
+    """Read a single skill markdown file by stem (e.g. `report_writer`)."""
+    return _read_skill_file(str(_skills_dir()), name)
+
+
 # --- Backend wiring instructions (not pedagogy) -----------------------------
 #
 # The model output is free-form conversational text. To hand structured
@@ -173,9 +178,60 @@ Rules for this block:
  occurred this turn.
 
 Always include this block, exactly once, even when every field is\
- empty/null/false — this is how the backend knows the turn is complete.\
- Never mention this block to the user, and never ask them to read or edit\
- raw JSON — it is a backend integration detail.
+ empty/null/false — this is how the backend knows the turn is complete.
+
+6. On the first coaching turn of a lesson (and again only if you revise\
+ the agenda), also include a fenced block:
+
+```json:lesson_plan
+{ "tasks": [ { "id": "warmup", "label": "Warm-up retrieval", "minutes": 5 } ] }
+```
+
+ Align `id` with `curriculum.slots[].id` when possible. `minutes` is an\
+ approximate reference, not a countdown. Also write the same agenda in\
+ ordinary chat prose so the learner can see it in the transcript.
+
+7. When you confirm a task is finished, also include:
+
+```json:task_update
+{ "completed_task_ids": ["warmup"] }
+```
+
+ Only list tasks you are marking complete in *this* turn. Say so in prose\
+ as well. Do not wait until the end of the lesson to emit updates.
+
+ Never mention these JSON blocks to the user, and never ask them to read\
+ or edit raw JSON — they are a backend integration detail.
+"""
+
+REPORT_PATCH_CONTRACT = """\
+---
+Backend output contract (follow exactly; this is not shown to the user):
+
+Respond with a single JSON object only — no markdown, no prose, no code\
+ fences, no surrounding text — matching exactly this shape:
+
+{
+  "ops": [
+    {
+      "report_type": "progress|errors_log|roadmap|four_week_plan",
+      "op": "append_entry|patch_section",
+      "section_id": "stable_section_id",
+      "markdown": "markdown for that section or new entry"
+    }
+  ]
+}
+
+Rules:
+
+1. Emit only ops for sections that actually changed this lesson.\
+ Use `append_entry` to add a dated log line or new day entry inside a\
+ section. Use `patch_section` to replace a whole named section (tables,\
+ latest-session findings, pattern tracker).
+2. `section_id` must match an existing `<!-- section:ID -->` marker in\
+ that report. Unknown ids are ignored.
+3. Do not rewrite an entire report. Keep deltas small.
+4. `ops` may be an empty array if nothing in the reports should change.
 """
 
 # Appended to the `exercise_tutor` skill text for the non-streaming lesson

@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { UserButton } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
 
 import { syncUser } from "@/lib/api";
+import AccountMenu from "@/components/AccountMenu";
 import DashboardClient from "./DashboardClient";
 
 export default async function DashboardPage() {
@@ -33,7 +33,7 @@ export default async function DashboardPage() {
           <h1 className="text-base font-semibold text-foreground">Dashboard</h1>
           <p className="text-xs text-muted">Your lesson loop lives here.</p>
         </div>
-        <UserButton />
+        <AccountMenu />
       </header>
       <DashboardClient />
     </div>

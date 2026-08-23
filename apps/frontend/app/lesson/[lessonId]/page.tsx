@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { UserButton } from "@clerk/nextjs";
+import AccountMenu from "@/components/AccountMenu";
 
 import { getLesson, type Lesson } from "@/lib/lessons";
 import LessonChat from "./LessonChat";
@@ -36,7 +36,7 @@ export default async function LessonPage({
       <div className="flex h-dvh flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <h1 className="text-base font-semibold">Lesson</h1>
-          <UserButton />
+          <AccountMenu />
         </header>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <p className="max-w-md text-sm text-red-600 dark:text-red-400">
@@ -58,7 +58,7 @@ export default async function LessonPage({
       <div className="flex h-dvh flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <h1 className="text-base font-semibold">Lesson {lesson.lesson_number}</h1>
-          <UserButton />
+          <AccountMenu />
         </header>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <p className="max-w-md text-sm text-zinc-500">
@@ -86,7 +86,7 @@ export default async function LessonPage({
           <h1 className="text-base font-semibold">Lesson {lesson.lesson_number}</h1>
           <p className="text-xs text-zinc-500">Chat with your tutor to practice this lesson.</p>
         </div>
-        <UserButton />
+        <AccountMenu />
       </header>
       <LessonChat lessonId={lessonId} lesson={lesson} />
     </div>

@@ -250,6 +250,8 @@ async def test_lesson_message_streams_and_persists_done_metadata(
         "plan_updates",
         "suggest_finish",
         "course_roadmap_draft",
+        "lesson_plan",
+        "task_update",
     }
 
     history_resp = await client.get(f"/api/v1/chat/sessions/{session_id}/messages")
@@ -313,6 +315,8 @@ async def test_lesson_message_missing_lesson_turn_block_defaults_gracefully(
         "plan_updates": None,
         "suggest_finish": False,
         "course_roadmap_draft": None,
+        "lesson_plan": None,
+        "task_update": None,
     }
 
 
@@ -564,3 +568,39 @@ async def test_lesson_message_plan_updates_partial_fields_only(
     assert profile.target_plan_days == 90  # unchanged
     assert profile.english_level == "B1"  # unchanged
     assert (profile.focus or {}).get("topic_priorities") == ["negotiation", "small talk"]
+
+
+async def test_lesson_message_exposes_lesson_plan_and_task_update_in_metadata(
+    client: AsyncClient, as_principal, mock_gemini, db_session
+) -> None:
+    user_id = await _sync_user(client, as_principal, "clerk_lesson_msg_checklist")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = await _create_active_lesson(db_session, user_id)
+    session_id = (
+        await client.post(
+            "/api/v1/chat/sessions", json={"type": "lesson", "lesson_id": str(lesson.id)}
+        )
+    ).json()["id"]
+
+    plan = {"tasks": [{"id": "warmup", "label": "Warm-up retrieval", "minutes": 5}]}
+    update = {"completed_task_ids": ["warmup"]}
+    reply = (
+        "Here's today's plan: warm-up for about 5 minutes.\n\n"
+        f"```json:lesson_plan\n{json.dumps(plan)}\n```\n"
+        + _lesson_turn_reply("Let's start.")
+        + f"\n```json:task_update\n{json.dumps(update)}\n```"
+    )
+    mock_gemini([reply])
+
+    async with client.stream(
+        "POST", f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "Hi"}
+    ) as resp:
+        raw = ""
+        async for chunk in resp.aiter_text():
+            raw += chunk
+
+    done_data = next(e[1] for e in _parse_sse(raw) if e[0] == "done")
+    assert "Here's today's plan" in done_data["content"]
+    assert "json:lesson_plan" not in done_data["content"]
+    assert done_data["metadata"]["lesson_plan"] == plan
+    assert done_data["metadata"]["task_update"] == update

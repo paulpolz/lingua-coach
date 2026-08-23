@@ -10,11 +10,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.chat import ChatMessage, ChatSession
-from app.models.enums import ChatMessageRole, ChatSessionType, LearningGoalStatus
+from app.models.enums import ChatMessageRole, ChatSessionType, LearningGoalStatus, UserReportType
 from app.models.learning_goal import LearningGoal
 from app.models.learning_plan import LearningPlan
 from app.models.profile import Profile
 from app.models.user import User
+from app.models.user_report import UserReport
 from tests.fixtures import VALID_COURSE_ROADMAP
 
 
@@ -130,3 +131,12 @@ async def test_accept_full_flow_persists_plan_and_unlocks_onboarding(
         await db_session.execute(select(ChatMessage).where(ChatMessage.session_id == uuid.UUID(session_id)))
     ).scalars().all()
     assert remaining_messages == []
+
+    reports = (
+        await db_session.execute(select(UserReport).where(UserReport.user_id == user.id))
+    ).scalars().all()
+    types = {row.report_type for row in reports}
+    assert types == {UserReportType.roadmap, UserReportType.four_week_plan}
+    roadmap_body = next(row.body for row in reports if row.report_type == UserReportType.roadmap)
+    assert "Roadmap" in roadmap_body
+    assert "<!-- section:milestones -->" in roadmap_body

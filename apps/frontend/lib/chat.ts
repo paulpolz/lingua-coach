@@ -158,6 +158,20 @@ export interface CourseRoadmap {
   current_milestone_index?: number;
 }
 
+export interface LessonPlanTask {
+  id: string;
+  label: string;
+  minutes: number;
+}
+
+export interface LessonPlan {
+  tasks: LessonPlanTask[];
+}
+
+export interface TaskUpdate {
+  completed_task_ids: string[];
+}
+
 /** Chat `done` metadata. Onboarding sessions additionally carry `course_roadmap_draft` (coordination rule #3). */
 export interface ChatMessageMetadata {
   corrections?: Correction[] | null;
@@ -165,6 +179,8 @@ export interface ChatMessageMetadata {
   plan_updates?: PlanUpdates | null;
   suggest_finish?: boolean | null;
   course_roadmap_draft?: CourseRoadmap | null;
+  lesson_plan?: LessonPlan | null;
+  task_update?: TaskUpdate | null;
 }
 
 // ---------------------------------------------------------------------------

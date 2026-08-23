@@ -64,6 +64,12 @@ Generate → Warm-up → Teach & drill → Main exercises → Goal-specific task
 
 **One in-flight lesson at a time.** If resuming, skip generation; continue from last checkpoint.
 
+### Lesson agenda (chat + pinned checklist)
+
+On the **first coaching turn**, present today's tasks in ordinary chat prose (label + approximate minutes) **and** emit the `json:lesson_plan` block from the backend contract. Align task ids with `curriculum.slots[].id` when you can.
+
+When a task is done, say so in chat **and** emit `json:task_update` with that task's id. Do not mention JSON fences to the learner. Keep `suggest_finish` for when every planned task and the exit criteria are done.
+
 ### Generation rules
 
 1. Pick **one grammar focus** and **one vocab theme** aligned to current milestone and today's slot in the weekly template.

@@ -4,7 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createChatSession, getChatMessages, streamChatMessage, type ChatMessage } from "@/lib/chat";
+import { createChatSession, getChatMessages, streamChatMessage, type ChatMessage, type ChatMessageMetadata, type LessonPlanTask } from "@/lib/chat";
 import { reportClientError } from "@/lib/reportError";
 import {
   describeFinishResult,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/lessons";
 import ChatComposer from "@/components/ChatComposer";
 import ChatMessageBubble, { type DisplayMessage } from "@/components/ChatMessageBubble";
+import LessonChecklist from "./LessonChecklist";
 
 interface LessonChatProps {
   lessonId: string;
@@ -35,6 +36,26 @@ function readStoredSessionId(lessonId: string): string | null {
   } catch {
     return null;
   }
+}
+
+function applyChecklistMetadata(
+  metadata: ChatMessageMetadata | null | undefined,
+  tasks: LessonPlanTask[],
+  completedIds: Set<string>
+): { tasks: LessonPlanTask[]; completedIds: Set<string> } {
+  let nextTasks = tasks;
+  const nextCompleted = new Set(completedIds);
+  if (metadata?.lesson_plan?.tasks?.length) {
+    nextTasks = metadata.lesson_plan.tasks;
+    const ids = new Set(nextTasks.map((task) => task.id));
+    for (const id of [...nextCompleted]) {
+      if (!ids.has(id)) nextCompleted.delete(id);
+    }
+  }
+  for (const id of metadata?.task_update?.completed_task_ids ?? []) {
+    nextCompleted.add(id);
+  }
+  return { tasks: nextTasks, completedIds: nextCompleted };
 }
 
 function writeStoredSessionId(lessonId: string, id: string): void {
@@ -72,6 +93,9 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
   // Latest `suggest_finish` — restored from transcript metadata on reload
   // when available (GET /messages now returns metadata).
   const [suggestFinish, setSuggestFinish] = useState(false);
+  const [checklistTasks, setChecklistTasks] = useState<LessonPlanTask[]>([]);
+  const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(() => new Set());
+  const completedTaskIdsRef = useRef<Set<string>>(new Set());
   const [isStopping, setIsStopping] = useState(false);
   const [focusCardOpen, setFocusCardOpen] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
@@ -123,6 +147,16 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
             metadata: message.metadata ?? null,
           }))
         );
+        let tasks: LessonPlanTask[] = [];
+        let completed = new Set<string>();
+        for (const message of transcript) {
+          const next = applyChecklistMetadata(message.metadata, tasks, completed);
+          tasks = next.tasks;
+          completed = next.completedIds;
+        }
+        setChecklistTasks(tasks);
+        completedTaskIdsRef.current = completed;
+        setCompletedTaskIds(completed);
         // Restore the latest suggest_finish signal from transcript metadata.
         for (let i = transcript.length - 1; i >= 0; i--) {
           if (transcript[i].metadata?.suggest_finish) {
@@ -210,6 +244,16 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
           // this on every reply (readiness §7), so we don't latch `true`
           // forever once it's said once.
           setSuggestFinish(Boolean(data.metadata?.suggest_finish));
+          setChecklistTasks((prevTasks) => {
+            const next = applyChecklistMetadata(
+              data.metadata,
+              prevTasks,
+              completedTaskIdsRef.current
+            );
+            completedTaskIdsRef.current = next.completedIds;
+            setCompletedTaskIds(next.completedIds);
+            return next.tasks;
+          });
           setIsSending(false);
         },
         onError: (error) => {
@@ -316,8 +360,16 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
         </div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
-            <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
+          <div className="relative flex-1 overflow-hidden">
+            {checklistTasks.length > 0 ? (
+              <div className="pointer-events-none absolute right-3 top-3 z-10">
+                <div className="pointer-events-auto">
+                  <LessonChecklist tasks={checklistTasks} completedIds={completedTaskIds} />
+                </div>
+              </div>
+            ) : null}
+            <div className="h-full overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
+              <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
               {messages.length === 0 ? (
                 <p className="mt-8 text-center text-sm text-muted">
                   {curriculum?.lesson_goal
@@ -331,6 +383,7 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
               ))}
 
               <div ref={scrollAnchorRef} />
+            </div>
             </div>
           </div>
 

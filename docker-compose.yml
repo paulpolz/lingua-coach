@@ -33,7 +33,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://lingua:lingua@postgres:5432/lingua_coach
       SKILLS_DIR: /skills
-      CORS_ORIGINS: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     volumes:
       - ./apps/backend:/app
       - backend_venv:/app/.venv

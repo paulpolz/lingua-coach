@@ -17,12 +17,14 @@ from app.config import settings
 from app.core.errors import APIError
 from app.db.session import get_db
 from app.models.chat import ChatMessage, ChatSession
-from app.models.enums import ChatSessionType, LearningGoalStatus, LearningPlanStatus
+from app.models.enums import ChatSessionType, LearningGoalStatus, LearningPlanStatus, UserReportType
 from app.models.learning_goal import LearningGoal
 from app.models.learning_plan import LearningPlan
 from app.models.profile import Profile
 from app.models.user import User
+from app.models.user_report import UserReport
 from app.schemas.onboarding import OnboardingAcceptRequest, OnboardingAcceptResponse
+from app.services.report_seed import seed_four_week_plan_markdown, seed_roadmap_markdown
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -92,6 +94,21 @@ async def accept_onboarding(
 
     user.onboarding_complete = True
     user.plan_accepted_at = now
+
+    db.add(
+        UserReport(
+            user_id=user.id,
+            report_type=UserReportType.roadmap,
+            body=seed_roadmap_markdown(roadmap),
+        )
+    )
+    db.add(
+        UserReport(
+            user_id=user.id,
+            report_type=UserReportType.four_week_plan,
+            body=seed_four_week_plan_markdown(roadmap),
+        )
+    )
 
     # Retention (database.md): delete the onboarding chat transcript + session
     # on accept — `profiles` / `learning_plans` are the long-term store now.
