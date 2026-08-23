@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { syncUser } from "@/lib/api";
 import { createChatSession, getChatMessages } from "@/lib/chat";
-import AccountMenu from "@/components/AccountMenu";
+import AppHeader from "@/components/AppHeader";
 import OnboardingChat from "./OnboardingChat";
 
 export default async function OnboardingPage() {
@@ -49,15 +49,10 @@ export default async function OnboardingPage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold text-foreground">Let&apos;s get you set up</h1>
-          <p className="text-xs text-muted">
-            Chat with your coach to set your goal, level, and plan.
-          </p>
-        </div>
-        <AccountMenu />
-      </header>
+      <AppHeader
+        title="Let's get you set up"
+        description="Chat with your coach to set your goal, level, and plan."
+      />
       <OnboardingChat initialSessionId={sessionId} initialMessages={initialMessages} />
     </div>
   );

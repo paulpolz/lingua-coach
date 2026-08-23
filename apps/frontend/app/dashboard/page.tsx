@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 import { syncUser } from "@/lib/api";
-import AccountMenu from "@/components/AccountMenu";
+import AppHeader from "@/components/AppHeader";
 import DashboardClient from "./DashboardClient";
 
 export default async function DashboardPage() {
@@ -28,13 +28,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold text-foreground">Dashboard</h1>
-          <p className="text-xs text-muted">Your lesson loop lives here.</p>
-        </div>
-        <AccountMenu />
-      </header>
+      <AppHeader title="Dashboard" description="Your lesson loop lives here." />
       <DashboardClient />
     </div>
   );

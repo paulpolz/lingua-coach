@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 
-import AccountMenu from "@/components/AccountMenu";
+import AppHeader from "@/components/AppHeader";
 import ReportBody from "../ReportBody";
 import type { ReportType } from "@/lib/reports";
 
@@ -42,10 +42,7 @@ export default async function ReportPage({
   if (!meta) {
     return (
       <div className="flex h-dvh flex-col">
-        <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h1 className="text-base font-semibold">Report</h1>
-          <AccountMenu />
-        </header>
+        <AppHeader title="Report" />
         <p className="p-6 text-sm text-zinc-500">Unknown report.</p>
       </div>
     );
@@ -53,13 +50,7 @@ export default async function ReportPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <div>
-          <h1 className="text-base font-semibold">{meta.title}</h1>
-          <p className="text-xs text-zinc-500">{meta.description}</p>
-        </div>
-        <AccountMenu />
-      </header>
+      <AppHeader title={meta.title} description={meta.description} />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
         <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
           <ReportBody reportType={meta.reportType} />

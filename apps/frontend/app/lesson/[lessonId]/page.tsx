@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import AccountMenu from "@/components/AccountMenu";
+import AppHeader from "@/components/AppHeader";
 
 import { getLesson, type Lesson } from "@/lib/lessons";
 import LessonChat from "./LessonChat";
@@ -34,10 +34,7 @@ export default async function LessonPage({
   if (errorMessage || !lesson) {
     return (
       <div className="flex h-dvh flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h1 className="text-base font-semibold">Lesson</h1>
-          <AccountMenu />
-        </header>
+        <AppHeader title="Lesson" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <p className="max-w-md text-sm text-red-600 dark:text-red-400">
             Couldn&apos;t load this lesson. ({errorMessage ?? "Not found"})
@@ -56,10 +53,7 @@ export default async function LessonPage({
   if (lesson.status !== "active") {
     return (
       <div className="flex h-dvh flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h1 className="text-base font-semibold">Lesson {lesson.lesson_number}</h1>
-          <AccountMenu />
-        </header>
+        <AppHeader title={`Lesson ${lesson.lesson_number}`} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <p className="max-w-md text-sm text-zinc-500">
             {lesson.status === "generating"
@@ -81,13 +75,10 @@ export default async function LessonPage({
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <div>
-          <h1 className="text-base font-semibold">Lesson {lesson.lesson_number}</h1>
-          <p className="text-xs text-zinc-500">Chat with your tutor to practice this lesson.</p>
-        </div>
-        <AccountMenu />
-      </header>
+      <AppHeader
+        title={`Lesson ${lesson.lesson_number}`}
+        description="Chat with your tutor to practice this lesson."
+      />
       <LessonChat lessonId={lessonId} lesson={lesson} />
     </div>
   );
