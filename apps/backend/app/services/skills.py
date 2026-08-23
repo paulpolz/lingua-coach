@@ -112,6 +112,13 @@ Only include this block once the interview is genuinely complete — do not\
 Keep the human-readable markdown roadmap presentation in your reply as\
  normal — the JSON block is in addition to it, not a replacement.
 
+ After a course_roadmap has already been presented in this conversation:\
+ any reply that incorporates the user's plan feedback (pace, milestones,\
+ topics, weekly balance, horizon, or similar) MUST include a full updated\
+ ```json:course_roadmap``` block — not prose-only. Ask a clarifying\
+ question without regenerating only when the request is too ambiguous to\
+ apply; once the user gives a concrete change, regenerate the full object.
+
 3. Never mention these JSON blocks to the user, and never ask the user to\
  read or edit raw JSON — they are a backend integration detail.
 """

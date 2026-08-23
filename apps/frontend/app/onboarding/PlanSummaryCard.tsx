@@ -8,24 +8,40 @@ interface PlanSummaryCardProps {
   onAccept: () => void;
   onChange: () => void;
   isAccepting: boolean;
+  isBusy?: boolean;
+  isRegenerating?: boolean;
+  justUpdated?: boolean;
   acceptError: string | null;
 }
 
 /**
  * Readable summary of a `course_roadmap` v1 draft.
- * Accept → dashboard; Change → dismiss card and continue refining in chat.
+ * Accept → dashboard; Change → keep this plan visible and refine it in chat.
  */
 export default function PlanSummaryCard({
   roadmap,
   onAccept,
   onChange,
   isAccepting,
+  isBusy = false,
+  isRegenerating = false,
+  justUpdated = false,
   acceptError,
 }: PlanSummaryCardProps) {
   const { summary, milestones, weekly_template: weeklyTemplate } = roadmap;
+  const actionsDisabled = isAccepting || isBusy || isRegenerating;
 
   return (
-    <div className="w-full rounded-2xl border border-success/30 bg-success-soft p-4 shadow-sm sm:p-5">
+    <div className="relative w-full rounded-2xl border border-success/30 bg-success-soft p-4 shadow-sm sm:p-5">
+      {isRegenerating ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-success-soft/80">
+          <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-3 shadow-sm">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-tutor" />
+            <p className="text-sm text-muted">Updating your plan…</p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mb-3 flex items-center gap-2">
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success text-xs font-semibold text-white">
           ✓
@@ -33,6 +49,11 @@ export default function PlanSummaryCard({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-success">
           Proposed plan
         </h2>
+        {justUpdated && !isRegenerating ? (
+          <span className="rounded-md bg-surface px-2 py-0.5 text-xs font-medium text-success">
+            Updated
+          </span>
+        ) : null}
       </div>
 
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -111,10 +132,10 @@ export default function PlanSummaryCard({
       ) : null}
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Button onClick={onAccept} disabled={isAccepting} className="sm:min-w-[8rem]">
+        <Button onClick={onAccept} disabled={actionsDisabled} className="sm:min-w-[8rem]">
           {isAccepting ? "Accepting…" : "Accept"}
         </Button>
-        <Button variant="secondary" onClick={onChange} disabled={isAccepting} className="sm:min-w-[8rem]">
+        <Button variant="secondary" onClick={onChange} disabled={actionsDisabled} className="sm:min-w-[8rem]">
           Change
         </Button>
       </div>

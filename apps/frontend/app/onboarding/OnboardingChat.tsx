@@ -21,14 +21,13 @@ import Button from "@/components/ui/Button";
 import PlanSummaryCard from "./PlanSummaryCard";
 
 const SESSION_STORAGE_KEY = "lingua-coach:onboarding-session-id";
-const DISMISSED_PLANS_KEY = "lingua-coach:dismissed-plan-ids";
 const START_TRIGGER = "Hello";
 const CHANGE_PLAN_PROMPT =
   "What would you like to change in your plan? You can adjust milestones, pace, topics, or weekly balance.";
 
 type LoadState = "loading" | "ready" | "error";
 
-type PlanStatus = "active" | "dismissed" | "superseded";
+type PlanStatus = "active" | "superseded";
 
 type ChatTimelineItem =
   | ({ kind: "message"; isPlanStream?: boolean } & DisplayMessage)
@@ -62,6 +61,15 @@ function timelineHasPriorPlan(items: ChatTimelineItem[]): boolean {
       (item.kind === "message" &&
         item.role === "assistant" &&
         Boolean(item.metadata?.course_roadmap_draft))
+  );
+}
+
+function isStreamingPlanMessage(item: ChatTimelineItem): boolean {
+  if (item.kind !== "message" || !item.isStreaming || item.role !== "assistant") return false;
+  return (
+    Boolean(item.isPlanStream) ||
+    isPlanStreamContent(item.content) ||
+    (item.content.length >= 120 && !item.content.includes("?"))
   );
 }
 
@@ -103,29 +111,7 @@ function writeStoredSessionId(id: string): void {
   }
 }
 
-function readDismissedPlanIds(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.sessionStorage.getItem(DISMISSED_PLANS_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? new Set(parsed.filter((x): x is string => typeof x === "string")) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function writeDismissedPlanIds(ids: Set<string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.setItem(DISMISSED_PLANS_KEY, JSON.stringify([...ids]));
-  } catch {
-    // ignore
-  }
-}
-
 function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[] {
-  const dismissed = readDismissedPlanIds();
   const items: ChatTimelineItem[] = [];
   let lastActivePlanId: string | null = null;
 
@@ -155,26 +141,23 @@ function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[
           prior.status = "superseded";
         }
       }
-      const status: PlanStatus = dismissed.has(planId) ? "dismissed" : "active";
       items.push({
         kind: "plan",
         id: planId,
         sourceMessageId: message.id,
         roadmap: draft,
-        status,
+        status: "active",
       });
-      if (status === "active") {
-        lastActivePlanId = planId;
-      }
+      lastActivePlanId = planId;
     }
   }
 
-  // Only the latest non-dismissed plan should be active.
+  // Only the latest plan should be active.
   let seenActive = false;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item.kind !== "plan") continue;
-    if (item.status === "dismissed" || item.status === "superseded") continue;
+    if (item.status === "superseded") continue;
     if (!seenActive) {
       seenActive = true;
     } else {
@@ -203,9 +186,11 @@ export default function OnboardingChat() {
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const streamingMessageIdRef = useRef<string>("streaming-assistant");
+  const prevPlanSourceIdRef = useRef<string | null>(null);
 
   const visibleMessageCount = useMemo(
     () => timeline.filter((item) => item.kind === "message" && !item.hidden).length,
@@ -213,8 +198,16 @@ export default function OnboardingChat() {
   );
 
   const activePlan = useMemo(
-    () => timeline.find((item): item is Extract<ChatTimelineItem, { kind: "plan" }> => item.kind === "plan" && item.status === "active") ?? null,
+    () =>
+      timeline.find(
+        (item): item is Extract<ChatTimelineItem, { kind: "plan" }> =>
+          item.kind === "plan" && item.status === "active"
+      ) ?? null,
     [timeline]
+  );
+
+  const isPlanRegenerating = Boolean(
+    activePlan && timeline.some((item) => isStreamingPlanMessage(item))
   );
 
   const showIntro = loadState === "ready" && visibleMessageCount === 0 && !hasStarted && !isSending;
@@ -222,6 +215,22 @@ export default function OnboardingChat() {
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [timeline]);
+
+  useEffect(() => {
+    const sourceId = activePlan?.sourceMessageId ?? null;
+    if (!sourceId) {
+      prevPlanSourceIdRef.current = null;
+      return;
+    }
+    if (prevPlanSourceIdRef.current && prevPlanSourceIdRef.current !== sourceId) {
+      setJustUpdated(true);
+      const timeout = window.setTimeout(() => setJustUpdated(false), 2000);
+      prevPlanSourceIdRef.current = sourceId;
+      return () => window.clearTimeout(timeout);
+    }
+    prevPlanSourceIdRef.current = sourceId;
+    setJustUpdated(false);
+  }, [activePlan?.sourceMessageId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -422,15 +431,8 @@ export default function OnboardingChat() {
 
   const handleChangePlan = useCallback(() => {
     if (!activePlan) return;
-    const dismissed = readDismissedPlanIds();
-    dismissed.add(activePlan.id);
-    writeDismissedPlanIds(dismissed);
     setTimeline((prev) => [
-      ...prev.map((item) =>
-        item.kind === "plan" && item.id === activePlan.id
-          ? { ...item, status: "dismissed" as const }
-          : item
-      ),
+      ...prev,
       {
         kind: "message",
         id: `local-change-prompt-${Date.now()}`,
@@ -446,6 +448,54 @@ export default function OnboardingChat() {
       el?.focus();
     });
   }, [activePlan]);
+
+  const chatMessages = (
+    <>
+      {showIntro ? (
+        <div className="mx-auto mt-6 max-w-md rounded-2xl border border-border bg-surface p-6 text-center shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">
+            Let&apos;s build your learning plan
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            We&apos;ll ask you a few quick questions about your goals and English level to build
+            your personalized learning plan. Takes about 2 minutes.
+          </p>
+          <Button onClick={handleStart} disabled={isSending} className="mt-5 w-full sm:w-auto">
+            {isSending ? "Starting…" : "Start"}
+          </Button>
+        </div>
+      ) : null}
+
+      {timeline.map((item) => {
+        if (item.kind !== "message") return null;
+
+        const hideForPlanDraft =
+          item.role === "assistant" && Boolean(item.metadata?.course_roadmap_draft);
+        if (hideForPlanDraft) return null;
+
+        if (item.isStreaming && isStreamingPlanMessage(item)) {
+          if (activePlan) return null;
+          return <PlanGeneratingPlaceholder key={item.id} />;
+        }
+
+        return <ChatMessageBubble key={item.id} message={item} />;
+      })}
+
+      <div ref={scrollAnchorRef} />
+    </>
+  );
+
+  const composer = (
+    <ChatComposer
+      value={input}
+      onChange={setInput}
+      onSubmit={submitInput}
+      isSending={isSending}
+      hidden={showIntro}
+      error={sendError}
+      onRetry={handleRetrySend}
+    />
+  );
 
   if (loadState === "loading") {
     return (
@@ -469,70 +519,37 @@ export default function OnboardingChat() {
     );
   }
 
+  if (activePlan) {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+        <aside className="max-h-[45vh] shrink-0 overflow-y-auto border-b border-border px-3 py-4 sm:px-4 md:max-h-none md:w-[min(28rem,42%)] md:border-b-0 md:border-r">
+          <PlanSummaryCard
+            roadmap={activePlan.roadmap}
+            onAccept={handleAccept}
+            onChange={handleChangePlan}
+            isAccepting={isAccepting}
+            isBusy={isSending}
+            isRegenerating={isPlanRegenerating}
+            justUpdated={justUpdated}
+            acceptError={acceptError}
+          />
+        </aside>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
+            <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">{chatMessages}</div>
+          </div>
+          {composer}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
-          {showIntro ? (
-            <div className="mx-auto mt-6 max-w-md rounded-2xl border border-border bg-surface p-6 text-center shadow-sm">
-              <h2 className="text-lg font-semibold text-foreground">
-                Let&apos;s build your learning plan
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted">
-                We&apos;ll ask you a few quick questions about your goals and English level to build
-                your personalized learning plan. Takes about 2 minutes.
-              </p>
-              <Button onClick={handleStart} disabled={isSending} className="mt-5 w-full sm:w-auto">
-                {isSending ? "Starting…" : "Start"}
-              </Button>
-            </div>
-          ) : null}
-
-          {timeline.map((item) => {
-            if (item.kind === "message") {
-              const hideForPlanDraft =
-                item.role === "assistant" && Boolean(item.metadata?.course_roadmap_draft);
-              if (hideForPlanDraft) return null;
-
-              const streamingPlan =
-                item.isStreaming &&
-                item.role === "assistant" &&
-                (item.isPlanStream ||
-                  isPlanStreamContent(item.content) ||
-                  (item.content.length >= 120 && !item.content.includes("?")));
-
-              if (streamingPlan) {
-                return <PlanGeneratingPlaceholder key={item.id} />;
-              }
-
-              return <ChatMessageBubble key={item.id} message={item} />;
-            }
-            if (item.status !== "active") return null;
-            return (
-              <PlanSummaryCard
-                key={item.id}
-                roadmap={item.roadmap}
-                onAccept={handleAccept}
-                onChange={handleChangePlan}
-                isAccepting={isAccepting}
-                acceptError={acceptError}
-              />
-            );
-          })}
-
-          <div ref={scrollAnchorRef} />
-        </div>
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">{chatMessages}</div>
       </div>
-
-      <ChatComposer
-        value={input}
-        onChange={setInput}
-        onSubmit={submitInput}
-        isSending={isSending}
-        hidden={showIntro}
-        error={sendError}
-        onRetry={handleRetrySend}
-      />
+      {composer}
     </div>
   );
 }

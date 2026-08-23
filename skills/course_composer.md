@@ -190,6 +190,8 @@ Present the roadmap in chat as readable markdown. Invite modification before acc
 
 On each refinement turn, regenerate the relevant roadmap sections and keep the full `course_roadmap` object internally consistent for eventual persistence.
 
+Once a roadmap has been presented, any reply that applies the learner's plan feedback must re-emit a **full** updated `course_roadmap` JSON block in the same turn (not prose-only). Ask a clarifying question without regenerating only when the request is too ambiguous to apply.
+
 ---
 
 ## Output: `course_roadmap` (JSON)
