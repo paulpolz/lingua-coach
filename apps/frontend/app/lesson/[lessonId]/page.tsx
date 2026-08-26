@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import AppHeader from "@/components/AppHeader";
 
 import { getLesson, type Lesson } from "@/lib/lessons";
-import LessonChat from "./LessonChat";
+import LessonChat, { BackToDashboardButton } from "./LessonChat";
 
 /**
  * Server component: protects the route and does the initial
@@ -36,15 +36,10 @@ export default async function LessonPage({
       <div className="flex h-dvh flex-col overflow-hidden">
         <AppHeader title="Lesson" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <p className="max-w-md text-sm text-red-600 dark:text-red-400">
+          <p className="max-w-md text-sm text-danger">
             Couldn&apos;t load this lesson. ({errorMessage ?? "Not found"})
           </p>
-          <a
-            href="/dashboard"
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            Back to dashboard
-          </a>
+          <BackToDashboardButton />
         </div>
       </div>
     );
@@ -55,19 +50,14 @@ export default async function LessonPage({
       <div className="flex h-dvh flex-col overflow-hidden">
         <AppHeader title={`Lesson ${lesson.lesson_number}`} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <p className="max-w-md text-sm text-zinc-500">
+          <p className="max-w-md text-sm text-muted">
             {lesson.status === "generating"
               ? "This lesson is still generating — head back to the dashboard to check progress."
               : lesson.status === "accomplished"
                 ? "This lesson is already finished."
                 : "This lesson isn't available for chat right now."}
           </p>
-          <a
-            href="/dashboard"
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            Back to dashboard
-          </a>
+          <BackToDashboardButton />
         </div>
       </div>
     );
@@ -77,7 +67,7 @@ export default async function LessonPage({
     <div className="flex h-dvh flex-col overflow-hidden">
       <AppHeader
         title={`Lesson ${lesson.lesson_number}`}
-        description="Chat with your tutor to practice this lesson."
+        description={lesson.payload?.curriculum?.lesson_goal}
       />
       <LessonChat lessonId={lessonId} lesson={lesson} />
     </div>

@@ -2,7 +2,7 @@
 
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import {
   LessonConflictError,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/lessons";
 import { getProgress, type Progress } from "@/lib/progress";
 import { reportClientError } from "@/lib/reportError";
+import Button from "@/components/ui/Button";
 import PaceSummary from "./PaceSummary";
 
 // Poll cadence + timeout guard for lesson generation (frontend.md "Do not
@@ -320,55 +321,68 @@ export default function DashboardClient() {
   }, [state, isFinishing, getToken, loadProgress]);
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
+    <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-7 overflow-y-auto bg-background px-7 pb-10 pt-9">
       {finishAckMessage ? (
-        <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-          <span>{finishAckMessage}</span>
-          <button
-            type="button"
-            onClick={() => setFinishAckMessage(null)}
-            className="shrink-0 text-xs font-medium underline underline-offset-2"
-          >
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px] text-muted">{finishAckMessage}</p>
+          <Button variant="ghost" size="sm" onClick={() => setFinishAckMessage(null)} className="shrink-0">
             Dismiss
-          </button>
+          </Button>
         </div>
       ) : null}
 
-      {state.phase !== "loading" && state.phase !== "load-error" ? (
-        <PaceSummary progress={progress} error={progressError} />
-      ) : null}
-
-      {state.phase === "loading" ? <LoadingCard label="Loading your dashboard…" /> : null}
+      {state.phase === "loading" ? <p className="text-sm text-muted">Loading…</p> : null}
 
       {state.phase === "load-error" ? (
-        <ErrorCard message={state.message} onRetry={() => setReloadCount((n) => n + 1)} retryLabel="Retry" />
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-muted">{state.message}</p>
+          <Button variant="ghost" onClick={() => setReloadCount((n) => n + 1)}>
+            Retry
+          </Button>
+        </div>
       ) : null}
 
       {state.phase === "idle" ? (
-        <IdleCard onStart={() => void handleStartLesson()} />
+        <DeskHero
+          title="Ready for your next lesson?"
+          helper="We'll generate a lesson tailored to your plan and progress so far."
+        >
+          <Button onClick={() => void handleStartLesson()}>Start lesson</Button>
+        </DeskHero>
       ) : null}
 
-      {state.phase === "starting" ? <LoadingCard label="Starting your lesson…" /> : null}
+      {state.phase === "starting" ? (
+        <DeskHero title="Ready for your next lesson?" helper="Starting…" helperClassName="text-[13px] text-muted" />
+      ) : null}
 
       {state.phase === "generating" ? (
-        <GeneratingCard
-          lessonNumber={state.lessonNumber}
-          elapsedMs={now - state.startedAt}
-          timedOut={state.timedOut}
-          onCheckAgain={handleCheckAgain}
-        />
+        <DeskHero
+          title={`Generating lesson ${state.lessonNumber}…`}
+          helper={formatElapsed(now - state.startedAt)}
+          helperClassName="text-[13px] text-muted"
+        >
+          {state.timedOut ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="max-w-sm text-sm text-warning">
+                This is taking longer than usual. It may still finish in the background.
+              </p>
+              <Button variant="ghost" onClick={handleCheckAgain}>
+                Check again
+              </Button>
+            </div>
+          ) : null}
+        </DeskHero>
       ) : null}
 
       {state.phase === "generation-failed" ? (
-        <ErrorCard
-          message={state.message}
-          onRetry={() => void handleStartLesson()}
-          retryLabel="Try again"
-        />
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-danger">{state.message}</p>
+          <Button onClick={() => void handleStartLesson()}>Try again</Button>
+        </div>
       ) : null}
 
       {state.phase === "active" ? (
-        <ActiveLessonCard
+        <ActiveLessonHero
           lesson={state.lesson}
           onResume={() => router.push(`/lesson/${state.lesson.id}`)}
           onStop={() => void handleStopSession()}
@@ -379,99 +393,35 @@ export default function DashboardClient() {
           finishError={finishError}
         />
       ) : null}
-    </div>
-  );
-}
 
-function LoadingCard({ label }: { label: string }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-700 dark:border-t-zinc-300" />
-      <p className="text-sm text-zinc-500">{label}</p>
-    </div>
-  );
-}
-
-function ErrorCard({
-  message,
-  onRetry,
-  retryLabel,
-}: {
-  message: string;
-  onRetry: () => void;
-  retryLabel: string;
-}) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
-      <p className="max-w-md text-sm text-red-600 dark:text-red-400">{message}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-      >
-        {retryLabel}
-      </button>
-    </div>
-  );
-}
-
-function IdleCard({ onStart }: { onStart: () => void }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Ready for your next lesson?</h1>
-      <p className="max-w-sm text-sm text-zinc-500">
-        We&apos;ll generate a lesson tailored to your plan and progress so far.
-      </p>
-      <button
-        type="button"
-        onClick={onStart}
-        className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        Start lesson
-      </button>
-    </div>
-  );
-}
-
-function GeneratingCard({
-  lessonNumber,
-  elapsedMs,
-  timedOut,
-  onCheckAgain,
-}: {
-  lessonNumber: number;
-  elapsedMs: number;
-  timedOut: boolean;
-  onCheckAgain: () => void;
-}) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-700 dark:border-t-zinc-300" />
-      <div>
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-          Generating lesson {lessonNumber}…
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">{formatElapsed(elapsedMs)} elapsed</p>
-      </div>
-      {timedOut ? (
-        <div className="mt-2 flex flex-col items-center gap-2">
-          <p className="max-w-sm text-sm text-amber-700 dark:text-amber-400">
-            This is taking longer than usual. It may still finish in the background.
-          </p>
-          <button
-            type="button"
-            onClick={onCheckAgain}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            Check again
-          </button>
-        </div>
+      {state.phase !== "loading" && state.phase !== "load-error" ? (
+        <PaceSummary progress={progress} error={progressError} />
       ) : null}
     </div>
   );
 }
 
-function ActiveLessonCard({
+function DeskHero({
+  title,
+  helper,
+  helperClassName = "text-sm leading-[22px] text-muted",
+  children,
+}: {
+  title: string;
+  helper?: string;
+  helperClassName?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-4">
+      <h1 className="text-[22px] font-[590] leading-7 tracking-[-0.03em] text-foreground">{title}</h1>
+      {helper ? <p className={helperClassName}>{helper}</p> : null}
+      {children}
+    </div>
+  );
+}
+
+function ActiveLessonHero({
   lesson,
   onResume,
   onStop,
@@ -493,80 +443,39 @@ function ActiveLessonCard({
   const curriculum = lesson.payload?.curriculum;
 
   return (
-    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-5 dark:border-blue-900 dark:bg-blue-950/30">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
-          {lesson.lesson_number}
-        </span>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-300">
-          Lesson in progress
-        </h2>
-      </div>
-
-      <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-        Lesson {lesson.lesson_number}
-        {curriculum?.lesson_goal ? ` — ${curriculum.lesson_goal}` : ""}
+    <div className="flex flex-col items-start gap-4">
+      <h1 className="text-[22px] font-[590] leading-7 tracking-[-0.03em] text-foreground">
+        Resume lesson {lesson.lesson_number}?
       </h1>
-
-      {curriculum?.grammar_focus ? (
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          <span className="font-medium">Grammar focus:</span> {curriculum.grammar_focus}
-        </p>
-      ) : null}
-
-      {curriculum?.vocab_theme ? (
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          <span className="font-medium">Vocab theme:</span> {curriculum.vocab_theme}
-        </p>
-      ) : null}
-
-      {curriculum?.slots && curriculum.slots.length > 0 ? (
-        <div className="mt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Session outline
-          </h3>
-          <ol className="mt-2 space-y-2">
-            {curriculum.slots.map((slot) => (
-              <li key={slot.id} className="rounded-lg bg-white/70 p-2.5 text-sm dark:bg-zinc-900/40">
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">{slot.label}</span>
-                <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">{slot.exercise_set}</p>
-              </li>
-            ))}
-          </ol>
+      {curriculum?.lesson_goal || curriculum?.grammar_focus || curriculum?.vocab_theme ? (
+        <div className="flex flex-col gap-1">
+          {curriculum?.lesson_goal ? (
+            <p className="text-sm leading-[22px] text-muted">{curriculum.lesson_goal}</p>
+          ) : null}
+          {curriculum?.grammar_focus ? (
+            <p className="text-sm leading-[22px] text-muted">Grammar: {curriculum.grammar_focus}</p>
+          ) : null}
+          {curriculum?.vocab_theme ? (
+            <p className="text-sm leading-[22px] text-muted">Vocab: {curriculum.vocab_theme}</p>
+          ) : null}
         </div>
       ) : null}
 
-      {stopError ? (
-        <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
-          {stopError}
-        </p>
-      ) : null}
+      {stopError ? <p className="text-sm text-danger">{stopError}</p> : null}
+      {finishError ? <p className="text-sm text-danger">{finishError}</p> : null}
 
-      {finishError ? (
-        <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
-          {finishError}
-        </p>
-      ) : null}
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={onResume}
-          className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-        >
-          Resume
-        </button>
-        <button
-          type="button"
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={onResume}>Resume</Button>
+        <Button
+          variant="ghost"
           onClick={onStop}
           disabled={isStopping}
           title="Leaves the session — the lesson stays active and you can resume anytime."
-          className="rounded-xl border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
           {isStopping ? "Stopping…" : "Stop session"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
           onClick={() => {
             if (window.confirm("Mark this lesson accomplished? Any unfinished slots count as 0%.")) {
               onFinish();
@@ -574,10 +483,9 @@ function ActiveLessonCard({
           }}
           disabled={isFinishing}
           title="Always available while the lesson is active — marks it accomplished and unlocks the next lesson."
-          className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
         >
           {isFinishing ? "Finishing…" : "Finish lesson"}
-        </button>
+        </Button>
       </div>
     </div>
   );

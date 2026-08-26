@@ -64,19 +64,15 @@ export default function ChatComposer({
   if (hidden) return null;
 
   return (
-    <div className="border-t border-border bg-surface/95 p-3 backdrop-blur sm:p-4">
-      <div className="mx-auto w-full max-w-2xl">
+    <div className="border-t border-border bg-background px-5 pb-3.5 pt-3">
+      <div className="mx-auto w-full max-w-[560px]">
         {error ? (
-          <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+          <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] text-danger">
             <span>{error}</span>
             {onRetry ? (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="shrink-0 font-medium underline underline-offset-2"
-              >
+              <Button variant="ghost" size="sm" type="button" onClick={onRetry} className="shrink-0">
                 Retry
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}
@@ -89,28 +85,25 @@ export default function ChatComposer({
             placeholder={placeholder}
             rows={1}
             disabled={disabled || isSending}
-            className="max-h-[180px] min-h-[44px] flex-1 resize-none overflow-y-auto rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-sm leading-relaxed text-foreground outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:opacity-60"
+            className="max-h-[180px] min-h-[44px] flex-1 resize-none overflow-y-auto rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-sm leading-[22px] text-foreground outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:opacity-60"
           />
           <Button
             type="submit"
             disabled={isSending || !value.trim()}
-            className="shrink-0 min-w-[4.5rem]"
+            className="min-w-[72px] shrink-0"
             aria-label={isSending ? "Sending" : "Send message"}
           >
             {isSending ? (
               <span className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current [animation-delay:120ms]" />
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current [animation-delay:240ms]" />
+                <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
+                <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:120ms]" />
+                <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:240ms]" />
               </span>
             ) : (
               "Send"
             )}
           </Button>
         </form>
-        <p className="mt-1.5 text-[11px] text-muted">
-          Enter to send · Shift+Enter for a new line
-        </p>
       </div>
     </div>
   );

@@ -16,7 +16,19 @@ import {
 } from "@/lib/lessons";
 import ChatComposer from "@/components/ChatComposer";
 import ChatMessageBubble, { type DisplayMessage } from "@/components/ChatMessageBubble";
+import Button from "@/components/ui/Button";
 import LessonChecklist from "./LessonChecklist";
+
+const THREAD_CLASS = "mx-auto flex w-full max-w-[560px] flex-col gap-4";
+
+export function BackToDashboardButton() {
+  const router = useRouter();
+  return (
+    <Button variant="ghost" onClick={() => router.push("/dashboard")}>
+      Back to dashboard
+    </Button>
+  );
+}
 
 interface LessonChatProps {
   lessonId: string;
@@ -341,22 +353,17 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
       />
 
       {loadState === "loading" ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-700 dark:border-t-zinc-300" />
-          <p className="text-sm text-zinc-500">Opening lesson chat…</p>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted">Loading…</p>
         </div>
       ) : loadState === "error" ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <p className="max-w-md text-sm text-red-600 dark:text-red-400">
+          <p className="max-w-md text-sm text-danger">
             Could not load lesson chat. Is the backend running? ({loadError})
           </p>
-          <button
-            type="button"
-            onClick={retryInit}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
+          <Button variant="ghost" onClick={retryInit}>
             Retry
-          </button>
+          </Button>
         </div>
       ) : (
         <>
@@ -368,24 +375,37 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
                 </div>
               </div>
             ) : null}
-            <div className="h-full overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
-              <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
-              {messages.length === 0 ? (
-                <p className="mt-8 text-center text-sm text-muted">
-                  {curriculum?.lesson_goal
-                    ? `Say hello to start practicing: ${curriculum.lesson_goal}`
-                    : "Say hello to start this lesson."}
-                </p>
-              ) : null}
+            <div
+              className={`h-full overflow-y-auto px-5 pb-5 pt-7 ${
+                checklistTasks.length > 0 ? "md:mr-44" : ""
+              }`}
+            >
+              <div className={THREAD_CLASS}>
+                {messages.length === 0 ? (
+                  <p className="mt-8 text-center text-sm text-muted">
+                    {curriculum?.lesson_goal
+                      ? `Say hello to start practicing: ${curriculum.lesson_goal}`
+                      : "Say hello to start this lesson."}
+                  </p>
+                ) : null}
 
-              {messages.map((message) => (
-                <ChatMessageBubble key={message.id} message={message} />
-              ))}
+                {messages.map((message) => (
+                  <ChatMessageBubble key={message.id} message={message} />
+                ))}
 
-              <div ref={scrollAnchorRef} />
-            </div>
+                <div ref={scrollAnchorRef} />
+              </div>
             </div>
           </div>
+
+          {suggestFinish && checklistTasks.length > 0 ? (
+            <div className="bg-background px-5 pt-2">
+              <p className="mx-auto w-full max-w-[560px] text-xs text-muted [animation:enter-fade_180ms_ease-out]">
+                {checklistTasks[checklistTasks.length - 1].label} is the last task. Finish from the
+                bar when you are ready.
+              </p>
+            </div>
+          ) : null}
 
           <ChatComposer
             value={input}
@@ -426,21 +446,26 @@ function LessonTopBar({
   finishError: string | null;
   onDismissFinishError: () => void;
 }) {
+  const title = curriculum?.lesson_goal ? curriculum.lesson_goal : `Lesson ${lessonNumber}`;
+  const focusParts = [
+    curriculum?.grammar_focus ? `Grammar: ${curriculum.grammar_focus}` : null,
+    curriculum?.vocab_theme ? `Vocab: ${curriculum.vocab_theme}` : null,
+  ].filter(Boolean);
+
   return (
-    <div className="flex flex-col border-b border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+    <div className="flex flex-col border-b border-border bg-background">
+      <div className="flex items-center justify-between gap-2 px-5 py-2">
         <button
           type="button"
           onClick={onToggleFocusCard}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           aria-expanded={focusCardOpen}
         >
-          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Lesson {lessonNumber}
-            {curriculum?.lesson_goal ? ` — ${curriculum.lesson_goal}` : ""}
+          <span className="truncate text-[13px] font-[550] leading-[18px] tracking-[-0.01em] text-foreground">
+            {title}
           </span>
           <svg
-            className={`h-3 w-3 shrink-0 text-zinc-400 transition-transform ${focusCardOpen ? "rotate-180" : ""}`}
+            className={`h-3 w-3 shrink-0 text-muted transition-transform ${focusCardOpen ? "rotate-180" : ""}`}
             viewBox="0 0 20 20"
             fill="currentColor"
             aria-hidden="true"
@@ -454,17 +479,13 @@ function LessonTopBar({
         </button>
 
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={onStop}
-            disabled={isStopping}
-            className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          <Button variant="ghost" size="sm" onClick={onStop} disabled={isStopping}>
             {isStopping ? "Stopping…" : "Stop session"}
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant={suggestFinish ? "primary" : "ghost"}
+            size="sm"
             onClick={() => {
               if (window.confirm("Mark this lesson accomplished? Any unfinished slots count as 0%.")) {
                 onFinish();
@@ -478,63 +499,32 @@ function LessonTopBar({
                   ? "Ready to finish! Marks the lesson accomplished and unlocks the next one."
                   : "Always available while the lesson is active."
             }
-            className={`relative rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-              suggestFinish
-                ? "animate-pulse border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            }`}
           >
             {isFinishing ? "Finishing…" : "Finish lesson"}
-            {suggestFinish && !isFinishing ? (
-              <span className="ml-1.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                Ready!
-              </span>
-            ) : null}
-          </button>
+          </Button>
         </div>
       </div>
 
+      {focusCardOpen ? (
+        <p className="px-5 pb-2 text-xs text-muted">
+          {focusParts.length > 0
+            ? focusParts.join(" · ")
+            : "Curriculum details aren't available for this lesson yet."}
+        </p>
+      ) : null}
+
       {finishError ? (
-        <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 sm:mx-4 dark:bg-red-950/40 dark:text-red-300">
+        <div className="flex items-center justify-between gap-3 bg-danger-soft px-5 py-2 text-[13px] text-danger">
           <span>{finishError}</span>
-          <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={onFinish} className="font-medium underline underline-offset-2">
+          <div className="flex shrink-0 items-center gap-1">
+            <Button variant="ghost" size="sm" type="button" onClick={onFinish}>
               Retry
-            </button>
-            <button type="button" onClick={onDismissFinishError} className="font-medium underline underline-offset-2">
+            </Button>
+            <Button variant="ghost" size="sm" type="button" onClick={onDismissFinishError}>
               Dismiss
-            </button>
+            </Button>
           </div>
         </div>
-      ) : null}
-
-      {focusCardOpen ? <LessonFocusCardBody curriculum={curriculum} /> : null}
-    </div>
-  );
-}
-
-function LessonFocusCardBody({ curriculum }: { curriculum: LessonCurriculum | null }) {
-  if (!curriculum) {
-    return (
-      <p className="px-3 pb-3 text-xs text-zinc-500 sm:px-4">
-        Curriculum details aren&apos;t available for this lesson yet.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1 px-3 pb-3 text-xs text-zinc-600 sm:px-4 dark:text-zinc-400">
-      {curriculum.grammar_focus ? (
-        <p>
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">Grammar focus:</span>{" "}
-          {curriculum.grammar_focus}
-        </p>
-      ) : null}
-      {curriculum.vocab_theme ? (
-        <p>
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">Vocab theme:</span>{" "}
-          {curriculum.vocab_theme}
-        </p>
       ) : null}
     </div>
   );

@@ -30,112 +30,99 @@ export default function PlanSummaryCard({
 }: PlanSummaryCardProps) {
   const { summary, milestones, weekly_template: weeklyTemplate } = roadmap;
   const actionsDisabled = isAccepting || isBusy || isRegenerating;
+  const range = summary.target_plan_days_range;
 
   return (
-    <div className="relative w-full rounded-2xl border border-success/30 bg-success-soft p-4 shadow-sm sm:p-5">
+    <div className="relative flex h-full min-h-0 flex-col">
       {isRegenerating ? (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-success-soft/80">
-          <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-3 shadow-sm">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-tutor" />
-            <p className="text-sm text-muted">Updating your plan…</p>
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
+          <p className="text-sm text-muted">Updating your plan…</p>
+        </div>
+      ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mb-3 flex items-baseline gap-2">
+          <h2 className="text-[13px] font-semibold leading-[18px] tracking-[-0.01em] text-foreground">
+            Proposed plan
+          </h2>
+          {justUpdated && !isRegenerating ? <span className="text-[11px] text-muted">Updated</span> : null}
+        </div>
+
+        <dl className="space-y-3 text-sm">
+          <div>
+            <dt className="text-[11px] leading-4 text-muted">Goal</dt>
+            <dd className="font-[550] leading-5 text-foreground">{summary.goal_outcome}</dd>
           </div>
-        </div>
-      ) : null}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <dt className="text-[11px] leading-4 text-muted">Horizon</dt>
+              <dd className="font-[550] leading-5 text-foreground">{summary.goal_horizon}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] leading-4 text-muted">Level</dt>
+              <dd className="font-[550] leading-5 text-foreground">{summary.starting_level}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] leading-4 text-muted">Length</dt>
+              <dd className="font-[550] leading-5 text-foreground">{summary.target_plan_days} days</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] leading-4 text-muted">Range</dt>
+              <dd className="font-[550] leading-5 text-foreground">
+                {range ? `${range[0]}–${range[1]} days` : "—"}
+              </dd>
+            </div>
+          </div>
+        </dl>
 
-      <div className="mb-3 flex items-center gap-2">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success text-xs font-semibold text-white">
-          ✓
-        </span>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-success">
-          Proposed plan
-        </h2>
-        {justUpdated && !isRegenerating ? (
-          <span className="rounded-md bg-surface px-2 py-0.5 text-xs font-medium text-success">
-            Updated
-          </span>
+        {summary.pace_description ? (
+          <p className="mt-3 text-[13px] leading-5 text-muted">{summary.pace_description}</p>
         ) : null}
-      </div>
 
-      <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-muted">Goal</dt>
-          <dd className="font-medium text-foreground">{summary.goal_outcome}</dd>
-        </div>
-        <div>
-          <dt className="text-muted">Horizon</dt>
-          <dd className="font-medium text-foreground">{summary.goal_horizon}</dd>
-        </div>
-        <div>
-          <dt className="text-muted">Starting level</dt>
-          <dd className="font-medium text-foreground">{summary.starting_level}</dd>
-        </div>
-        <div>
-          <dt className="text-muted">Target plan length</dt>
-          <dd className="font-medium text-foreground">
-            {summary.target_plan_days} days
-            {summary.target_plan_days_range
-              ? ` (${summary.target_plan_days_range[0]}–${summary.target_plan_days_range[1]})`
-              : null}
-          </dd>
-        </div>
-      </dl>
-
-      {summary.pace_description ? (
-        <p className="mt-3 text-sm text-foreground/80">{summary.pace_description}</p>
-      ) : null}
-
-      {milestones?.length > 0 ? (
-        <div className="mt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Milestones</h3>
-          <ol className="mt-2 space-y-2">
-            {milestones.map((milestone) => (
-              <li key={milestone.index} className="rounded-lg bg-surface/70 p-2.5 text-sm">
+        {milestones?.length > 0 ? (
+          <ol className="mt-4">
+            {milestones.map((milestone, index) => (
+              <li
+                key={milestone.index}
+                className={`py-2 ${index > 0 ? "border-t border-border" : ""}`}
+              >
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium text-foreground">
-                    {milestone.index + 1}. {milestone.title}
-                  </span>
+                  <span className="text-sm font-[550] leading-5 text-foreground">{milestone.title}</span>
                   {milestone.estimated_plan_days ? (
-                    <span className="shrink-0 text-xs text-muted">
-                      ~{milestone.estimated_plan_days}d
-                    </span>
+                    <span className="shrink-0 text-xs text-muted">~{milestone.estimated_plan_days}d</span>
                   ) : null}
                 </div>
                 {milestone.success_criteria ? (
-                  <p className="mt-1 text-xs text-muted">{milestone.success_criteria}</p>
+                  <p className="mt-0.5 text-xs leading-[18px] text-muted">{milestone.success_criteria}</p>
                 ) : null}
               </li>
             ))}
           </ol>
-        </div>
-      ) : null}
+        ) : null}
 
-      {weeklyTemplate ? (
-        <div className="mt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Weekly session ({weeklyTemplate.minutes_per_session} min)
-          </h3>
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {weeklyTemplate.activities?.map((activity) => (
-              <li
-                key={activity.id}
-                className="rounded-full bg-surface/70 px-2.5 py-1 text-xs text-foreground/80"
-              >
-                {activity.label} · {activity.minutes}m
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+        {weeklyTemplate ? (
+          <div className="mt-4">
+            <p className="text-xs text-muted">Weekly session ({weeklyTemplate.minutes_per_session} min)</p>
+            {weeklyTemplate.activities?.length ? (
+              <p className="mt-1 text-sm leading-5 text-foreground">
+                {weeklyTemplate.activities
+                  .map((activity) => `${activity.label} ${activity.minutes}m`)
+                  .join(" · ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       {acceptError ? (
-        <p className="mt-4 rounded-lg bg-danger-soft p-2 text-sm text-danger">{acceptError}</p>
+        <p className="mt-3 shrink-0 rounded-lg bg-danger-soft p-2 text-sm text-danger">{acceptError}</p>
       ) : null}
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="mt-4 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
         <Button onClick={onAccept} disabled={actionsDisabled} className="sm:min-w-[8rem]">
           {isAccepting ? "Accepting…" : "Accept"}
         </Button>
-        <Button variant="secondary" onClick={onChange} disabled={actionsDisabled} className="sm:min-w-[8rem]">
+        <Button variant="ghost" onClick={onChange} disabled={actionsDisabled} className="sm:min-w-[8rem]">
           Change
         </Button>
       </div>

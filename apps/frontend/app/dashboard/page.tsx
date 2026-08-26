@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   } catch (error) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-center">
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger">
           Could not reach the backend to sync your account. Is the API server
           running? ({error instanceof Error ? error.message : "unknown error"})
         </p>
@@ -28,7 +28,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <AppHeader title="Dashboard" description="Your lesson loop lives here." />
+      <AppHeader title="Home" description="Next lesson and pace" />
       <DashboardClient />
     </div>
   );

@@ -4,7 +4,7 @@ import AccountMenu from "@/components/AccountMenu";
 
 function BrandMark() {
   return (
-    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white dark:text-stone-950">
+    <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] bg-accent text-[11px] font-bold text-white">
       L
     </span>
   );
@@ -18,21 +18,28 @@ export default function AppHeader({
   description?: string;
 }) {
   return (
-    <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-      <div className="flex min-w-0 items-center gap-4">
+    <header className="flex h-[52px] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-5">
+      <div className="flex min-w-0 items-center gap-3">
         <Link
           href="/"
-          className="flex shrink-0 items-center gap-2.5 rounded-md text-foreground outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
+          className="flex shrink-0 items-center gap-2 rounded-md text-foreground outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/20"
           aria-label="Lingua Coach home"
         >
           <BrandMark />
-          <span className="text-base font-semibold tracking-tight">Lingua Coach</span>
+          <span className="text-[13px] font-medium leading-[18px] text-muted">Lingua Coach</span>
         </Link>
         {title ? (
-          <div className="hidden min-w-0 border-l border-border pl-4 sm:block">
-            <h1 className="truncate text-sm font-medium text-foreground">{title}</h1>
-            {description ? <p className="truncate text-xs text-muted">{description}</p> : null}
-          </div>
+          <>
+            <span className="h-[18px] w-px shrink-0 bg-border" aria-hidden="true" />
+            <div className="min-w-0">
+              <h1 className="truncate text-[13px] font-semibold leading-[18px] tracking-[-0.01em] text-foreground">
+                {title}
+              </h1>
+              {description ? (
+                <p className="hidden truncate text-[11px] leading-4 text-muted sm:block">{description}</p>
+              ) : null}
+            </div>
+          </>
         ) : null}
       </div>
       <AccountMenu />

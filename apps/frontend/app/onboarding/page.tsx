@@ -16,7 +16,7 @@ export default async function OnboardingPage() {
   } catch (error) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-center">
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger">
           Could not reach the backend to sync your account. Is the API server
           running? ({error instanceof Error ? error.message : "unknown error"})
         </p>
@@ -39,7 +39,7 @@ export default async function OnboardingPage() {
   } catch (error) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-center">
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger">
           Could not load onboarding chat. Is the API server running? (
           {error instanceof Error ? error.message : "unknown error"})
         </p>
@@ -51,7 +51,7 @@ export default async function OnboardingPage() {
     <div className="flex h-dvh flex-col overflow-hidden">
       <AppHeader
         title="Let's get you set up"
-        description="Chat with your coach to set your goal, level, and plan."
+        description="Goal, level, and a plan you can change."
       />
       <OnboardingChat initialSessionId={sessionId} initialMessages={initialMessages} />
     </div>

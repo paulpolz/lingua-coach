@@ -71,15 +71,10 @@ function isStreamingPlanMessage(item: ChatTimelineItem): boolean {
   );
 }
 
+const THREAD_CLASS = "mx-auto flex w-full max-w-[560px] flex-col gap-4";
+
 function PlanGeneratingPlaceholder() {
-  return (
-    <div className="w-full rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
-      <div className="flex items-center gap-3">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-tutor" />
-        <p className="text-sm text-muted">Building your proposed plan…</p>
-      </div>
-    </div>
-  );
+  return <p className="text-sm text-muted">Building your proposed plan…</p>;
 }
 
 function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[] {
@@ -368,15 +363,15 @@ export default function OnboardingChat({
   const chatMessages = (
     <>
       {showIntro ? (
-        <div className="mx-auto mt-6 max-w-md rounded-2xl border border-border bg-surface p-6 text-center shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">
+        <div className="mx-auto mt-6 max-w-[400px] text-center">
+          <h2 className="text-[22px] font-[590] leading-7 tracking-[-0.03em] text-foreground">
             Let&apos;s build your learning plan
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
+          <p className="mx-auto mt-2 max-w-[34ch] text-sm leading-[22px] text-muted">
             We&apos;ll ask you a few quick questions about your goals and English level to build
             your personalized learning plan. Takes about 2 minutes.
           </p>
-          <Button onClick={handleStart} disabled={isSending} className="mt-5 w-full sm:w-auto">
+          <Button onClick={handleStart} disabled={isSending} className="mt-5">
             {isSending ? "Starting…" : "Start"}
           </Button>
         </div>
@@ -416,7 +411,7 @@ export default function OnboardingChat({
   if (activePlan) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-        <aside className="max-h-[45vh] shrink-0 overflow-y-auto border-b border-border px-3 py-4 sm:px-4 md:max-h-none md:w-[min(28rem,42%)] md:border-b-0 md:border-r">
+        <aside className="flex max-h-[45vh] w-full shrink-0 flex-col overflow-hidden border-b border-border bg-background px-5 py-5 md:max-h-none md:w-[36%] md:min-w-[280px] md:max-w-[400px] md:border-b-0 md:border-r md:pb-6">
           <PlanSummaryCard
             roadmap={activePlan.roadmap}
             onAccept={handleAccept}
@@ -429,8 +424,8 @@ export default function OnboardingChat({
           />
         </aside>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
-            <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">{chatMessages}</div>
+          <div className="flex-1 overflow-y-auto px-5 pb-5 pt-7">
+            <div className={THREAD_CLASS}>{chatMessages}</div>
           </div>
           {composer}
         </div>
@@ -440,8 +435,8 @@ export default function OnboardingChat({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-4">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">{chatMessages}</div>
+      <div className="flex-1 overflow-y-auto px-5 pb-5 pt-7">
+        <div className={THREAD_CLASS}>{chatMessages}</div>
       </div>
       {composer}
     </div>
