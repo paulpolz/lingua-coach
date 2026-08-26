@@ -23,12 +23,19 @@ def seed_roadmap_markdown(roadmap: CourseRoadmap) -> str:
         "\n".join(f"- **{k}:** {v}" for k, v in roadmap.adaptation_rules.items())
         or "_No scope adjustments yet._"
     )
-    overview = (
-        f"**Goal:** {summary.goal_outcome}\n\n"
-        f"**Horizon:** {summary.goal_horizon}\n\n"
-        f"**Starting level:** {summary.starting_level} → toward B2 simulation\n\n"
+    overview_parts = [
+        f"**Goal:** {summary.goal_outcome}",
+        f"**Horizon:** {summary.goal_horizon}",
+        f"**Starting level:** {summary.starting_level}",
+    ]
+    if summary.target_language:
+        overview_parts.append(f"**Learning language:** {summary.target_language}")
+    if summary.native_language:
+        overview_parts.append(f"**Native language:** {summary.native_language}")
+    overview_parts.append(
         f"**Pace:** {summary.pace_description} ({summary.target_plan_days} plan days)"
     )
+    overview = "\n\n".join(overview_parts)
     return "\n\n".join(
         [
             "# Roadmap",

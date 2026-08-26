@@ -1,2 +1,0 @@
-- redirect after signup
-- one accepted learning plan per user only

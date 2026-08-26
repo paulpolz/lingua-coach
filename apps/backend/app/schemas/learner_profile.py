@@ -9,6 +9,14 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class LanguageInfo(BaseModel):
+    """ISO 639-1 when resolvable (`en`, `es`, `ja`); otherwise the stored
+    lowercase string from `normalize_language` on persist."""
+
+    native: str = Field(min_length=1)
+    target: str = Field(min_length=1)
+
+
 class GoalInfo(BaseModel):
     outcome: str
     horizon: str = ""
@@ -62,6 +70,7 @@ class MotivationInfo(BaseModel):
 
 
 class LearnerProfile(BaseModel):
+    languages: LanguageInfo
     goal: GoalInfo
     level: LevelInfo
     time_budget: TimeBudgetInfo = Field(default_factory=TimeBudgetInfo)

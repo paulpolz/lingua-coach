@@ -2,6 +2,10 @@
 
 Supporting reference for `exercise_tutor.md`. Use at week end, before weekly test. Swap in that week's target words. Both formats built for partner practice; solo alternatives noted.
 
+## Language
+
+Run every learner-facing prompt, gloss, example, and facilitator line in `target_language`. English activity names and sample lines below are **format structure only** — rewrite them in the learning language. Do not run the drills in English unless English is the target.
+
 ## Format A — Word Web / Scenario / Manifesto
 
 Personal and narrative lean.

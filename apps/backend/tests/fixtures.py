@@ -9,6 +9,8 @@ VALID_COURSE_ROADMAP: dict = {
         "goal_outcome": "Confident B2 English for daily work communication",
         "goal_horizon": "6 months",
         "starting_level": "B1",
+        "target_language": "en",
+        "native_language": "en",
         "target_plan_days": 90,
         "target_plan_days_range": [80, 100],
         "pace_description": "60 min/day, 5 days/week -> ~90 plan days on pace",
@@ -104,6 +106,7 @@ VALID_LESSON_CURRICULUM: dict = {
 
 
 VALID_LEARNER_PROFILE: dict = {
+    "languages": {"native": "en", "target": "en"},
     "goal": {
         "outcome": "Speak confidently in daily work meetings",
         "horizon": "6 months",
@@ -134,6 +137,44 @@ VALID_LEARNER_PROFILE: dict = {
     },
     "motivation": {
         "why_now": "New role requires client-facing English",
+        "past_blockers": ["lack of consistent practice"],
+    },
+}
+
+
+# Non-English pair for persist / snapshot tests (tester-owned coverage).
+VALID_LEARNER_PROFILE_ES: dict = {
+    "languages": {"native": "en", "target": "es"},
+    "goal": {
+        "outcome": "Hablar con confianza en reuniones de trabajo diarias",
+        "horizon": "6 months",
+        "success_criteria": ["Puede dirigir una actualización de 15 minutos sin script"],
+    },
+    "level": {
+        "self_assessed": "B1",
+        "strengths": ["reading"],
+        "weaknesses": ["speaking under pressure"],
+        "diagnostic_notes": "Solid grammar, hesitant speech",
+    },
+    "time_budget": {
+        "minutes_per_session": 60,
+        "sessions_per_week": 5,
+        "optional_partner_minutes": 30,
+        "intensity": "sustainable",
+    },
+    "focus": {
+        "skill_priorities": ["speaking", "listening"],
+        "topic_priorities": ["meetings", "email"],
+        "vocab_priorities": ["workplace phrasal verbs"],
+        "avoid": [],
+    },
+    "constraints": {
+        "budget": "none",
+        "practice_partner": {"available": True, "minutes": 30, "relationship": "spouse"},
+        "learning_style": "correction-heavy",
+    },
+    "motivation": {
+        "why_now": "New role requires client-facing Spanish",
         "past_blockers": ["lack of consistent practice"],
     },
 }

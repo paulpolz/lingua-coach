@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { waitForToken } from "@/lib/wait-for-token";
 import {
   acceptOnboarding,
+  hasQuestionMark,
+  isPlanStreamContent,
   streamChatMessage,
   type ChatMessage,
   type CourseRoadmap,
@@ -17,8 +19,7 @@ import Button from "@/components/ui/Button";
 import PlanSummaryCard from "./PlanSummaryCard";
 
 const START_TRIGGER = "Hello";
-const CHANGE_PLAN_PROMPT =
-  "What would you like to change in your plan? You can adjust milestones, pace, topics, or weekly balance.";
+const CHANGE_PLAN_TRIGGER = "I'd like to change my plan.";
 
 type PlanStatus = "active" | "superseded";
 
@@ -37,21 +38,6 @@ type ChatTimelineItem =
       status: PlanStatus;
     };
 
-/** Detect when the model is streaming a course roadmap (markdown or JSON fence). */
-function isPlanStreamContent(content: string): boolean {
-  if (/# Your course roadmap/i.test(content)) return true;
-  if (/```json:course_roadmap/.test(content)) return true;
-  if (/## Milestones/i.test(content)) return true;
-  if (/course roadmap|personalized (?:learning )?plan/i.test(content)) return true;
-  if (
-    /Here(?:'s| is) (?:your|the updated)/i.test(content) &&
-    /roadmap|plan/i.test(content)
-  ) {
-    return true;
-  }
-  return false;
-}
-
 function timelineHasPriorPlan(items: ChatTimelineItem[]): boolean {
   return items.some(
     (item) =>
@@ -67,7 +53,7 @@ function isStreamingPlanMessage(item: ChatTimelineItem): boolean {
   return (
     Boolean(item.isPlanStream) ||
     isPlanStreamContent(item.content) ||
-    (item.content.length >= 120 && !item.content.includes("?"))
+    (item.content.length >= 120 && !hasQuestionMark(item.content))
   );
 }
 
@@ -83,11 +69,14 @@ function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[
 
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index];
-    // Hide the silent Start trigger ("Hello") so reload doesn't show a fake user bubble.
+    // Hide silent Start / Change-plan triggers so reload doesn't show a fake user bubble.
     const isSilentStart =
       index === 0 &&
       message.role === "user" &&
       message.content.trim().toLowerCase() === START_TRIGGER.toLowerCase();
+    const isSilentChange =
+      message.role === "user" &&
+      message.content.trim().toLowerCase() === CHANGE_PLAN_TRIGGER.toLowerCase();
 
     items.push({
       kind: "message",
@@ -95,7 +84,7 @@ function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[
       role: message.role,
       content: message.content,
       metadata: message.metadata ?? null,
-      hidden: isSilentStart,
+      hidden: isSilentStart || isSilentChange,
     });
 
     const draft = message.metadata?.course_roadmap_draft;
@@ -242,7 +231,7 @@ export default function OnboardingChat({
               if (item.kind !== "message" || item.id !== streamingId) return item;
               const content = item.content + text;
               const looksLikeQuestion =
-                content.includes("?") && content.length < 400;
+                hasQuestionMark(content) && content.length < 400;
               const isPlanStream =
                 item.isPlanStream ||
                 isPlanStreamContent(content) ||
@@ -341,24 +330,10 @@ export default function OnboardingChat({
   }, [sessionId, activePlan, getToken, router]);
 
   const handleChangePlan = useCallback(() => {
-    if (!activePlan) return;
-    setTimeline((prev) => [
-      ...prev,
-      {
-        kind: "message",
-        id: `local-change-prompt-${Date.now()}`,
-        role: "assistant",
-        content: CHANGE_PLAN_PROMPT,
-      },
-    ]);
+    if (!activePlan || isSending) return;
     setAcceptError(null);
-    requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLTextAreaElement>(
-        "textarea[placeholder='Type your message…']"
-      );
-      el?.focus();
-    });
-  }, [activePlan]);
+    void sendMessage(CHANGE_PLAN_TRIGGER, { silent: true });
+  }, [activePlan, isSending, sendMessage]);
 
   const chatMessages = (
     <>
@@ -368,8 +343,8 @@ export default function OnboardingChat({
             Let&apos;s build your learning plan
           </h2>
           <p className="mx-auto mt-2 max-w-[34ch] text-sm leading-[22px] text-muted">
-            We&apos;ll ask you a few quick questions about your goals and English level to build
-            your personalized learning plan. Takes about 2 minutes.
+            We&apos;ll ask about your native language, the language you want to learn, then your
+            goals and level. Takes about 2 minutes.
           </p>
           <Button onClick={handleStart} disabled={isSending} className="mt-5">
             {isSending ? "Starting…" : "Start"}

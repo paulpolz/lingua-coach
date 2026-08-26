@@ -20,6 +20,7 @@ from app.schemas.report import ReportOp, ReportOpsPayload
 from app.services.gemini import ChatTurn
 from app.services.extraction import extract_report_ops_json
 from app.services import gemini as gemini_service
+from app.services.languages import language_policy_block
 from app.services.report_ops import apply_report_ops
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
 from app.services.skills import REPORT_PATCH_CONTRACT, load_skill
@@ -131,15 +132,20 @@ async def _update_reports_after_lesson(
         ),
         "pace_status": lesson.pace_status.value if lesson.pace_status else None,
     }
+    native = profile.native_language if profile else None
+    target = profile.target_language if profile else None
     prompt = (
         f"Lesson {lesson.lesson_number} finished at {now.date().isoformat()}.\n\n"
+        f"Native language: {native or '(not set)'}\n"
+        f"Target language: {target or 'en'}\n\n"
         f"Session summary JSON:\n{session_summary.model_dump_json()}\n\n"
         f"Mistakes this lesson JSON:\n{json.dumps(mistakes)}\n\n"
         f"Pace snapshot JSON:\n{json.dumps(pace_snapshot)}\n\n"
         f"Current report markdown JSON:\n{json.dumps(current_docs)}\n\n"
         "Emit incremental ops only."
     )
-    system_instruction = f"{load_skill('report_writer')}\n\n{REPORT_PATCH_CONTRACT}"
+    policy = language_policy_block(surface="report", native=native, target=target)
+    system_instruction = f"{load_skill('report_writer')}\n\n{REPORT_PATCH_CONTRACT}\n\n{policy}"
     raw = await gemini_service.generate_json(
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],

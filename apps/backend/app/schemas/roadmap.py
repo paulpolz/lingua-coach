@@ -12,6 +12,8 @@ class RoadmapSummary(BaseModel):
     goal_outcome: str
     goal_horizon: str
     starting_level: str
+    target_language: str | None = None
+    native_language: str | None = None
     target_plan_days: int = Field(gt=0)
     target_plan_days_range: list[int] = Field(min_length=2, max_length=2)
     pace_description: str

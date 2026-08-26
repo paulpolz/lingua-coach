@@ -3,6 +3,20 @@
 import type { CourseRoadmap } from "@/lib/chat";
 import Button from "@/components/ui/Button";
 
+function formatLearningLanguage(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  const trimmed = value.trim();
+  if (/^[a-z]{2}$/i.test(trimmed)) {
+    try {
+      const name = new Intl.DisplayNames(["en"], { type: "language" }).of(trimmed.toLowerCase());
+      if (name) return name;
+    } catch {
+      // Fall through to the stored string.
+    }
+  }
+  return trimmed;
+}
+
 interface PlanSummaryCardProps {
   roadmap: CourseRoadmap;
   onAccept: () => void;
@@ -31,6 +45,9 @@ export default function PlanSummaryCard({
   const { summary, milestones, weekly_template: weeklyTemplate } = roadmap;
   const actionsDisabled = isAccepting || isBusy || isRegenerating;
   const range = summary.target_plan_days_range;
+  const learningLanguage = formatLearningLanguage(
+    summary.target_language ?? summary.languages?.target
+  );
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -60,7 +77,11 @@ export default function PlanSummaryCard({
             </div>
             <div>
               <dt className="text-[11px] leading-4 text-muted">Level</dt>
-              <dd className="font-[550] leading-5 text-foreground">{summary.starting_level}</dd>
+              <dd className="font-[550] leading-5 text-foreground">
+                {learningLanguage
+                  ? `${summary.starting_level} · ${learningLanguage}`
+                  : summary.starting_level}
+              </dd>
             </div>
             <div>
               <dt className="text-[11px] leading-4 text-muted">Length</dt>

@@ -15,7 +15,9 @@ in code and are appended after the skill text by the chat route.
 from __future__ import annotations
 
 import functools
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from app.config import settings
 
@@ -27,6 +29,27 @@ _MODE_SKILLS: dict[str, list[str]] = {
 }
 
 _LESSON_VOCAB_SKILL = "vocabulary_practice_formats"
+
+# Week-end Format A/B drills (`vocabulary_practice_formats.md`) — not the
+# daily `vocabulary` slot in the weekly template (~11% of a normal session).
+_VOCAB_REVIEW_IDS = frozenset(
+    {
+        "vocab_review",
+        "vocabulary_review",
+        "weekend_vocab",
+        "week_end_vocab",
+        "weekly_vocab",
+        "vocab-review",
+    }
+)
+_VOCAB_REVIEW_LABEL_MARKERS = (
+    "vocab review",
+    "vocabulary review",
+    "week-end vocab",
+    "weekend vocab",
+    "weekly vocab",
+    "week end vocab",
+)
 
 
 class SkillLoadError(RuntimeError):
@@ -46,12 +69,44 @@ def _read_skill_file(skills_dir: str, name: str) -> str:
         raise SkillLoadError(f"Could not read skill file {name!r} at {path}: {exc}") from exc
 
 
+def _is_vocab_review_item(item_id: str, label: str) -> bool:
+    nid = item_id.strip().lower().replace("-", "_")
+    if nid in _VOCAB_REVIEW_IDS:
+        return True
+    nlabel = label.strip().lower()
+    return any(marker in nlabel for marker in _VOCAB_REVIEW_LABEL_MARKERS)
+
+
+def should_include_vocab_formats(
+    curriculum: Mapping[str, Any] | None = None,
+    weekly_template: Mapping[str, Any] | None = None,
+) -> bool:
+    """True when today's lesson is a week-end vocab-review turn.
+
+    Inspects `curriculum.slots` and optional `weekly_template.activities`.
+    Daily `vocabulary` / `review` ids are not a match — those are the regular
+    session blocks, not Format A/B drills (`vocabulary_practice_formats.md`).
+    Lesson chat passes the result into `get_system_instruction`.
+    """
+    for slot in (curriculum or {}).get("slots") or []:
+        if isinstance(slot, Mapping) and _is_vocab_review_item(
+            str(slot.get("id") or ""), str(slot.get("label") or "")
+        ):
+            return True
+    for activity in (weekly_template or {}).get("activities") or []:
+        if isinstance(activity, Mapping) and _is_vocab_review_item(
+            str(activity.get("id") or ""), str(activity.get("label") or "")
+        ):
+            return True
+    return False
+
+
 def get_system_instruction(mode: str, *, include_vocab_formats: bool = False) -> str:
     """Return concatenated skill markdown for a chat mode.
 
-    `mode`: "onboarding" | "lesson". For lesson mode, pass
-    `include_vocab_formats=True` when a weekly vocab-review turn is selected
-    (per ai-api.md's orchestration table); this is a no-op for other modes.
+    `mode`: "onboarding" | "lesson". Lesson chat sets
+    `include_vocab_formats` from `should_include_vocab_formats` (curriculum /
+    weekly-template vocab-review signal). A no-op for other modes.
     """
     if mode not in _MODE_SKILLS:
         raise SkillLoadError(f"Unknown chat mode: {mode!r}")
@@ -97,13 +152,15 @@ Conversation rule: Never ask more than one question in a single reply.
 
 ```json:learner_profile
 { ... the learner_profile object as JSON (not YAML), using exactly the\
- fields from the "Output: learner profile" section ... }
+ fields from the "Output: learner profile" section. MUST include\
+ `languages.native` and `languages.target` — do not emit this block without\
+ both. ... }
 ```
 
 Only include this block once the interview is genuinely complete — do not\
  emit a partial or guessed profile. You may re-emit an updated block on a\
- later turn if the user changes their goal, level, time budget, or focus\
- areas.
+ later turn if the user changes their languages, goal, level, time budget, or\
+ focus areas.
 
 2. Whenever you present a new or revised course roadmap the user could\
  accept (course_composer's chat presentation), also include, at the end of\
@@ -111,7 +168,8 @@ Only include this block once the interview is genuinely complete — do not\
 
 ```json:course_roadmap
 { ... the full course_roadmap object as JSON, using exactly the fields from\
- "Output: course_roadmap (JSON)" ... }
+ "Output: course_roadmap (JSON)". Include `summary.target_language` (ISO\
+ 639-1 of the learning language); `summary.native_language` is optional. ... }
 ```
 
 Keep the human-readable markdown roadmap presentation in your reply as\

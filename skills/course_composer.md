@@ -1,12 +1,23 @@
 # Course Composer
 
 **When:** After onboarding interview, plan refinement, milestone completion, or `feedback_giver` replan trigger (replan trigger post-MVP).  
-**Input:** `learner_profile` (+ optional progress snapshot).  
+**Input:** `learner_profile` including required `languages.native` and `languages.target` (+ optional progress snapshot).  
 **Output:** Descriptive **course roadmap** (chat) → user may **modify in chat** → on accept, persist as JSON → `learning_plans.roadmap` ([database.md](../docs/tech_requirements/database.md)).
 
 ## Purpose
 
 Turn a learner profile into a **goal-driven course roadmap** — not a generic curriculum. The roadmap is descriptive (milestones, rhythm, focus areas); lesson content is generated later by `exercise_tutor`.
+
+Do not draft a plan until `learner_profile.languages.native` and `languages.target` are present.
+
+## Language of the plan
+
+- Present the **entire** learner-facing roadmap in the **learning language** (`languages.target`), including markdown headings, table headers, and the invite to modify.
+- JSON **keys** stay exactly as in this schema (English identifiers). JSON **string values** — `goal_outcome`, milestone `title` / `skill_developed` / `why_now` / `success_criteria`, activity `label`s, `focus_summary`, theme fields, `pace_description`, `weekends` — are in the learning language.
+- `summary.target_language` is required (same language as `languages.target`). `summary.native_language` is optional.
+- English markdown and JSON below are **one example** (`target_language: "en"`). Copy must match the actual target — Spanish plan in Spanish, Japanese plan in Japanese, etc.
+- The destination is the learner's stated **goal**, not a hardcoded English B2 (do not aim everything “toward B2 simulation” unless that is their outcome).
+- User refinements may arrive in any language; the composer still replies in the learning language.
 
 ## Flow
 
@@ -34,7 +45,7 @@ Plan days ≈ accomplished lessons needed to reach the goal at the learner's pac
 | Time budget | `plan_days ≈ total_hours_needed ÷ (minutes_per_session × sessions_per_week / 60 × weeks_per_plan_day)` |
 | Skill priorities | Speaking-heavy goals need more output days; reading-heavy need fewer |
 
-Present as a range: "At your pace (~X min/day, Y days/week), expect roughly **N–M plan days** (~W weeks if you finish one lesson per day on pace)."
+Present as a range **in the learning language** (English below is meaning only): "At your pace (~X min/day, Y days/week), expect roughly **N–M plan days** (~W weeks if you finish one lesson per day on pace)."
 
 **Plan day ≠ calendar day.** One plan day = one accomplished lesson. Pacing rules (24h window, slip/reschedule) are product-level; the composer sets the target count.
 
@@ -44,7 +55,7 @@ Present as a range: "At your pace (~X min/day, Y days/week), expect roughly **N�
 
 Each milestone covers ~3–4 weeks of content at nominal pace (adjust if learner is faster/slower).
 
-**Milestone template:**
+**Milestone template** (write in the learning language; English structure only):
 
 ```markdown
 ## Milestone N — [Title]
@@ -153,7 +164,7 @@ Write the **first 1–4 weeks** in topic/grammar/skill focus — not a script fo
 
 ## Chat presentation (draft)
 
-Present the roadmap in chat as readable markdown. Invite modification before acceptance:
+Present the roadmap in chat as readable markdown **in the learning language**. The English template below is an example only — rewrite every heading and body line in `languages.target`. Invite modification before acceptance:
 
 ```markdown
 # Your course roadmap
@@ -205,6 +216,8 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
     "goal_outcome": "Confident B2 English for daily work communication",
     "goal_horizon": "6 months",
     "starting_level": "B1",
+    "target_language": "en",
+    "native_language": "es",
     "target_plan_days": 90,
     "target_plan_days_range": [80, 100],
     "pace_description": "60 min/day, 5 days/week → ~90 plan days on pace"
@@ -284,11 +297,13 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
 }
 ```
 
+The example JSON is English (`target_language: "en"`). If `languages.target` is Spanish, write `goal_outcome`, milestone titles, activity labels, and theme strings in Spanish — **keys unchanged**. Same for any other target.
+
 ### Field notes
 
 | Section | Purpose |
 |---------|---------|
-| `summary` | Goal, level, schedule headline; `target_plan_days` denormalized to `profiles` on accept |
+| `summary` | Goal, level, schedule headline, `target_language` (required) and optional `native_language`; `target_plan_days` denormalized to `profiles` on accept |
 | `milestones` | Ordered roadmap; advancement gated by `feedback_giver` weekly tests |
 | `weekly_template` | Fixed session shape; `exercise_tutor` maps slots to lesson JSON |
 | `current_block` | Active 1–4 week focus — **themes only**, not frozen word lists or URLs |

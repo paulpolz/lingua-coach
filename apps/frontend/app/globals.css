@@ -98,51 +98,6 @@ body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-.report-markdown {
-  font-size: 0.95rem;
-  line-height: 1.65;
-}
-.report-markdown h1 {
-  font-size: 1.5rem;
-  font-weight: 650;
-  margin: 0 0 1rem;
-}
-.report-markdown h2 {
-  font-size: 1.15rem;
-  font-weight: 650;
-  margin: 1.5rem 0 0.5rem;
-}
-.report-markdown h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 1.15rem 0 0.4rem;
-}
-.report-markdown p,
-.report-markdown ul,
-.report-markdown ol {
-  margin: 0.5rem 0;
-}
-.report-markdown table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.75rem 0 1.25rem;
-  font-size: 0.85rem;
-}
-.report-markdown th,
-.report-markdown td {
-  border: 1px solid var(--border);
-  padding: 0.4rem 0.6rem;
-  text-align: left;
-  vertical-align: top;
-}
-.report-markdown th {
-  background: var(--surface-muted);
-  font-weight: 600;
-}
-.report-markdown strong {
-  font-weight: 600;
-}
-
 .chat-markdown > *:first-child {
   margin-top: 0;
 }

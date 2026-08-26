@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -44,11 +45,13 @@ from app.schemas.chat import (
 from app.schemas.learner_profile import LearnerProfile
 from app.services import extraction
 from app.services.gemini import ChatTurn, GeminiError, stream_chat
+from app.services.languages import language_policy_block, normalize_language
 from app.services.rate_limit import check_and_record
 from app.services.skills import (
     LESSON_EXTRACTION_CONTRACT,
     ONBOARDING_EXTRACTION_CONTRACT,
     get_system_instruction,
+    should_include_vocab_formats,
 )
 
 logger = get_logger(__name__)
@@ -269,7 +272,9 @@ async def _persist_learner_profile(db: AsyncSession, user: User, learner_profile
     profile.goal_outcome = learner_profile.goal.outcome
     profile.goal_horizon = learner_profile.goal.horizon
     profile.goal_success_criteria = learner_profile.goal.success_criteria
-    profile.english_level = learner_profile.level.self_assessed
+    profile.native_language = normalize_language(learner_profile.languages.native)
+    profile.target_language = normalize_language(learner_profile.languages.target)
+    profile.target_level = learner_profile.level.self_assessed
     profile.level_strengths = learner_profile.level.strengths
     profile.level_weaknesses = learner_profile.level.weaknesses
     profile.diagnostic_notes = learner_profile.level.diagnostic_notes
@@ -357,7 +362,7 @@ async def _apply_lesson_plan_updates(db: AsyncSession, *, user: User, plan_updat
         profile.goal_outcome = plan_updates.goal_summary
         changed_fields["goal_summary"] = plan_updates.goal_summary
     if plan_updates.level is not None:
-        profile.english_level = plan_updates.level
+        profile.target_level = plan_updates.level
         changed_fields["level"] = plan_updates.level
     if plan_updates.time_budget is not None:
         profile.time_budget = plan_updates.time_budget
@@ -431,12 +436,18 @@ def _lesson_curriculum_snippet(lesson: Lesson) -> str:
     )
 
 
-async def _lesson_profile_block(db: AsyncSession, user: User) -> str:
-    """Compact learner-profile context block (goal/level + weak patterns due
-    for review) — per the plan's "don't over-engineer a shared helper"
-    guidance, a short text block is sufficient for MVP."""
-    profile_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
-    profile = profile_result.scalar_one_or_none()
+async def _fetch_profile(db: AsyncSession, user: User) -> Profile | None:
+    result = await db.execute(select(Profile).where(Profile.user_id == user.id))
+    return result.scalar_one_or_none()
+
+
+async def _lesson_profile_block(
+    db: AsyncSession, user: User, *, profile: Profile | None = None
+) -> str:
+    """Compact learner-profile context block (languages/goal/level + weak
+    patterns due for review) — a short text block is sufficient for MVP."""
+    if profile is None:
+        profile = await _fetch_profile(db, user)
 
     now = datetime.now(timezone.utc)
     mistakes_result = await db.execute(
@@ -453,12 +464,17 @@ async def _lesson_profile_block(db: AsyncSession, user: User) -> str:
     )
 
     goal = profile.goal_outcome if profile and profile.goal_outcome else "(not set)"
-    level = profile.english_level if profile and profile.english_level else "(not set)"
+    level = profile.target_level if profile and profile.target_level else "(not set)"
+    native = profile.native_language if profile and profile.native_language else "(not set)"
+    target = profile.target_language if profile and profile.target_language else "en"
 
     return (
         "Learner profile (compact):\n"
+        f"Native language: {native}\n"
+        f"Target language: {target}\n"
         f"Goal: {goal}\n"
         f"Level: {level}\n"
+        f"Conduct this lesson only in {target}.\n"
         f"Weak patterns due for review:\n{due_text}"
     )
 
@@ -480,7 +496,15 @@ async def _load_context_history(db: AsyncSession, session: ChatSession) -> list[
 async def _onboarding_event_stream(
     *, db: AsyncSession, user: User, session: ChatSession, history: list[ChatTurn]
 ) -> AsyncGenerator[str, None]:
-    system_instruction = f"{get_system_instruction('onboarding')}\n\n{ONBOARDING_EXTRACTION_CONTRACT}"
+    profile = await _fetch_profile(db, user)
+    policy = language_policy_block(
+        surface="onboarding",
+        native=profile.native_language if profile else None,
+        target=profile.target_language if profile else None,
+    )
+    system_instruction = (
+        f"{get_system_instruction('onboarding')}\n\n{ONBOARDING_EXTRACTION_CONTRACT}\n\n{policy}"
+    )
 
     full_text_parts: list[str] = []
     try:
@@ -504,7 +528,7 @@ async def _onboarding_event_stream(
             plan_updates = PlanUpdates(
                 goal_summary=learner_profile.goal.outcome, level=learner_profile.level.self_assessed
             )
-        except Exception:  # noqa: BLE001 - never fail the chat turn on a persistence hiccup
+        except SQLAlchemyError:
             logger.warning(
                 "onboarding_profile_persist_failed",
                 exc_info=True,
@@ -516,6 +540,14 @@ async def _onboarding_event_stream(
                 },
             )
             await db.rollback()
+            yield _sse(
+                "error",
+                {
+                    "code": "PROFILE_PERSIST_FAILED",
+                    "message": "Could not save your learning profile. Please try again.",
+                },
+            )
+            return
 
     done_metadata = ChatDoneMetadata(
         corrections=[],
@@ -548,12 +580,26 @@ async def _onboarding_event_stream(
 async def _lesson_event_stream(
     *, db: AsyncSession, user: User, session: ChatSession, lesson: Lesson, history: list[ChatTurn]
 ) -> AsyncGenerator[str, None]:
-    system_instruction = f"{get_system_instruction('lesson')}\n\n{LESSON_EXTRACTION_CONTRACT}"
+    profile = await _fetch_profile(db, user)
+    policy = language_policy_block(
+        surface="lesson",
+        native=profile.native_language if profile else None,
+        target=profile.target_language if profile else None,
+    )
+    curriculum = (lesson.payload or {}).get("curriculum") or {}
+    include_vocab = should_include_vocab_formats(curriculum)
+    system_instruction = (
+        f"{get_system_instruction('lesson', include_vocab_formats=include_vocab)}\n\n"
+        f"{LESSON_EXTRACTION_CONTRACT}\n\n{policy}"
+    )
 
     # ai-api.md "Prompt assembly": contents <- profile/plan block + message
     # history + new turn. `history` already ends with the new user turn, so
     # the curriculum/profile context block is prepended as a leading turn.
-    context_block = f"{_lesson_curriculum_snippet(lesson)}\n\n{await _lesson_profile_block(db, user)}"
+    context_block = (
+        f"{_lesson_curriculum_snippet(lesson)}\n\n"
+        f"{await _lesson_profile_block(db, user, profile=profile)}"
+    )
     contents = [ChatTurn(role="user", text=context_block), *history]
 
     full_text_parts: list[str] = []
@@ -583,7 +629,7 @@ async def _lesson_event_stream(
         if plan_updates is not None:
             await _apply_lesson_plan_updates(db, user=user, plan_updates=plan_updates)
         await db.commit()
-    except Exception:  # noqa: BLE001 - never fail the chat turn on a persistence hiccup
+    except SQLAlchemyError:
         logger.warning(
             "lesson_metadata_persist_failed",
             exc_info=True,
@@ -596,6 +642,14 @@ async def _lesson_event_stream(
             },
         )
         await db.rollback()
+        yield _sse(
+            "error",
+            {
+                "code": "LESSON_PERSIST_FAILED",
+                "message": "Could not save lesson progress. Please try again.",
+            },
+        )
+        return
 
     done_metadata = ChatDoneMetadata(
         corrections=corrections,

@@ -80,6 +80,8 @@ async def get_profile(
         return ProfileResponse(
             goal_summary=None,
             level=None,
+            native_language=None,
+            target_language=None,
             time_budget=None,
             topics=[],
             vocab_priorities=[],
@@ -108,7 +110,9 @@ async def get_profile(
 
     return ProfileResponse(
         goal_summary=profile.goal_outcome,
-        level=profile.english_level,
+        level=profile.target_level,
+        native_language=profile.native_language,
+        target_language=profile.target_language,
         time_budget=time_budget,
         topics=focus.get("topic_priorities", []),
         vocab_priorities=focus.get("vocab_priorities", []),

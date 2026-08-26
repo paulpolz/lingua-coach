@@ -98,6 +98,12 @@ export interface PlanUpdates {
 // course_roadmap v1 (database.md "learning_plans.roadmap")
 // ---------------------------------------------------------------------------
 
+/** Native + learning language on a persisted learner profile / roadmap. */
+export interface LearnerLanguages {
+  native: string;
+  target: string;
+}
+
 export interface CourseRoadmapSummary {
   goal_outcome: string;
   goal_horizon: string;
@@ -105,6 +111,10 @@ export interface CourseRoadmapSummary {
   target_plan_days: number;
   target_plan_days_range?: [number, number];
   pace_description?: string;
+  /** ISO 639-1 when resolvable (`es`, `ja`); otherwise a stored name. */
+  target_language?: string;
+  native_language?: string;
+  languages?: LearnerLanguages;
 }
 
 export interface CourseRoadmapMilestone {
@@ -206,6 +216,30 @@ export interface StreamChatMessageHandlers {
   onToken?: (text: string) => void;
   onDone?: (data: SSEDoneData) => void;
   onError?: (data: SSEErrorData) => void;
+}
+
+/** Fullwidth `？` counts as a question, same as ASCII `?`. */
+export function hasQuestionMark(content: string): boolean {
+  return content.includes("?") || content.includes("？");
+}
+
+/**
+ * Detect a streaming / complete course-roadmap reply.
+ * Primary signal is the `json:course_roadmap` fence (language-agnostic).
+ * English heading regexes are extras for older English-only drafts.
+ */
+export function isPlanStreamContent(content: string): boolean {
+  if (/```json:course_roadmap/.test(content)) return true;
+  if (/# Your course roadmap/i.test(content)) return true;
+  if (/## Milestones/i.test(content)) return true;
+  if (/course roadmap|personalized (?:learning )?plan/i.test(content)) return true;
+  if (
+    /Here(?:'s| is) (?:your|the updated)/i.test(content) &&
+    /roadmap|plan/i.test(content)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 interface ParsedSSEEvent {

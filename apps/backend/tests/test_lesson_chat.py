@@ -10,6 +10,7 @@ rule.
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -58,11 +59,17 @@ async def _seed_onboarded_user(db_session, user_id: str) -> None:
     await db_session.commit()
 
 
-async def _create_active_lesson(db_session, user_id: str, *, lesson_number: int = 1) -> Lesson:
+async def _create_active_lesson(
+    db_session, user_id: str, *, lesson_number: int = 1, curriculum: dict | None = None
+) -> Lesson:
     lesson = Lesson(
         user_id=uuid.UUID(user_id),
         lesson_number=lesson_number,
-        payload={"version": 1, "curriculum": VALID_LESSON_CURRICULUM, "session_summary": None},
+        payload={
+            "version": 1,
+            "curriculum": curriculum if curriculum is not None else VALID_LESSON_CURRICULUM,
+            "session_summary": None,
+        },
         status=LessonStatus.active,
         started_at=datetime.now(timezone.utc),
     )
@@ -542,7 +549,7 @@ async def test_lesson_message_plan_updates_partial_fields_only(
         user_id=uuid.UUID(user_id),
         target_plan_days=90,
         pace_window_hours=24,
-        english_level="B1",
+        target_level="B1",
     )
     db_session.add(profile)
     await db_session.commit()
@@ -566,7 +573,7 @@ async def test_lesson_message_plan_updates_partial_fields_only(
 
     await db_session.refresh(profile)
     assert profile.target_plan_days == 90  # unchanged
-    assert profile.english_level == "B1"  # unchanged
+    assert profile.target_level == "B1"  # unchanged
     assert (profile.focus or {}).get("topic_priorities") == ["negotiation", "small talk"]
 
 
@@ -604,3 +611,119 @@ async def test_lesson_message_exposes_lesson_plan_and_task_update_in_metadata(
     assert "json:lesson_plan" not in done_data["content"]
     assert done_data["metadata"]["lesson_plan"] == plan
     assert done_data["metadata"]["task_update"] == update
+
+
+async def test_lesson_message_includes_vocab_formats_for_review_slot(
+    client: AsyncClient, as_principal, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, str] = {}
+
+    async def _fake_stream_chat(*, system_instruction: str, history: list, **_kw):
+        captured["system_instruction"] = system_instruction
+        yield _lesson_turn_reply("Let's review this week's words.")
+
+    monkeypatch.setattr("app.api.v1.chat.stream_chat", _fake_stream_chat)
+
+    user_id = await _sync_user(client, as_principal, "clerk_lesson_vocab_review")
+    await _seed_onboarded_user(db_session, user_id)
+    curriculum = copy.deepcopy(VALID_LESSON_CURRICULUM)
+    curriculum["slots"].append(
+        {
+            "id": "vocab_review",
+            "label": "Week-end vocabulary review",
+            "exercise_set": "Format A drills on this week's words",
+        }
+    )
+    lesson = await _create_active_lesson(db_session, user_id, curriculum=curriculum)
+    session_id = (
+        await client.post(
+            "/api/v1/chat/sessions", json={"type": "lesson", "lesson_id": str(lesson.id)}
+        )
+    ).json()["id"]
+
+    async with client.stream(
+        "POST", f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "Ready"}
+    ) as resp:
+        async for _chunk in resp.aiter_text():
+            pass
+
+    assert "Vocabulary Practice Formats" in captured["system_instruction"]
+
+
+async def test_lesson_message_skips_vocab_formats_for_daily_slots(
+    client: AsyncClient, as_principal, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, str] = {}
+
+    async def _fake_stream_chat(*, system_instruction: str, history: list, **_kw):
+        captured["system_instruction"] = system_instruction
+        yield _lesson_turn_reply("Let's go.")
+
+    monkeypatch.setattr("app.api.v1.chat.stream_chat", _fake_stream_chat)
+
+    user_id = await _sync_user(client, as_principal, "clerk_lesson_vocab_daily")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = await _create_active_lesson(db_session, user_id)
+    session_id = (
+        await client.post(
+            "/api/v1/chat/sessions", json={"type": "lesson", "lesson_id": str(lesson.id)}
+        )
+    ).json()["id"]
+
+    async with client.stream(
+        "POST", f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "Hi"}
+    ) as resp:
+        async for _chunk in resp.aiter_text():
+            pass
+
+    assert "Vocabulary Practice Formats" not in captured["system_instruction"]
+
+
+async def test_lesson_message_emits_error_when_metadata_persist_fails(
+    client: AsyncClient, as_principal, mock_gemini, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.api.v1 import chat as chat_mod
+
+    async def _boom(*_a, **_k):
+        raise SQLAlchemyError("simulated persist failure")
+
+    monkeypatch.setattr(chat_mod, "_upsert_mistake", _boom)
+
+    user_id = await _sync_user(client, as_principal, "clerk_lesson_persist_fail")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = await _create_active_lesson(db_session, user_id)
+    session_id = (
+        await client.post(
+            "/api/v1/chat/sessions", json={"type": "lesson", "lesson_id": str(lesson.id)}
+        )
+    ).json()["id"]
+
+    mistakes = [
+        {
+            "pattern_type": "missing articles",
+            "example_text": "I went to store yesterday",
+            "correction": "I went to the store yesterday",
+        }
+    ]
+    mock_gemini([_lesson_turn_reply("Let's fix that.", mistakes=mistakes)])
+
+    async with client.stream(
+        "POST",
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"content": "I went to store yesterday"},
+    ) as resp:
+        assert resp.status_code == 200
+        raw = ""
+        async for chunk in resp.aiter_text():
+            raw += chunk
+
+    events = _parse_sse(raw)
+    error_events = [e for e in events if e[0] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0][1]["code"] == "LESSON_PERSIST_FAILED"
+    assert not any(e[0] == "done" for e in events)
+
+    history_resp = await client.get(f"/api/v1/chat/sessions/{session_id}/messages")
+    assert [m["role"] for m in history_resp.json()["messages"]] == ["user"]

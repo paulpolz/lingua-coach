@@ -108,6 +108,8 @@ async def test_accept_full_flow_persists_plan_and_unlocks_onboarding(
         await db_session.execute(select(LearningPlan).where(LearningPlan.user_id == user.id))
     ).scalar_one()
     assert plan.roadmap["summary"]["target_plan_days"] == 90
+    assert plan.roadmap["summary"]["target_language"] == "en"
+    assert plan.roadmap["summary"]["native_language"] == "en"
     assert plan.status.value == "accepted"
 
     profile = (

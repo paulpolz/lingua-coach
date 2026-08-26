@@ -24,7 +24,9 @@ class Profile(Base, TimestampMixin):
     goal_horizon: Mapped[str | None] = mapped_column(Text, nullable=True)
     goal_success_criteria: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
-    english_level: Mapped[str | None] = mapped_column(Text, nullable=True)
+    native_language: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_language: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_level: Mapped[str | None] = mapped_column(Text, nullable=True)
     level_strengths: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     level_weaknesses: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     diagnostic_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

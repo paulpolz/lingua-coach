@@ -51,7 +51,7 @@ export default async function OnboardingPage() {
     <div className="flex h-dvh flex-col overflow-hidden">
       <AppHeader
         title="Let's get you set up"
-        description="Goal, level, and a plan you can change."
+        description="Native and learning language, then goals, level, and a plan you can change."
       />
       <OnboardingChat initialSessionId={sessionId} initialMessages={initialMessages} />
     </div>

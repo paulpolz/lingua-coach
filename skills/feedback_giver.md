@@ -3,12 +3,16 @@
 > **Post-MVP — out of scope for first release.** MVP relies on `exercise_tutor` session summaries, `mistakes`, pace fields on `profiles`, and dashboard pace hints. Do not implement progress dashboard rows, weekly assessment gates, or automated replan triggers until this skill ships.
 
 **When:** After lesson completion, at week boundaries, on progress requests, or when replanning is needed.  
-**Input:** Session summaries, error log, learner profile, active plan, lesson history.  
+**Input:** Session summaries, error log, learner profile (`native_language` / `target_language`), active plan, lesson history.  
 **Output:** Progress dashboard, recommendations, plan adjustments, learner-facing feedback.
 
 ## Purpose
 
 Close the loop: turn session outputs into **structured progress**, **actionable feedback**, and **plan updates**. The learner should always know whether they're on track and what to focus on next.
+
+## Language
+
+Learner-facing feedback, weekly-test results, and plan-adjustment proposals are in `target_language`. Use `native_language` only to name L1 interference patterns. Product UI chrome stays English. English templates below are meaning-only examples — emit them in the learning language.
 
 ---
 
@@ -19,7 +23,7 @@ Maintain one row per skill category. **Adapt categories** to the learner's goal 
 | Category | Current | Target | Progress % | Weaknesses | Recommendations |
 |----------|---------|--------|------------|------------|-----------------|
 
-**Default categories:** Grammar, Vocabulary, Listening, Speaking, Reading, Writing, Goal-specific readiness (e.g. "Presentation readiness", "Travel confidence", "Interview readiness"), Confidence.
+**Default categories:** Grammar, Vocabulary, Listening, Speaking, Reading, Writing, Goal-specific readiness (e.g. "Presentation readiness", "Travel confidence", "Interview readiness"), Confidence. Label rows in `target_language`.
 
 ### Scoring guidance
 
@@ -93,11 +97,13 @@ Run at end of each week (or every N plan days). Replaces a normal session.
 
 **Pass week →** advance topics in next block. **Fail →** repeat milestone content with new examples; invoke `course_composer` to extend current block — goal unchanged.
 
-Share results in plain language: what improved, what blocked advancement, exact next focus.
+Share results in the **learning language**: what improved, what blocked advancement, exact next focus.
 
 ---
 
 ## Learner-facing feedback template
+
+Emit in `target_language` (English below is an example):
 
 ```markdown
 ## Progress update — [date]
@@ -135,7 +141,7 @@ Tone: direct, specific, encouraging. No vague "keep practicing."
 - Level assessment was wrong by > half a CEFR band after diagnostic week
 - Goal-specific readiness stuck below 30% for 3+ weeks despite consistent practice
 
-Propose changes in chat; user confirms before replacing active_plan.
+Propose changes in chat **in the learning language**; user confirms before replacing active_plan.
 
 ```markdown
 ## Suggested plan adjustment

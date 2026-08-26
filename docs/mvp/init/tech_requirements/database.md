@@ -50,7 +50,9 @@ Canonical store for **onboarding interviewer output** ([onboarding_interviewer.m
 | `goal_outcome` | text | `goal.outcome` |
 | `goal_horizon` | text | `goal.horizon` |
 | `goal_success_criteria` | JSONB (string array) | `goal.success_criteria` |
-| `english_level` | text | `level.self_assessed` (CEFR-ish or free text) |
+| `native_language` | text, nullable | `languages.native` (ISO 639-1 when resolvable; otherwise stored lowercase) |
+| `target_language` | text, nullable | `languages.target` (ISO 639-1 when resolvable; existing rows backfilled `'en'`) |
+| `target_level` | text | `level.self_assessed` (CEFR-ish or free text) |
 | `level_strengths` | JSONB (string array) | `level.strengths` |
 | `level_weaknesses` | JSONB (string array) | `level.weaknesses` |
 | `diagnostic_notes` | text, nullable | `level.diagnostic_notes` |
@@ -68,6 +70,8 @@ Canonical store for **onboarding interviewer output** ([onboarding_interviewer.m
 | `plan_slip_days` | integer, default 0 | cumulative slip when lessons finish after pace window |
 | `pace_window_hours` | integer, default **24** | on-pace threshold from `started_at` to `accomplished_at` |
 | `created_at`, `updated_at` | timestamps | — |
+
+Languages are first-class columns (`native_language`, `target_language`), not nested JSON. On persist, common names (`Spanish`, `español`, `es`) are mapped to ISO 639-1; unknown values are stored as stripped lowercase text rather than rejected. Existing rows are backfilled with `target_language = 'en'`; `native_language` is left null until the interview writes it.
 
 **JSON shapes (onboarding):**
 
@@ -153,6 +157,8 @@ Canonical store for **accepted course roadmap** ([course_composer.md](../../skil
     "goal_outcome": "string",
     "goal_horizon": "string",
     "starting_level": "string",
+    "target_language": "en",
+    "native_language": "es",
     "target_plan_days": 90,
     "target_plan_days_range": [80, 100],
     "pace_description": "string"

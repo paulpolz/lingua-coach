@@ -12,12 +12,13 @@ from pydantic import ValidationError
 from app.schemas.learner_profile import LearnerProfile
 from app.schemas.roadmap import CourseRoadmap
 from app.services import extraction
-from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LEARNER_PROFILE
+from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LEARNER_PROFILE, VALID_LEARNER_PROFILE_ES
 
 
 def test_valid_course_roadmap_fixture_validates() -> None:
     roadmap = CourseRoadmap.model_validate(VALID_COURSE_ROADMAP)
     assert roadmap.summary.target_plan_days == 90
+    assert roadmap.summary.target_language == "en"
     assert roadmap.milestones[0].title == "Diagnostic & System Setup"
 
 
@@ -44,8 +45,16 @@ def test_course_roadmap_rejects_missing_required_field() -> None:
 
 def test_valid_learner_profile_fixture_validates() -> None:
     profile = LearnerProfile.model_validate(VALID_LEARNER_PROFILE)
+    assert profile.languages.native == "en"
+    assert profile.languages.target == "en"
     assert profile.goal.outcome.startswith("Speak confidently")
     assert profile.focus.vocab_priorities == ["workplace phrasal verbs"]
+
+
+def test_valid_learner_profile_es_fixture_validates() -> None:
+    profile = LearnerProfile.model_validate(VALID_LEARNER_PROFILE_ES)
+    assert profile.languages.native == "en"
+    assert profile.languages.target == "es"
 
 
 def test_learner_profile_requires_goal_outcome() -> None:

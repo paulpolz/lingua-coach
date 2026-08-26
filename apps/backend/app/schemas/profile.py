@@ -26,6 +26,8 @@ class ScheduleOut(BaseModel):
 class ProfileResponse(BaseModel):
     goal_summary: str | None
     level: str | None
+    native_language: str | None = None
+    target_language: str | None = None
     time_budget: TimeBudgetOut | None
     topics: list[str]
     vocab_priorities: list[str]

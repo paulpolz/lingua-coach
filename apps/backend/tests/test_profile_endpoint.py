@@ -23,6 +23,8 @@ async def test_profile_before_onboarding_returns_empty_shape(
     body = resp.json()
     assert body["goal_summary"] is None
     assert body["level"] is None
+    assert body["native_language"] is None
+    assert body["target_language"] is None
     assert body["time_budget"] is None
     assert body["topics"] == []
     assert body["vocab_priorities"] == []
@@ -53,6 +55,9 @@ async def test_profile_after_interview_reflects_persisted_fields(
     body = profile_resp.json()
     assert body["goal_summary"] == VALID_LEARNER_PROFILE["goal"]["outcome"]
     assert body["level"] == VALID_LEARNER_PROFILE["level"]["self_assessed"]
+    assert body["native_language"] == VALID_LEARNER_PROFILE["languages"]["native"]
+    assert body["target_language"] == VALID_LEARNER_PROFILE["languages"]["target"]
+    assert "english_level" not in body
     assert body["time_budget"]["minutes_per_session"] == 60
     assert body["time_budget"]["sessions_per_week"] == 5
     # "sustainable" (skill-file example value) normalizes to the readiness §8 enum.

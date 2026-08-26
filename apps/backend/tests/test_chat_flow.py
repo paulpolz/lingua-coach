@@ -183,7 +183,9 @@ async def test_post_message_persists_learner_profile_and_draft_goal(
     result = await db_session.execute(select(Profile).where(Profile.user_id == uuid.UUID(user_id)))
     profile = result.scalar_one()
     assert profile.goal_outcome == VALID_LEARNER_PROFILE["goal"]["outcome"]
-    assert profile.english_level == VALID_LEARNER_PROFILE["level"]["self_assessed"]
+    assert profile.target_level == VALID_LEARNER_PROFILE["level"]["self_assessed"]
+    assert profile.native_language == VALID_LEARNER_PROFILE["languages"]["native"]
+    assert profile.target_language == VALID_LEARNER_PROFILE["languages"]["target"]
     assert profile.interview_completed_at is not None
 
 
@@ -231,6 +233,50 @@ async def test_post_message_emits_error_event_on_gemini_failure(
     assert events[0][0] == "error"
     assert events[0][1]["code"] == "LLM_TIMEOUT"
     assert not any(e[0] == "done" for e in events)
+
+
+async def test_post_message_emits_error_when_profile_persist_fails(
+    client: AsyncClient, as_principal, mock_gemini, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.api.v1 import chat as chat_mod
+
+    async def _boom(*_a, **_k):
+        raise SQLAlchemyError("simulated persist failure")
+
+    monkeypatch.setattr(chat_mod, "_persist_learner_profile", _boom)
+
+    user_id = await _sync_user(client, as_principal, "clerk_profile_persist_fail")
+    session_id = (await client.post("/api/v1/chat/sessions", json={"type": "onboarding"})).json()["id"]
+    reply = "I have what I need!\n\n```json:learner_profile\n" + json.dumps(
+        VALID_LEARNER_PROFILE
+    ) + "\n```"
+    mock_gemini([reply])
+
+    async with client.stream(
+        "POST",
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"content": "Here's my situation..."},
+    ) as resp:
+        assert resp.status_code == 200
+        raw = ""
+        async for chunk in resp.aiter_text():
+            raw += chunk
+
+    events = _parse_sse(raw)
+    error_events = [e for e in events if e[0] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0][1]["code"] == "PROFILE_PERSIST_FAILED"
+    assert "profile" in error_events[0][1]["message"].lower()
+    assert not any(e[0] == "done" for e in events)
+
+    result = await db_session.execute(select(Profile).where(Profile.user_id == uuid.UUID(user_id)))
+    assert result.scalar_one_or_none() is None
+
+    history_resp = await client.get(f"/api/v1/chat/sessions/{session_id}/messages")
+    roles = [m["role"] for m in history_resp.json()["messages"]]
+    assert roles == ["user"]
 
 
 async def test_post_message_rejects_empty_and_oversized_content(

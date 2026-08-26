@@ -38,6 +38,7 @@ from app.models.profile import Profile
 from app.schemas.lesson import LessonCurriculum
 from app.services import gemini
 from app.services.gemini import ChatTurn
+from app.services.languages import language_policy_block
 from app.services.skills import LESSON_GENERATION_CONTRACT, get_system_instruction
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,16 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
         await db.commit()
 
         try:
-            prompt = await _build_generation_prompt(db, user_id=user_id, lesson_number=lesson.lesson_number)
-            curriculum = await _generate_curriculum(prompt, job_id=job_id, lesson_id=lesson_id)
+            prompt, native, target = await _build_generation_prompt(
+                db, user_id=user_id, lesson_number=lesson.lesson_number
+            )
+            curriculum = await _generate_curriculum(
+                prompt,
+                native_language=native,
+                target_language=target,
+                job_id=job_id,
+                lesson_id=lesson_id,
+            )
         except Exception as exc:  # noqa: BLE001 - normalize any failure into a failed job/lesson
             logger.warning(
                 "lesson_generation failed: %s",
@@ -104,7 +113,9 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
         await db.commit()
 
 
-async def _build_generation_prompt(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> str:
+async def _build_generation_prompt(
+    db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int
+) -> tuple[str, str | None, str | None]:
     """Gather generation context and render it as a single prompt turn.
 
     Gemini is stateless (ai-api.md "Request lifecycle") — every field the
@@ -162,7 +173,7 @@ async def _build_generation_prompt(db: AsyncSession, *, user_id: uuid.UUID, less
         ],
     }
 
-    return (
+    prompt = (
         "Generate the next lesson's curriculum for this learner, per the "
         "Generation rules above. Learner and plan context (JSON):\n"
         f"{json.dumps(context, default=str)}\n\n"
@@ -170,6 +181,9 @@ async def _build_generation_prompt(db: AsyncSession, *, user_id: uuid.UUID, less
         "milestone; interleave due items from open_mistakes and prior_lessons "
         "before adding new material."
     )
+    native = profile.native_language if profile else None
+    target = profile.target_language if profile else None
+    return prompt, native, target
 
 
 def _profile_snapshot(profile: Profile | None) -> dict | None:
@@ -177,7 +191,9 @@ def _profile_snapshot(profile: Profile | None) -> dict | None:
         return None
     return {
         "goal_outcome": profile.goal_outcome,
-        "english_level": profile.english_level,
+        "native_language": profile.native_language,
+        "target_language": profile.target_language,
+        "target_level": profile.target_level,
         "level_strengths": profile.level_strengths,
         "level_weaknesses": profile.level_weaknesses,
         "time_budget": profile.time_budget,
@@ -203,9 +219,19 @@ def _build_repair_prompt(original_prompt: str, invalid_raw: str, error: Exceptio
 
 
 async def _generate_curriculum(
-    prompt: str, *, job_id: uuid.UUID | None = None, lesson_id: uuid.UUID | None = None
+    prompt: str,
+    *,
+    native_language: str | None = None,
+    target_language: str | None = None,
+    job_id: uuid.UUID | None = None,
+    lesson_id: uuid.UUID | None = None,
 ) -> LessonCurriculum:
-    system_instruction = f"{get_system_instruction('lesson')}\n\n{LESSON_GENERATION_CONTRACT}"
+    policy = language_policy_block(
+        surface="lesson_generation",
+        native=native_language,
+        target=target_language,
+    )
+    system_instruction = f"{get_system_instruction('lesson')}\n\n{LESSON_GENERATION_CONTRACT}\n\n{policy}"
     correlation = {
         "job_id": str(job_id) if job_id else None,
         "lesson_id": str(lesson_id) if lesson_id else None,

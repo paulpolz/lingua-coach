@@ -40,9 +40,25 @@ The backend learning engine loads these skills as system instructions / prompt m
 
 All structured outputs are **persisted to Postgres** — not inferred from chat history alone.
 
+## Onboarding interview flow
+
+| # | Cluster | Coach language |
+|---|---------|----------------|
+| 0 | Languages (native, then learning) | English |
+| 1 | Goal & outcome | Learning language |
+| 2 | Current level | Learning language |
+| 3 | Time budget and pace | Learning language |
+| 4 | Focus areas and topics | Learning language |
+| 5 | Constraints and resources | Learning language |
+| 6 | Motivation and context | Learning language |
+| — | Summarize → `course_composer` | Learning language |
+
+Learner answers are accepted in any language throughout so beginners can finish. Lessons after accept are full immersion in the learning language.
+
 ## Design principles
 
 - **Goal-first, not curriculum-first** — the learner's outcome drives structure.
+- **Language of coaching** — start onboarding in English to collect native then learning language; then coach in the learning language. Lessons are full immersion; native is L1-interference context only.
 - **Adapt but never lower the goal** — pace adjusts; target outcome does not.
 - **Output-first** — speak/write before (or alongside) rule explanation.
 - **Structured learner memory** — profile, errors, and progress are data, not chat history.
