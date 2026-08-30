@@ -1,0 +1,28 @@
+id: cal_lesson_generation_gold_full_001
+suite: calibration
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: lesson_generation_gold_full_001
+  user_message: |
+    Generate the next lesson's curriculum for this learner, per the Generation rules above.
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - grammar_focus_aligned
+    - no_english_learner_facing
+    - exit_criteria_nonempty_unique
+  judge:
+    rubric: lesson_generation_v1
+labels:
+  groundedness: pass
+  difficulty: pass
+  immersion: pass
+notes: |
+  Author-proposed. Kitchen-sink gold curriculum.

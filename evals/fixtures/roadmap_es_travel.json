@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "summary": {
+    "goal_outcome": "Manejar viajes por España: hotel, tren y restaurante sin traducir cada frase",
+    "goal_horizon": "4 meses",
+    "starting_level": "A2",
+    "target_language": "es",
+    "native_language": "en",
+    "target_plan_days": 40,
+    "target_plan_days_range": [
+      32,
+      48
+    ],
+    "pace_description": "25 minutos por sesión, 4 sesiones por semana → unos 40 días de plan"
+  },
+  "milestones": [
+    {
+      "index": 0,
+      "title": "Diagnóstico y reservas de hotel",
+      "skill_developed": "Usar artículos definidos e indefinidos al reservar una habitación",
+      "why_now": "El inglés omite artículos; hay que fijarlos antes de viajar",
+      "connects_to": [],
+      "success_criteria": "Reservar una habitación en recepción con el, la, un, una correctos",
+      "estimated_plan_days": 12
+    },
+    {
+      "index": 1,
+      "title": "Tren y restaurante",
+      "skill_developed": "Comprar un billete y pedir la cuenta con fluidez A2",
+      "why_now": "Después del hotel, el viaje real exige tren y comida",
+      "connects_to": [
+        0
+      ],
+      "success_criteria": "Pedir un menú, un plato y la cuenta sin traducir",
+      "estimated_plan_days": 14
+    },
+    {
+      "index": 2,
+      "title": "Imprevistos en el viaje",
+      "skill_developed": "Explicar un retraso o un cambio de habitación",
+      "why_now": "Integra artículos y vocabulario bajo un poco de presión",
+      "connects_to": [
+        1
+      ],
+      "success_criteria": "Resolver un imprevisto de dos minutos en recepción",
+      "estimated_plan_days": 14
+    }
+  ],
+  "weekly_template": {
+    "minutes_per_session": 25,
+    "activities": [
+      {
+        "id": "warmup",
+        "label": "Calentamiento y recuerdo",
+        "minutes": 4
+      },
+      {
+        "id": "grammar",
+        "label": "Gramática",
+        "minutes": 6
+      },
+      {
+        "id": "vocabulary",
+        "label": "Vocabulario",
+        "minutes": 4
+      },
+      {
+        "id": "input",
+        "label": "Escucha o lectura",
+        "minutes": 4
+      },
+      {
+        "id": "speaking",
+        "label": "Producción oral",
+        "minutes": 4
+      },
+      {
+        "id": "goal_specific",
+        "label": "Tarea de viaje",
+        "minutes": 2
+      },
+      {
+        "id": "review",
+        "label": "Repaso y registro",
+        "minutes": 1
+      }
+    ],
+    "partner_session": null,
+    "weekends": "sábado y domingo: solo repaso opcional"
+  },
+  "current_block": {
+    "milestone_index": 0,
+    "weeks": 2,
+    "focus_summary": "Artículos y vocabulario de hotel para llegar y reservar",
+    "themes": [
+      {
+        "block_day": 1,
+        "grammar_focus": "Artículos definidos e indefinidos para reservas de hotel",
+        "vocab_theme": "Hotel: recepción, habitación, reserva",
+        "input_type": "listening",
+        "production_focus": "Reservar una habitación en recepción",
+        "goal_specific_focus": "Diálogo de llegada al hotel"
+      }
+    ]
+  },
+  "learning_principles": [
+    "active_recall",
+    "spaced_repetition",
+    "interleaving",
+    "output_first",
+    "error_correction_logged"
+  ],
+  "adaptation_rules": {
+    "failed_weekly_test": "repeat_milestone_content",
+    "recurring_error_pattern": "inject_retrieval_drill",
+    "strong_performance": "increase_difficulty_not_shorten_goal",
+    "user_feedback": "adjust_next_1_2_weeks_focus"
+  },
+  "current_milestone_index": 0
+}

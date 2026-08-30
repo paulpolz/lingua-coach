@@ -1,0 +1,3 @@
+{
+  "raw_completion": "Bien: «una cama doble» y «el centro» van con artículo.\nAhora dime para cuántas noches y si quieres el desayuno.\n\n```json:lesson_turn\n{\n  \"corrections\": [],\n  \"tips\": [],\n  \"plan_updates\": null,\n  \"suggest_finish\": false,\n  \"mistakes\": []\n}\n```"
+}

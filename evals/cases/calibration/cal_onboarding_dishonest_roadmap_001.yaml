@@ -1,0 +1,27 @@
+id: cal_onboarding_dishonest_roadmap_001
+suite: calibration
+mode: onboarding
+skill: course_composer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "15 minutes, one day a week. That is all I have.\n"
+  history:
+    - role: model
+      text: |
+        ¿Cuánto tiempo puedes practicar un día típico?
+checks:
+  deterministic:
+    - extract_learner_profile
+    - extract_course_roadmap
+  judge:
+    rubric: onboarding_v1
+labels:
+  completeness: pass
+  one_question_rule: pass
+  roadmap_honesty: fail
+notes: |
+  Author-proposed. 15 min / week stated; model emits a 90-day daily-hour plan.

@@ -51,6 +51,7 @@ from app.schemas.lesson import (
 )
 from app.services.lesson_generation import run_lesson_generation_job
 from app.services.pace import compute_lesson_pace_status, compute_projected_completion
+from app.services.quality import add_lesson_csat
 from app.services.rate_limit import check_and_record
 from app.services.report_writer import update_reports_after_lesson
 
@@ -412,6 +413,15 @@ async def finish_lesson(
     # delete this lesson's chat transcript + session on finish — mirrors
     # onboarding/accept's deletion pattern exactly.
     session = await _get_lesson_chat_session(db, lesson.id)
+    csat = body.csat if body is not None else None
+    if csat is not None:
+        add_lesson_csat(
+            db,
+            user=user,
+            lesson=lesson,
+            session_id=session.id if session is not None else None,
+            csat=csat,
+        )
     if session is not None:
         await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session.id))
         await db.execute(delete(ChatSession).where(ChatSession.id == session.id))

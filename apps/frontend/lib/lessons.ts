@@ -12,6 +12,7 @@
  */
 
 import { ApiError, apiFetch, toApiError } from "@/lib/api";
+import { isCsatValue } from "@/lib/quality";
 
 // ---------------------------------------------------------------------------
 // Jobs (readiness §6)
@@ -232,9 +233,16 @@ export async function stopLesson(token: string | null, lessonId: string): Promis
 // ---------------------------------------------------------------------------
 // Finish lesson (readiness §6) — the explicit "Finish lesson" action; always
 // available while the lesson is `active` (early finish OK, frontend.md
-// "Lesson lifecycle in UI"). Assumed to take no request body per readiness
-// §6 — a plain POST — until the backend agent's notes say otherwise.
+// "Lesson lifecycle in UI"). Optional JSON: CSAT 1–5, free-text feedback,
+// and completed slot ids. Empty body is allowed; rating must not block finish.
 // ---------------------------------------------------------------------------
+
+export interface FinishLessonRequest {
+  learner_feedback?: string;
+  /** Optional 1–5 lesson CSAT. Omit when the learner skips the rating. */
+  csat?: number;
+  completed_slot_ids?: string[];
+}
 
 export interface FinishLessonResponse {
   status: "accomplished";
@@ -243,9 +251,28 @@ export interface FinishLessonResponse {
   schedule_updated: boolean;
 }
 
-/** `POST /api/v1/lessons/{lesson_id}/finish` — no request body. */
-export async function finishLesson(token: string | null, lessonId: string): Promise<FinishLessonResponse> {
-  const response = await apiFetch(`/api/v1/lessons/${lessonId}/finish`, token, { method: "POST" });
+/** Drop blank / out-of-range fields so finish stays valid with an empty rating. */
+export function buildFinishLessonBody(input: FinishLessonRequest = {}): FinishLessonRequest {
+  const body: FinishLessonRequest = {};
+  const feedback = input.learner_feedback?.trim();
+  if (feedback) body.learner_feedback = feedback;
+  if (input.csat !== undefined && isCsatValue(input.csat)) body.csat = input.csat;
+  if (input.completed_slot_ids && input.completed_slot_ids.length > 0) {
+    body.completed_slot_ids = input.completed_slot_ids;
+  }
+  return body;
+}
+
+/** `POST /api/v1/lessons/{lesson_id}/finish` — JSON body, may be `{}`. */
+export async function finishLesson(
+  token: string | null,
+  lessonId: string,
+  input: FinishLessonRequest = {}
+): Promise<FinishLessonResponse> {
+  const response = await apiFetch(`/api/v1/lessons/${lessonId}/finish`, token, {
+    method: "POST",
+    body: JSON.stringify(buildFinishLessonBody(input)),
+  });
 
   if (!response.ok) {
     throw await toApiError(response, "Failed to finish lesson");

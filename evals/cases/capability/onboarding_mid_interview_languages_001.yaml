@@ -1,0 +1,23 @@
+id: onboarding_mid_interview_languages_001
+suite: capability
+mode: onboarding
+skill: onboarding_interviewer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    English
+  history:
+    - role: model
+      text: |
+        Welcome. I will ask a few questions to build your course. What is your native language?
+checks:
+  deterministic:
+    - one_question_rule
+  judge:
+    rubric: onboarding_v1
+notes: |
+  Still collecting languages (English interview). One question only; no premature learner_profile.

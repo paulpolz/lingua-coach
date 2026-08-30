@@ -1,0 +1,21 @@
+id: lesson_chat_first_turn_es_001
+suite: capability
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Hola, estoy listo.
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: |
+  First coaching turn: Spanish agenda plus json:lesson_turn (and json:lesson_plan). No English in stripped prose.

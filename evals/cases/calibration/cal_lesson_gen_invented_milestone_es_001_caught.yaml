@@ -1,0 +1,24 @@
+id: cal_lesson_gen_invented_milestone_es_001_caught
+suite: calibration
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  replay_from: lesson_gen_invented_milestone_es_001_caught
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+  judge:
+    rubric: lesson_generation_v1
+labels:
+  groundedness: fail
+  difficulty: fail
+  immersion: pass
+notes: |
+  Author-proposed. Kant/subjuntivo milestone 7: not in travel roadmap; far above A2.

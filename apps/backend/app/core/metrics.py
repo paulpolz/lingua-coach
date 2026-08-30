@@ -1,4 +1,4 @@
-"""Prometheus custom metrics for LLM usage and client error reporting."""
+"""Prometheus custom metrics for LLM usage, client errors, and quality signals."""
 
 from __future__ import annotations
 
@@ -35,6 +35,18 @@ client_errors_total = Counter(
     ["code", "surface"],
 )
 
+quality_events_total = Counter(
+    "quality_events_total",
+    "User quality signals (thumbs, lesson CSAT)",
+    ["kind", "surface", "value"],
+)
+
+quality_judge_fail_total = Counter(
+    "quality_judge_fail_total",
+    "Online batch-judge dimension failures",
+    ["dimension", "rubric"],
+)
+
 
 def record_llm_call(
     *,
@@ -59,3 +71,18 @@ def record_llm_retry(*, call_type: str, reason: str) -> None:
 
 def record_client_error(*, code: str, surface: str) -> None:
     client_errors_total.labels(code=code or "UNKNOWN", surface=surface or "unknown").inc()
+
+
+def record_quality_event(*, kind: str, surface: str, value: str) -> None:
+    quality_events_total.labels(
+        kind=kind or "unknown",
+        surface=surface or "unknown",
+        value=str(value),
+    ).inc()
+
+
+def record_quality_judge_fail(*, dimension: str, rubric: str) -> None:
+    quality_judge_fail_total.labels(
+        dimension=dimension or "unknown",
+        rubric=rubric or "unknown",
+    ).inc()

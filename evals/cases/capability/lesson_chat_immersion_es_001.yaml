@@ -1,0 +1,24 @@
+id: lesson_chat_immersion_es_001
+suite: capability
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Estoy en Barcelona desde tres días
+  history:
+    - role: model
+      text: |
+        Cuéntame cuánto tiempo llevas en la ciudad.
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: |
+  Immersion: stripped prose is Spanish only (no English lecture). json:lesson_turn still required.

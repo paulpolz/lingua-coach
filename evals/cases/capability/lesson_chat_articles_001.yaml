@@ -1,0 +1,24 @@
+id: lesson_chat_articles_001
+suite: capability
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Voy a hotel para reservar habitación
+  history:
+    - role: model
+      text: |
+        Pide una habitación en la recepción, en una frase.
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - pattern_type_articles
+  judge:
+    rubric: lesson_turn_v1
+notes: |
+  Clear dropped-article error. mistakes.pattern_type is 'missing articles'; corrections type also mentions articles.

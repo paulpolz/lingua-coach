@@ -1,0 +1,16 @@
+{
+  "rubric_version": "lesson_turn_v1",
+  "scores": {
+    "immersion": "fail",
+    "correction_accuracy": "pass",
+    "pedagogy": "fail",
+    "contract": "pass"
+  },
+  "rationale": {
+    "immersion": "Tutor explains in English (this means / you should / in English).",
+    "correction_accuracy": "The past-tense error is real; Ayer fui a la tienda is usable.",
+    "pedagogy": "English grammar lecture instead of a Spanish drill.",
+    "contract": "json:lesson_turn is present and matches the named error."
+  },
+  "span": "In English this is simple past"
+}

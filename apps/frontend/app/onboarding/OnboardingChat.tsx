@@ -364,7 +364,13 @@ export default function OnboardingChat({
           return <PlanGeneratingPlaceholder key={item.id} />;
         }
 
-        return <ChatMessageBubble key={item.id} message={item} />;
+        return (
+          <ChatMessageBubble
+            key={item.id}
+            message={item}
+            quality={{ sessionId, surface: "onboarding", getToken }}
+          />
+        );
       })}
 
       <div ref={scrollAnchorRef} />

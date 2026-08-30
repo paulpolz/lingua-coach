@@ -1,0 +1,23 @@
+id: lesson_chat_turn_parses_001
+suite: capability
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Quiero una cama doble cerca del centro.
+  history:
+    - role: model
+      text: |
+        Hoy practicamos reservas de hotel. Describe la habitación que quieres.
+checks:
+  deterministic:
+    - extract_lesson_turn
+  judge:
+    rubric: lesson_turn_v1
+notes: |
+  Tutor stays in Spanish and emits a parseable json:lesson_turn (empty mistakes is fine — production is already grammatical).

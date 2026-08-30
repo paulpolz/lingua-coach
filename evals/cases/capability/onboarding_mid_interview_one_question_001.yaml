@@ -1,0 +1,29 @@
+id: onboarding_mid_interview_one_question_001
+suite: capability
+mode: onboarding
+skill: onboarding_interviewer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Spanish
+  history:
+    - role: model
+      text: |
+        Welcome. What is your native language?
+    - role: user
+      text: |
+        English
+    - role: model
+      text: |
+        Which language do you want to learn or improve?
+checks:
+  deterministic:
+    - one_question_rule
+  judge:
+    rubric: onboarding_v1
+notes: |
+  Mid-interview after both languages are known: exactly one question in Spanish. Must not emit json:learner_profile yet.

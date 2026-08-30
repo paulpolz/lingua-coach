@@ -14,10 +14,12 @@ import {
   readAndClearFinishHint,
   startLesson,
   stopLesson,
+  type FinishLessonRequest,
   type Lesson,
 } from "@/lib/lessons";
 import { getProgress, type Progress } from "@/lib/progress";
 import { reportClientError } from "@/lib/reportError";
+import FinishLessonDialog from "@/components/FinishLessonDialog";
 import Button from "@/components/ui/Button";
 import PaceSummary from "./PaceSummary";
 
@@ -66,6 +68,7 @@ export default function DashboardClient() {
   const [stopError, setStopError] = useState<string | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishDialogOpen, setFinishDialogOpen] = useState(false);
   // Set either by a successful handleFinishLesson() call here, or carried
   // over from LessonChat's finish-then-redirect (readAndClearFinishHint).
   const [finishAckMessage, setFinishAckMessage] = useState<string | null>(() => readAndClearFinishHint());
@@ -303,22 +306,26 @@ export default function DashboardClient() {
   // accomplished server-side, so we drop straight back to `idle`: the
   // backend owns lesson numbering, so the next "Start lesson" click just
   // starts lesson N+1 with no state to track here.
-  const handleFinishLesson = useCallback(async () => {
-    if (state.phase !== "active" || isFinishing) return;
-    setIsFinishing(true);
-    setFinishError(null);
-    try {
-      const token = await getToken();
-      const result = await finishLesson(token, state.lesson.id);
-      setFinishAckMessage(describeFinishResult(result));
-      setState({ phase: "idle" });
-      void loadProgress();
-    } catch (error) {
-      setFinishError(error instanceof Error ? error.message : "Failed to finish the lesson.");
-    } finally {
-      setIsFinishing(false);
-    }
-  }, [state, isFinishing, getToken, loadProgress]);
+  const handleFinishLesson = useCallback(
+    async (feedback: FinishLessonRequest = {}) => {
+      if (state.phase !== "active" || isFinishing) return;
+      setIsFinishing(true);
+      setFinishError(null);
+      try {
+        const token = await getToken();
+        const result = await finishLesson(token, state.lesson.id, feedback);
+        setFinishDialogOpen(false);
+        setFinishAckMessage(describeFinishResult(result));
+        setState({ phase: "idle" });
+        void loadProgress();
+      } catch (error) {
+        setFinishError(error instanceof Error ? error.message : "Failed to finish the lesson.");
+      } finally {
+        setIsFinishing(false);
+      }
+    },
+    [state, isFinishing, getToken, loadProgress]
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-7 overflow-y-auto bg-background px-7 pb-10 pt-9">
@@ -388,7 +395,7 @@ export default function DashboardClient() {
           onStop={() => void handleStopSession()}
           isStopping={isStopping}
           stopError={stopError}
-          onFinish={() => void handleFinishLesson()}
+          onFinish={() => setFinishDialogOpen(true)}
           isFinishing={isFinishing}
           finishError={finishError}
         />
@@ -397,6 +404,15 @@ export default function DashboardClient() {
       {state.phase !== "loading" && state.phase !== "load-error" ? (
         <PaceSummary progress={progress} error={progressError} />
       ) : null}
+
+      <FinishLessonDialog
+        open={finishDialogOpen}
+        isSubmitting={isFinishing}
+        onCancel={() => {
+          if (!isFinishing) setFinishDialogOpen(false);
+        }}
+        onConfirm={(payload) => void handleFinishLesson(payload)}
+      />
     </div>
   );
 }
@@ -476,11 +492,7 @@ function ActiveLessonHero({
         </Button>
         <Button
           variant="ghost"
-          onClick={() => {
-            if (window.confirm("Mark this lesson accomplished? Any unfinished slots count as 0%.")) {
-              onFinish();
-            }
-          }}
+          onClick={onFinish}
           disabled={isFinishing}
           title="Always available while the lesson is active — marks it accomplished and unlocks the next lesson."
         >

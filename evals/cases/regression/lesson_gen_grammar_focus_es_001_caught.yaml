@@ -1,0 +1,26 @@
+id: lesson_gen_grammar_focus_es_001_caught
+suite: regression
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - invented_milestone
+    - grammar_focus_aligned
+  judge:
+    rubric: lesson_generation_v1
+notes: >-
+  Known-bad: milestone_index 0 is in the roadmap (invented_milestone should
+  pass) but grammar_focus is subjuntivo, not the injected
+  "Artículos definidos e indefinidos". grammar_focus_aligned must fail.
+  expect_fail: true (expect_outcome=fail). Gold alignment is locked by
+  lesson_gen_invented_milestone_es_001.
+expect_fail: true

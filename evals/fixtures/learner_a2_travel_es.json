@@ -1,0 +1,448 @@
+{
+  "native_language": "en",
+  "target_language": "es",
+  "goal_outcome": "Manejar viajes por España: hotel, tren y restaurante sin traducir cada frase",
+  "target_level": "A2",
+  "time_budget": {
+    "minutes_per_session": 25,
+    "sessions_per_week": 4,
+    "optional_partner_minutes": 0,
+    "intensity": "sustainable"
+  },
+  "focus": {
+    "skill_priorities": [
+      "speaking",
+      "listening"
+    ],
+    "topic_priorities": [
+      "viajes",
+      "hotel",
+      "comida"
+    ],
+    "vocab_priorities": [
+      "recepción",
+      "billete de tren"
+    ],
+    "avoid": []
+  },
+  "level_strengths": [
+    "leer menús y carteles"
+  ],
+  "level_weaknesses": [
+    "artículos",
+    "hablar con prisa"
+  ],
+  "curriculum": {
+    "lesson_goal": "Reservar una habitación de hotel pidiendo fechas, tipo de cama y precio con artículos correctos",
+    "grammar_focus": "Artículos definidos e indefinidos para reservas de hotel",
+    "vocab_theme": "Hotel: recepción, habitación, reserva",
+    "milestone_index": 0,
+    "slots": [
+      {
+        "id": "warmup",
+        "label": "Recuerdo: el o un",
+        "exercise_set": "Tres frases cortas sobre un viaje reciente usando el, la, un, una"
+      },
+      {
+        "id": "grammar",
+        "label": "Artículos en la recepción",
+        "exercise_set": "Completar huecos: al hotel, una habitación, el desayuno, la reserva"
+      },
+      {
+        "id": "production",
+        "label": "Juego de roles en recepción",
+        "exercise_set": "Simular una reserva: noches, tipo de cama, precio y desayuno"
+      }
+    ],
+    "input_task": {
+      "type": "listening",
+      "topic": "Diálogo en recepción de hotel",
+      "focus": "Notar artículos delante de habitación, reserva y desayuno"
+    },
+    "goal_specific_task": {
+      "label": "Simular una reserva en recepción",
+      "format": "juego de roles"
+    },
+    "exit_criteria": [
+      "Producir cinco frases de reserva con artículo correcto",
+      "Completar el juego de roles de recepción sin omitir el o un"
+    ],
+    "partner_session": null
+  },
+  "due_mistakes": [
+    {
+      "pattern_type": "missing articles",
+      "example_text": "Voy a hotel",
+      "correction": "Voy al hotel"
+    }
+  ],
+  "roadmap": {
+    "version": 1,
+    "summary": {
+      "goal_outcome": "Manejar viajes por España: hotel, tren y restaurante sin traducir cada frase",
+      "goal_horizon": "4 meses",
+      "starting_level": "A2",
+      "target_language": "es",
+      "native_language": "en",
+      "target_plan_days": 40,
+      "target_plan_days_range": [
+        32,
+        48
+      ],
+      "pace_description": "25 minutos por sesión, 4 sesiones por semana → unos 40 días de plan"
+    },
+    "milestones": [
+      {
+        "index": 0,
+        "title": "Diagnóstico y reservas de hotel",
+        "skill_developed": "Usar artículos definidos e indefinidos al reservar una habitación",
+        "why_now": "El inglés omite artículos; hay que fijarlos antes de viajar",
+        "connects_to": [],
+        "success_criteria": "Reservar una habitación en recepción con el, la, un, una correctos",
+        "estimated_plan_days": 12
+      },
+      {
+        "index": 1,
+        "title": "Tren y restaurante",
+        "skill_developed": "Comprar un billete y pedir la cuenta con fluidez A2",
+        "why_now": "Después del hotel, el viaje real exige tren y comida",
+        "connects_to": [
+          0
+        ],
+        "success_criteria": "Pedir un menú, un plato y la cuenta sin traducir",
+        "estimated_plan_days": 14
+      },
+      {
+        "index": 2,
+        "title": "Imprevistos en el viaje",
+        "skill_developed": "Explicar un retraso o un cambio de habitación",
+        "why_now": "Integra artículos y vocabulario bajo un poco de presión",
+        "connects_to": [
+          1
+        ],
+        "success_criteria": "Resolver un imprevisto de dos minutos en recepción",
+        "estimated_plan_days": 14
+      }
+    ],
+    "weekly_template": {
+      "minutes_per_session": 25,
+      "activities": [
+        {
+          "id": "warmup",
+          "label": "Calentamiento y recuerdo",
+          "minutes": 4
+        },
+        {
+          "id": "grammar",
+          "label": "Gramática",
+          "minutes": 6
+        },
+        {
+          "id": "vocabulary",
+          "label": "Vocabulario",
+          "minutes": 4
+        },
+        {
+          "id": "input",
+          "label": "Escucha o lectura",
+          "minutes": 4
+        },
+        {
+          "id": "speaking",
+          "label": "Producción oral",
+          "minutes": 4
+        },
+        {
+          "id": "goal_specific",
+          "label": "Tarea de viaje",
+          "minutes": 2
+        },
+        {
+          "id": "review",
+          "label": "Repaso y registro",
+          "minutes": 1
+        }
+      ],
+      "partner_session": null,
+      "weekends": "sábado y domingo: solo repaso opcional"
+    },
+    "current_block": {
+      "milestone_index": 0,
+      "weeks": 2,
+      "focus_summary": "Artículos y vocabulario de hotel para llegar y reservar",
+      "themes": [
+        {
+          "block_day": 1,
+          "grammar_focus": "Artículos definidos e indefinidos para reservas de hotel",
+          "vocab_theme": "Hotel: recepción, habitación, reserva",
+          "input_type": "listening",
+          "production_focus": "Reservar una habitación en recepción",
+          "goal_specific_focus": "Diálogo de llegada al hotel"
+        }
+      ]
+    },
+    "learning_principles": [
+      "active_recall",
+      "spaced_repetition",
+      "interleaving",
+      "output_first",
+      "error_correction_logged"
+    ],
+    "adaptation_rules": {
+      "failed_weekly_test": "repeat_milestone_content",
+      "recurring_error_pattern": "inject_retrieval_drill",
+      "strong_performance": "increase_difficulty_not_shorten_goal",
+      "user_feedback": "adjust_next_1_2_weeks_focus"
+    },
+    "current_milestone_index": 0
+  },
+  "generation_context": {
+    "lesson_number": 3,
+    "learner_profile": {
+      "goal_outcome": "Manejar viajes por España: hotel, tren y restaurante sin traducir cada frase",
+      "native_language": "en",
+      "target_language": "es",
+      "target_level": "A2",
+      "level_strengths": [
+        "leer menús y carteles"
+      ],
+      "level_weaknesses": [
+        "artículos",
+        "hablar con prisa"
+      ],
+      "time_budget": {
+        "minutes_per_session": 25,
+        "sessions_per_week": 4,
+        "optional_partner_minutes": 0,
+        "intensity": "sustainable"
+      },
+      "focus": {
+        "skill_priorities": [
+          "speaking",
+          "listening"
+        ],
+        "topic_priorities": [
+          "viajes",
+          "hotel",
+          "comida"
+        ],
+        "vocab_priorities": [
+          "recepción",
+          "billete de tren"
+        ],
+        "avoid": []
+      },
+      "constraints": {
+        "budget": "none",
+        "practice_partner": {
+          "available": false,
+          "minutes": 0,
+          "relationship": ""
+        },
+        "learning_style": "conversational"
+      },
+      "grammar_mastery": {
+        "artículos": 40,
+        "presente": 55
+      },
+      "vocabulary_summary": {
+        "themes": [
+          "hotel",
+          "tren"
+        ],
+        "notes": "Omite artículos delante de hotel y habitación"
+      }
+    },
+    "active_plan": {
+      "roadmap": {
+        "version": 1,
+        "summary": {
+          "goal_outcome": "Manejar viajes por España: hotel, tren y restaurante sin traducir cada frase",
+          "goal_horizon": "4 meses",
+          "starting_level": "A2",
+          "target_language": "es",
+          "native_language": "en",
+          "target_plan_days": 40,
+          "target_plan_days_range": [
+            32,
+            48
+          ],
+          "pace_description": "25 minutos por sesión, 4 sesiones por semana → unos 40 días de plan"
+        },
+        "milestones": [
+          {
+            "index": 0,
+            "title": "Diagnóstico y reservas de hotel",
+            "skill_developed": "Usar artículos definidos e indefinidos al reservar una habitación",
+            "why_now": "El inglés omite artículos; hay que fijarlos antes de viajar",
+            "connects_to": [],
+            "success_criteria": "Reservar una habitación en recepción con el, la, un, una correctos",
+            "estimated_plan_days": 12
+          },
+          {
+            "index": 1,
+            "title": "Tren y restaurante",
+            "skill_developed": "Comprar un billete y pedir la cuenta con fluidez A2",
+            "why_now": "Después del hotel, el viaje real exige tren y comida",
+            "connects_to": [
+              0
+            ],
+            "success_criteria": "Pedir un menú, un plato y la cuenta sin traducir",
+            "estimated_plan_days": 14
+          },
+          {
+            "index": 2,
+            "title": "Imprevistos en el viaje",
+            "skill_developed": "Explicar un retraso o un cambio de habitación",
+            "why_now": "Integra artículos y vocabulario bajo un poco de presión",
+            "connects_to": [
+              1
+            ],
+            "success_criteria": "Resolver un imprevisto de dos minutos en recepción",
+            "estimated_plan_days": 14
+          }
+        ],
+        "weekly_template": {
+          "minutes_per_session": 25,
+          "activities": [
+            {
+              "id": "warmup",
+              "label": "Calentamiento y recuerdo",
+              "minutes": 4
+            },
+            {
+              "id": "grammar",
+              "label": "Gramática",
+              "minutes": 6
+            },
+            {
+              "id": "vocabulary",
+              "label": "Vocabulario",
+              "minutes": 4
+            },
+            {
+              "id": "input",
+              "label": "Escucha o lectura",
+              "minutes": 4
+            },
+            {
+              "id": "speaking",
+              "label": "Producción oral",
+              "minutes": 4
+            },
+            {
+              "id": "goal_specific",
+              "label": "Tarea de viaje",
+              "minutes": 2
+            },
+            {
+              "id": "review",
+              "label": "Repaso y registro",
+              "minutes": 1
+            }
+          ],
+          "partner_session": null,
+          "weekends": "sábado y domingo: solo repaso opcional"
+        },
+        "current_block": {
+          "milestone_index": 0,
+          "weeks": 2,
+          "focus_summary": "Artículos y vocabulario de hotel para llegar y reservar",
+          "themes": [
+            {
+              "block_day": 1,
+              "grammar_focus": "Artículos definidos e indefinidos para reservas de hotel",
+              "vocab_theme": "Hotel: recepción, habitación, reserva",
+              "input_type": "listening",
+              "production_focus": "Reservar una habitación en recepción",
+              "goal_specific_focus": "Diálogo de llegada al hotel"
+            }
+          ]
+        },
+        "learning_principles": [
+          "active_recall",
+          "spaced_repetition",
+          "interleaving",
+          "output_first",
+          "error_correction_logged"
+        ],
+        "adaptation_rules": {
+          "failed_weekly_test": "repeat_milestone_content",
+          "recurring_error_pattern": "inject_retrieval_drill",
+          "strong_performance": "increase_difficulty_not_shorten_goal",
+          "user_feedback": "adjust_next_1_2_weeks_focus"
+        },
+        "current_milestone_index": 0
+      },
+      "current_milestone_index": 0
+    },
+    "open_mistakes": [
+      {
+        "pattern_type": "missing articles",
+        "example_text": "Voy a hotel",
+        "correction": "Voy al hotel",
+        "occurrence_count": 3,
+        "next_review_at": "2026-08-30T10:00:00+00:00"
+      }
+    ],
+    "prior_lessons": [
+      {
+        "lesson_number": 2,
+        "curriculum": {
+          "lesson_goal": "Saludar y pedir ayuda básica al llegar a una ciudad",
+          "grammar_focus": "Presente de verbos regulares para saludos",
+          "vocab_theme": "Saludos y direcciones",
+          "milestone_index": 0,
+          "slots": [
+            {
+              "id": "warmup",
+              "label": "Saludos",
+              "exercise_set": "Tres saludos formales e informales"
+            },
+            {
+              "id": "production",
+              "label": "Pedir direcciones",
+              "exercise_set": "Preguntar por una calle y un hotel"
+            }
+          ],
+          "input_task": {
+            "type": "reading",
+            "topic": "Cartel de bienvenida en una estación",
+            "focus": "Nombres de lugares y saludos"
+          },
+          "goal_specific_task": {
+            "label": "Pedir indicaciones hacia el hotel",
+            "format": "juego de roles"
+          },
+          "exit_criteria": [
+            "Saludar y pedir una dirección en cuatro frases"
+          ],
+          "partner_session": null
+        },
+        "session_summary": {
+          "duration_minutes": 24,
+          "completed_slots": [
+            "warmup",
+            "production"
+          ],
+          "deferred_items": [],
+          "exit_criteria_met": true,
+          "performance_notes": "Saludos fluidos; todavía omite artículos",
+          "focus_pattern_result": {
+            "grammar_focus": "Presente de verbos regulares para saludos",
+            "met": true,
+            "note": ""
+          },
+          "resolved_pattern_types": [],
+          "new_pattern_types": [
+            "missing articles"
+          ],
+          "vocab_themes_covered": [
+            "Saludos y direcciones"
+          ],
+          "learner_feedback": null
+        }
+      }
+    ]
+  }
+}

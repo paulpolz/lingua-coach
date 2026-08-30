@@ -1,0 +1,41 @@
+id: onboarding_mid_interview_time_budget_001
+suite: capability
+mode: onboarding
+skill: onboarding_interviewer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    A2. I can order food but I drop articles a lot.
+  history:
+    - role: model
+      text: |
+        Welcome. What is your native language?
+    - role: user
+      text: |
+        English
+    - role: model
+      text: |
+        Which language do you want to learn or improve?
+    - role: user
+      text: |
+        Spanish
+    - role: model
+      text: |
+        ¿Qué quieres poder hacer en español?
+    - role: user
+      text: |
+        Travel in Spain: hotels, trains, restaurants.
+    - role: model
+      text: |
+        ¿Cómo describirías tu español hoy?
+checks:
+  deterministic:
+    - one_question_rule
+  judge:
+    rubric: onboarding_v1
+notes: |
+  Later mid-interview (level just answered): one time-budget question in Spanish, still no learner_profile block.

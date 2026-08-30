@@ -1,0 +1,29 @@
+id: cal_lesson_chat_immersion_es_001
+suite: calibration
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: lesson_chat_immersion_es_001
+  user_message: "Estoy en Barcelona desde tres días\n"
+  history:
+    - role: model
+      text: |
+        Cuéntame cuánto tiempo llevas en la ciudad.
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+labels:
+  immersion: pass
+  correction_accuracy: pass
+  pedagogy: pass
+  contract: pass
+notes: |
+  Author-proposed. Reuses capability lesson_chat_immersion_es_001. Gold Spanish recast + drill.

@@ -1,0 +1,9 @@
+{
+  "suite": "regression",
+  "failed_ids": [],
+  "model": "gemini-2.0-pro",
+  "skill_sha": "1c41ff4e7fddcc4ce8644fffb6c65efb19cc1e45",
+  "skill_sha_source": "skills_tree",
+  "rubric_version": "v1",
+  "note": "skill_sha is git rev-parse HEAD:skills at the time this baseline was tagged. Comparison still uses failed_ids only. Judges are not in the gate."
+}

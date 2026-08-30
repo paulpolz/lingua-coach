@@ -1,0 +1,23 @@
+id: lesson_generation_gold_full_001
+suite: capability
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Generate the next lesson's curriculum for this learner, per the Generation rules above.
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - grammar_focus_aligned
+    - no_english_learner_facing
+    - exit_criteria_nonempty_unique
+  judge:
+    rubric: lesson_generation_v1
+notes: |
+  Kitchen-sink generation gold: schema, aligned grammar_focus, Spanish learner-facing strings, unique exit_criteria.

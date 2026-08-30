@@ -1,0 +1,14 @@
+{
+  "rubric_version": "onboarding_v1",
+  "scores": {
+    "completeness": "pass",
+    "one_question_rule": "fail",
+    "roadmap_honesty": "pass"
+  },
+  "rationale": {
+    "completeness": "Mid-interview; no guessed profile.",
+    "one_question_rule": "Three stacked questions in one reply.",
+    "roadmap_honesty": "No invented 90-day plan."
+  },
+  "span": "¿Cuál es tu objetivo? ¿Cuántos minutos puedes practicar al día?"
+}
