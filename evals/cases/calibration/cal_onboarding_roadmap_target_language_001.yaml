@@ -1,0 +1,37 @@
+id: cal_onboarding_roadmap_target_language_001
+suite: calibration
+mode: onboarding
+skill: course_composer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: onboarding_roadmap_target_language_001
+  user_message: "Sí, el resumen está bien. Enséñame el plan.\n"
+  history:
+    - role: model
+      text: |
+        Welcome. I will ask a few questions to build your course. What is your native language?
+    - role: user
+      text: |
+        English
+    - role: model
+      text: |
+        Which language do you want to learn or improve?
+    - role: user
+      text: |
+        Spanish
+checks:
+  deterministic:
+    - extract_course_roadmap
+    - roadmap_target_language_matches
+  judge:
+    rubric: onboarding_v1
+labels:
+  completeness: pass
+  one_question_rule: pass
+  roadmap_honesty: pass
+notes: |
+  Author-proposed. Roadmap-only handoff; one confirmation question; pace matches 25×4.

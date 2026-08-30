@@ -1,0 +1,62 @@
+id: cal_onboarding_profile_and_roadmap_001
+suite: calibration
+mode: onboarding
+skill: course_composer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: onboarding_profile_and_roadmap_001
+  user_message: |
+    A trip in four months. I quit before because I did not practice. No budget for tutors.
+  history:
+    - role: model
+      text: |
+        Welcome. I will ask a few questions to build your course. What is your native language?
+    - role: user
+      text: |
+        English
+    - role: model
+      text: |
+        Which language do you want to learn or improve?
+    - role: user
+      text: |
+        Spanish
+    - role: model
+      text: |
+        Anoté inglés y español. ¿Qué quieres poder hacer en español?
+    - role: user
+      text: |
+        Travel in Spain — hotels, trains, restaurants, without translating every sentence.
+    - role: model
+      text: |
+        ¿Cómo describirías tu español hoy?
+    - role: user
+      text: |
+        A2. I can order food and read signs, but I drop articles a lot.
+    - role: model
+      text: |
+        ¿Cuánto tiempo puedes practicar un día típico?
+    - role: user
+      text: |
+        25 minutes, four days a week. Sustainable, not intensive. No practice partner.
+    - role: model
+      text: |
+        ¿Qué habilidades importan más para tu meta?
+    - role: user
+      text: |
+        Speaking and listening. Topics: hotels and food. Skip exam prep.
+checks:
+  deterministic:
+    - extract_learner_profile
+    - extract_course_roadmap
+  judge:
+    rubric: onboarding_v1
+labels:
+  completeness: pass
+  one_question_rule: pass
+  roadmap_honesty: pass
+notes: |
+  Author-proposed. Full profile + 40-day plan matching 25 min × 4 days/week.

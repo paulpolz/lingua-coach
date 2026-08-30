@@ -1,0 +1,23 @@
+id: lesson_generation_due_mistakes_001
+suite: capability
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Generate the next lesson's curriculum for this learner, per the Generation rules above.
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - grammar_focus_aligned
+    - exit_criteria_nonempty_unique
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_generation_v1
+notes: |
+  Same milestone grammar_focus, with warmup interleaved from due open_mistakes (Voy a hotel → Voy al hotel). Three unique exit_criteria.

@@ -1,0 +1,3 @@
+{
+  "raw_completion": "Perfecto: «una habitación doble» y «dos noches» van bien.\nAhora pide lo mismo con más formalidad, como en una recepción elegante.\n\n```json:lesson_turn\n{\n  \"corrections\": [],\n  \"tips\": [\n    \"Doble y noches ya llevan el artículo adecuado\"\n  ],\n  \"plan_updates\": null,\n  \"suggest_finish\": false,\n  \"mistakes\": []\n}\n```"
+}

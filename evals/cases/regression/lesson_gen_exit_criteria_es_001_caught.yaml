@@ -1,0 +1,23 @@
+id: lesson_gen_exit_criteria_es_001_caught
+suite: regression
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - exit_criteria_nonempty_unique
+  judge:
+    rubric: lesson_generation_v1
+notes: >-
+  Known-bad: LessonCurriculum still validates (list is nonempty) but
+  exit_criteria has an empty string and a duplicate. curriculum_valid passes;
+  exit_criteria_nonempty_unique must fail. expect_fail: true (expect_outcome=fail).
+expect_fail: true

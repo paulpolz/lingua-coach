@@ -1,0 +1,33 @@
+id: cal_onboarding_mid_interview_one_question_001
+suite: calibration
+mode: onboarding
+skill: onboarding_interviewer
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: onboarding_mid_interview_one_question_001
+  user_message: "Spanish\n"
+  history:
+    - role: model
+      text: |
+        Welcome. What is your native language?
+    - role: user
+      text: |
+        English
+    - role: model
+      text: |
+        Which language do you want to learn or improve?
+checks:
+  deterministic:
+    - one_question_rule
+  judge:
+    rubric: onboarding_v1
+labels:
+  completeness: pass
+  one_question_rule: pass
+  roadmap_honesty: pass
+notes: |
+  Author-proposed. Mid-interview: one question, no guessed profile or 90-day plan.

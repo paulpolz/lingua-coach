@@ -1,0 +1,29 @@
+id: cal_lesson_chat_articles_001
+suite: calibration
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: lesson_chat_articles_001
+  user_message: "Voy a hotel para reservar habitación\n"
+  history:
+    - role: model
+      text: |
+        Pide una habitación en la recepción, en una frase.
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - pattern_type_articles
+  judge:
+    rubric: lesson_turn_v1
+labels:
+  immersion: pass
+  correction_accuracy: pass
+  pedagogy: pass
+  contract: pass
+notes: |
+  Author-proposed. Article error named correctly; Spanish drill.

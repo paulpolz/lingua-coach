@@ -1,0 +1,16 @@
+{
+  "rubric_version": "lesson_turn_v1",
+  "scores": {
+    "immersion": "pass",
+    "correction_accuracy": "pass",
+    "pedagogy": "pass",
+    "contract": "pass"
+  },
+  "rationale": {
+    "immersion": "Learner-facing prose is Spanish; recast stays in the target language.",
+    "correction_accuracy": "desde tres días → desde hace tres días is a real, usable fix.",
+    "pedagogy": "Short recast plus a prompt to say what they visited yesterday.",
+    "contract": "json:lesson_turn names the same span and correction as the prose."
+  },
+  "span": null
+}

@@ -1,0 +1,22 @@
+id: lesson_chat_missing_lesson_turn_es_001
+suite: regression
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "I go to store yesterday"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: >-
+  Gold pair for missing/truncated fence: complete ```json:lesson_turn block
+  that extract_lesson_turn can parse. expect_fail: false (expect_outcome=pass).
+expect_fail: false

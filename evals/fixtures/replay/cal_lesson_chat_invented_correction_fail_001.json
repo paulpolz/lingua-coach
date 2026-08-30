@@ -1,0 +1,3 @@
+{
+  "raw_completion": "Casi. Dijiste «una habitación doble» pero falta el artículo: «la una habitación doble». Repite eso.\n\n```json:lesson_turn\n{\n  \"corrections\": [\n    {\"span\": \"una habitación doble\", \"correction\": \"la una habitación doble\", \"type\": \"articles\", \"note\": \"Siempre doble artículo\"}\n  ],\n  \"tips\": [],\n  \"plan_updates\": null,\n  \"suggest_finish\": false,\n  \"mistakes\": [\n    {\"pattern_type\": \"missing articles\", \"example_text\": \"una habitación doble\", \"correction\": \"la una habitación doble\"}\n  ]\n}\n```\n"
+}

@@ -1,0 +1,23 @@
+id: lesson_gen_exit_criteria_es_001
+suite: regression
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - exit_criteria_nonempty_unique
+  judge:
+    rubric: lesson_generation_v1
+notes: >-
+  Gold: two distinct nonempty exit_criteria strings. Pydantic min_length=1 is
+  not enough — uniqueness and nonempty items are the regression lock.
+  expect_fail: false (expect_outcome=pass).
+expect_fail: false

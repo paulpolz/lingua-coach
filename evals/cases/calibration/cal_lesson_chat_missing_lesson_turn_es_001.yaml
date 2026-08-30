@@ -1,0 +1,25 @@
+id: cal_lesson_chat_missing_lesson_turn_es_001
+suite: calibration
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: lesson_chat_missing_lesson_turn_es_001
+  user_message: "I go to store yesterday"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+  judge:
+    rubric: lesson_turn_v1
+labels:
+  immersion: pass
+  correction_accuracy: pass
+  pedagogy: pass
+  contract: pass
+notes: |
+  Author-proposed. Gold complete json:lesson_turn fence.

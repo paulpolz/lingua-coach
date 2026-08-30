@@ -1,0 +1,24 @@
+id: lesson_chat_l1_leakage_es_001_caught
+suite: regression
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "I go to store yesterday"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: >-
+  Known-bad L1 leakage: English explanation in a Spanish-immersion lesson.
+  Replay has a valid json:lesson_turn fence so extract_lesson_turn passes;
+  no_english_learner_facing must fail. expect_fail: true (expect_outcome=fail)
+  so CI goes red if someone removes the immersion check.
+expect_fail: true

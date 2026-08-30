@@ -1,0 +1,6 @@
+{
+  "completions": [
+    "{\"lesson_goal\": \"roto\", \"slots\": []}",
+    "{\n  \"lesson_goal\": \"Artículos en lugares del viaje: pedir en una tienda con el, la, un, una\",\n  \"grammar_focus\": \"Artículos definidos e indefinidos\",\n  \"vocab_theme\": \"Tienda, calle y hotel\",\n  \"milestone_index\": 0,\n  \"slots\": [\n    {\n      \"id\": \"warmup\",\n      \"label\": \"Recuerdo activo — artículos con lugares\",\n      \"exercise_set\": \"Tres frases rápidas: la tienda, un hotel, el aeropuerto\"\n    },\n    {\n      \"id\": \"production\",\n      \"label\": \"Diálogo en la tienda\",\n      \"exercise_set\": \"Pedir dos productos y una dirección usando el, la, un, una\"\n    }\n  ],\n  \"input_task\": {\n    \"type\": \"listening\",\n    \"topic\": \"Un cliente pide pan en una panadería\",\n    \"focus\": \"Notar el, la, un, una delante de lugares y productos\"\n  },\n  \"goal_specific_task\": {\n    \"label\": \"Pedir direcciones hasta la tienda\",\n    \"format\": \"roleplay\"\n  },\n  \"exit_criteria\": [\n    \"Producir cinco frases con artículo correcto ante un lugar\",\n    \"Pedir un producto en la tienda sin omitir el artículo\"\n  ],\n  \"partner_session\": null\n}"
+  ]
+}

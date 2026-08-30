@@ -1,0 +1,23 @@
+id: lesson_chat_l1_leakage_es_001
+suite: regression
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "I go to store yesterday"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: >-
+  Gold immersion reply. English user turn is allowed; tutor must stay in Spanish.
+  expect_fail: false (expect_outcome=pass). Locks the good path so a broken
+  no_english_learner_facing check fails CI.
+expect_fail: false

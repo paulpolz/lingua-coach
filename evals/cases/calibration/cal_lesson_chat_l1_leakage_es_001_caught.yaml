@@ -1,0 +1,25 @@
+id: cal_lesson_chat_l1_leakage_es_001_caught
+suite: calibration
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  replay_from: lesson_chat_l1_leakage_es_001_caught
+  user_message: "I go to store yesterday"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+  judge:
+    rubric: lesson_turn_v1
+labels:
+  immersion: fail
+  correction_accuracy: pass
+  pedagogy: fail
+  contract: pass
+notes: |
+  Author-proposed. English lecture: immersion+pedagogy fail; JSON still consistent.

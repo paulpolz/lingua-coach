@@ -1,0 +1,25 @@
+id: cal_lesson_chat_pedagogy_lecture_fail_001
+suite: calibration
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "Hola, estoy listo.\n"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+labels:
+  immersion: pass
+  correction_accuracy: pass
+  pedagogy: fail
+  contract: pass
+notes: |
+  Author-proposed. Spanish grammar monologue; no ask/drill.

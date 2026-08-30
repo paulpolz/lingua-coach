@@ -1,0 +1,37 @@
+{
+  "lesson_goal": "Reservar una habitación de hotel pidiendo fechas, tipo de cama y precio con artículos correctos",
+  "grammar_focus": "Artículos definidos e indefinidos para reservas de hotel",
+  "vocab_theme": "Hotel: recepción, habitación, reserva",
+  "milestone_index": 0,
+  "slots": [
+    {
+      "id": "warmup",
+      "label": "Recuerdo: el o un",
+      "exercise_set": "Tres frases cortas sobre un viaje reciente usando el, la, un, una"
+    },
+    {
+      "id": "grammar",
+      "label": "Artículos en la recepción",
+      "exercise_set": "Completar huecos: al hotel, una habitación, el desayuno, la reserva"
+    },
+    {
+      "id": "production",
+      "label": "Juego de roles en recepción",
+      "exercise_set": "Simular una reserva: noches, tipo de cama, precio y desayuno"
+    }
+  ],
+  "input_task": {
+    "type": "listening",
+    "topic": "Diálogo en recepción de hotel",
+    "focus": "Notar artículos delante de habitación, reserva y desayuno"
+  },
+  "goal_specific_task": {
+    "label": "Simular una reserva en recepción",
+    "format": "juego de roles"
+  },
+  "exit_criteria": [
+    "Producir cinco frases de reserva con artículo correcto",
+    "Completar el juego de roles de recepción sin omitir el o un"
+  ],
+  "partner_session": null
+}

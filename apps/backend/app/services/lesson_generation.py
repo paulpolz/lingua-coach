@@ -38,8 +38,10 @@ from app.models.profile import Profile
 from app.schemas.lesson import LessonCurriculum
 from app.services import gemini
 from app.services.gemini import ChatTurn
-from app.services.languages import language_policy_block
-from app.services.skills import LESSON_GENERATION_CONTRACT, get_system_instruction
+from app.services.prompt_assembly import (
+    build_generation_user_prompt,
+    lesson_generation_system_instruction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,14 +175,7 @@ async def _build_generation_prompt(
         ],
     }
 
-    prompt = (
-        "Generate the next lesson's curriculum for this learner, per the "
-        "Generation rules above. Learner and plan context (JSON):\n"
-        f"{json.dumps(context, default=str)}\n\n"
-        "Pick one grammar focus and one vocab theme aligned to the current "
-        "milestone; interleave due items from open_mistakes and prior_lessons "
-        "before adding new material."
-    )
+    prompt = build_generation_user_prompt(context)
     native = profile.native_language if profile else None
     target = profile.target_language if profile else None
     return prompt, native, target
@@ -226,12 +221,9 @@ async def _generate_curriculum(
     job_id: uuid.UUID | None = None,
     lesson_id: uuid.UUID | None = None,
 ) -> LessonCurriculum:
-    policy = language_policy_block(
-        surface="lesson_generation",
-        native=native_language,
-        target=target_language,
+    system_instruction = lesson_generation_system_instruction(
+        native_language, target_language
     )
-    system_instruction = f"{get_system_instruction('lesson')}\n\n{LESSON_GENERATION_CONTRACT}\n\n{policy}"
     correlation = {
         "job_id": str(job_id) if job_id else None,
         "lesson_id": str(lesson_id) if lesson_id else None,

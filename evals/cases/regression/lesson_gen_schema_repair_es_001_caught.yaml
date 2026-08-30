@@ -1,0 +1,22 @@
+id: lesson_gen_schema_repair_es_001_caught
+suite: regression
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+  judge:
+    rubric: lesson_generation_v1
+notes: >-
+  Schema repair exhaustion: both completions invalid. Job/check must fail
+  cleanly on the last completion (not hang). expect_fail: true
+  (expect_outcome=fail).
+expect_fail: true

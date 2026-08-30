@@ -45,14 +45,16 @@ from app.schemas.chat import (
 from app.schemas.learner_profile import LearnerProfile
 from app.services import extraction
 from app.services.gemini import ChatTurn, GeminiError, stream_chat
-from app.services.languages import language_policy_block, normalize_language
-from app.services.rate_limit import check_and_record
-from app.services.skills import (
-    LESSON_EXTRACTION_CONTRACT,
-    ONBOARDING_EXTRACTION_CONTRACT,
-    get_system_instruction,
-    should_include_vocab_formats,
+from app.services.languages import normalize_language
+from app.services.prompt_assembly import (
+    lesson_curriculum_snippet_from_payload,
+    lesson_profile_block_from_snapshot,
+    lesson_system_instruction,
+    onboarding_system_instruction,
 )
+from app.services.quality import maybe_write_lesson_turn_candidate
+from app.services.rate_limit import check_and_record
+from app.services.skills import should_include_vocab_formats
 
 logger = get_logger(__name__)
 
@@ -416,24 +418,7 @@ def _lesson_curriculum_snippet(lesson: Lesson) -> str:
     lesson_goal/grammar_focus/vocab_theme/slots/exit_criteria fields from
     `lessons.payload.curriculum`, not a full chat-history dump."""
     curriculum = (lesson.payload or {}).get("curriculum") or {}
-    if not curriculum:
-        return "Current lesson curriculum: not yet generated (lesson is still generating)."
-
-    slots = curriculum.get("slots") or []
-    slots_text = "\n".join(
-        f"  - {s.get('id')}: {s.get('label')} — {s.get('exercise_set')}" for s in slots
-    ) or "  (none)"
-    exit_criteria = curriculum.get("exit_criteria") or []
-    exit_text = "\n".join(f"  - {c}" for c in exit_criteria) or "  (none)"
-
-    return (
-        "Current lesson curriculum (lessons.payload.curriculum):\n"
-        f"Lesson goal: {curriculum.get('lesson_goal', '')}\n"
-        f"Grammar focus: {curriculum.get('grammar_focus', '')}\n"
-        f"Vocab theme: {curriculum.get('vocab_theme', '')}\n"
-        f"Slots:\n{slots_text}\n"
-        f"Exit criteria:\n{exit_text}"
-    )
+    return lesson_curriculum_snippet_from_payload(curriculum)
 
 
 async def _fetch_profile(db: AsyncSession, user: User) -> Profile | None:
@@ -457,26 +442,13 @@ async def _lesson_profile_block(
         .limit(_DUE_MISTAKES_LIMIT)
     )
     due_mistakes = mistakes_result.scalars().all()
-    due_text = (
-        "\n".join(f"  - {m.pattern_type}: {m.example_text}" for m in due_mistakes)
-        if due_mistakes
-        else "  (none due)"
-    )
 
     goal = profile.goal_outcome if profile and profile.goal_outcome else "(not set)"
     level = profile.target_level if profile and profile.target_level else "(not set)"
     native = profile.native_language if profile and profile.native_language else "(not set)"
     target = profile.target_language if profile and profile.target_language else "en"
 
-    return (
-        "Learner profile (compact):\n"
-        f"Native language: {native}\n"
-        f"Target language: {target}\n"
-        f"Goal: {goal}\n"
-        f"Level: {level}\n"
-        f"Conduct this lesson only in {target}.\n"
-        f"Weak patterns due for review:\n{due_text}"
-    )
+    return lesson_profile_block_from_snapshot(native, target, goal, level, due_mistakes)
 
 
 async def _load_context_history(db: AsyncSession, session: ChatSession) -> list[ChatTurn]:
@@ -497,13 +469,9 @@ async def _onboarding_event_stream(
     *, db: AsyncSession, user: User, session: ChatSession, history: list[ChatTurn]
 ) -> AsyncGenerator[str, None]:
     profile = await _fetch_profile(db, user)
-    policy = language_policy_block(
-        surface="onboarding",
-        native=profile.native_language if profile else None,
-        target=profile.target_language if profile else None,
-    )
-    system_instruction = (
-        f"{get_system_instruction('onboarding')}\n\n{ONBOARDING_EXTRACTION_CONTRACT}\n\n{policy}"
+    system_instruction = onboarding_system_instruction(
+        profile.native_language if profile else None,
+        profile.target_language if profile else None,
     )
 
     full_text_parts: list[str] = []
@@ -581,16 +549,12 @@ async def _lesson_event_stream(
     *, db: AsyncSession, user: User, session: ChatSession, lesson: Lesson, history: list[ChatTurn]
 ) -> AsyncGenerator[str, None]:
     profile = await _fetch_profile(db, user)
-    policy = language_policy_block(
-        surface="lesson",
-        native=profile.native_language if profile else None,
-        target=profile.target_language if profile else None,
-    )
     curriculum = (lesson.payload or {}).get("curriculum") or {}
     include_vocab = should_include_vocab_formats(curriculum)
-    system_instruction = (
-        f"{get_system_instruction('lesson', include_vocab_formats=include_vocab)}\n\n"
-        f"{LESSON_EXTRACTION_CONTRACT}\n\n{policy}"
+    system_instruction = lesson_system_instruction(
+        profile.native_language if profile else None,
+        profile.target_language if profile else None,
+        include_vocab,
     )
 
     # ai-api.md "Prompt assembly": contents <- profile/plan block + message
@@ -669,6 +633,15 @@ async def _lesson_event_stream(
     db.add(assistant_message)
     await db.commit()
     await db.refresh(assistant_message)
+    await maybe_write_lesson_turn_candidate(
+        db,
+        user=user,
+        session=session,
+        lesson=lesson,
+        message=assistant_message,
+        corrections=corrections,
+        profile=profile,
+    )
     yield _sse(
         "done",
         {

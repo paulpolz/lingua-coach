@@ -1,0 +1,20 @@
+id: lesson_generation_curriculum_valid_001
+suite: capability
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Generate the next lesson's curriculum for this learner, per the Generation rules above.
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+  judge:
+    rubric: lesson_generation_v1
+notes: |
+  raw_completion is a LessonCurriculum JSON object string (no markdown envelope).

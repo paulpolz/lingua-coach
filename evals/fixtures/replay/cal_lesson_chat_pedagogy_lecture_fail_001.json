@@ -1,0 +1,3 @@
+{
+  "raw_completion": "Los artículos definidos e indefinidos en español se eligen según si el referente es conocido. El, la, los, las marcan definitud. Un, una, unos, unas marcan primer mención. Recuerda también las contracciones al y del. Esta es la teoría completa de la lección de hoy.\n\n```json:lesson_turn\n{\n  \"corrections\": [],\n  \"tips\": [\"Teoría de artículos\"],\n  \"plan_updates\": null,\n  \"suggest_finish\": false,\n  \"mistakes\": []\n}\n```\n"
+}

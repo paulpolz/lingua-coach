@@ -11,11 +11,13 @@ import {
   finishLesson,
   stopLesson,
   writeFinishHint,
+  type FinishLessonRequest,
   type Lesson,
   type LessonCurriculum,
 } from "@/lib/lessons";
 import ChatComposer from "@/components/ChatComposer";
 import ChatMessageBubble, { type DisplayMessage } from "@/components/ChatMessageBubble";
+import FinishLessonDialog from "@/components/FinishLessonDialog";
 import Button from "@/components/ui/Button";
 import LessonChecklist from "./LessonChecklist";
 
@@ -112,6 +114,8 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
   const [focusCardOpen, setFocusCardOpen] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishDialogOpen, setFinishDialogOpen] = useState(false);
+  const lastFinishPayloadRef = useRef<FinishLessonRequest>({});
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const streamingMessageIdRef = useRef<string>("streaming-assistant");
@@ -319,22 +323,31 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
   // an explicit action even when `suggestFinish` is true). Nothing more to
   // do in this chat once accomplished, so we carry the one-line pace
   // acknowledgment across the redirect and hand off to the dashboard.
-  const handleFinish = useCallback(() => {
-    if (isFinishing) return;
-    setIsFinishing(true);
-    setFinishError(null);
-    void (async () => {
-      try {
-        const token = await getToken();
-        const result = await finishLesson(token, lessonId);
-        writeFinishHint(describeFinishResult(result));
-        router.push("/dashboard");
-      } catch (error) {
-        setFinishError(error instanceof Error ? error.message : "Failed to finish the lesson.");
-        setIsFinishing(false);
-      }
-    })();
-  }, [isFinishing, getToken, lessonId, router]);
+  // CSAT / free-text are optional and must not block finish.
+  const handleFinish = useCallback(
+    (feedback: FinishLessonRequest = {}) => {
+      if (isFinishing) return;
+      lastFinishPayloadRef.current = feedback;
+      setIsFinishing(true);
+      setFinishError(null);
+      void (async () => {
+        try {
+          const token = await getToken();
+          const result = await finishLesson(token, lessonId, {
+            ...feedback,
+            completed_slot_ids: [...completedTaskIdsRef.current],
+          });
+          setFinishDialogOpen(false);
+          writeFinishHint(describeFinishResult(result));
+          router.push("/dashboard");
+        } catch (error) {
+          setFinishError(error instanceof Error ? error.message : "Failed to finish the lesson.");
+          setIsFinishing(false);
+        }
+      })();
+    },
+    [isFinishing, getToken, lessonId, router]
+  );
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -346,10 +359,11 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
         onStop={handleStop}
         isStopping={isStopping}
         suggestFinish={suggestFinish}
-        onFinish={handleFinish}
+        onFinish={() => setFinishDialogOpen(true)}
         isFinishing={isFinishing}
         finishError={finishError}
         onDismissFinishError={() => setFinishError(null)}
+        onRetryFinish={() => handleFinish(lastFinishPayloadRef.current)}
       />
 
       {loadState === "loading" ? (
@@ -390,7 +404,15 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
                 ) : null}
 
                 {messages.map((message) => (
-                  <ChatMessageBubble key={message.id} message={message} />
+                  <ChatMessageBubble
+                    key={message.id}
+                    message={message}
+                    quality={
+                      sessionId
+                        ? { sessionId, surface: "lesson", lessonId, getToken }
+                        : undefined
+                    }
+                  />
                 ))}
 
                 <div ref={scrollAnchorRef} />
@@ -417,6 +439,15 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
           />
         </>
       )}
+
+      <FinishLessonDialog
+        open={finishDialogOpen}
+        isSubmitting={isFinishing}
+        onCancel={() => {
+          if (!isFinishing) setFinishDialogOpen(false);
+        }}
+        onConfirm={handleFinish}
+      />
     </div>
   );
 }
@@ -433,6 +464,7 @@ function LessonTopBar({
   isFinishing,
   finishError,
   onDismissFinishError,
+  onRetryFinish,
 }: {
   lessonNumber: number;
   curriculum: LessonCurriculum | null;
@@ -445,6 +477,7 @@ function LessonTopBar({
   isFinishing: boolean;
   finishError: string | null;
   onDismissFinishError: () => void;
+  onRetryFinish: () => void;
 }) {
   const title = curriculum?.lesson_goal ? curriculum.lesson_goal : `Lesson ${lessonNumber}`;
   const focusParts = [
@@ -486,11 +519,7 @@ function LessonTopBar({
           <Button
             variant={suggestFinish ? "primary" : "ghost"}
             size="sm"
-            onClick={() => {
-              if (window.confirm("Mark this lesson accomplished? Any unfinished slots count as 0%.")) {
-                onFinish();
-              }
-            }}
+            onClick={onFinish}
             disabled={isFinishing}
             title={
               isFinishing
@@ -517,7 +546,7 @@ function LessonTopBar({
         <div className="flex items-center justify-between gap-3 bg-danger-soft px-5 py-2 text-[13px] text-danger">
           <span>{finishError}</span>
           <div className="flex shrink-0 items-center gap-1">
-            <Button variant="ghost" size="sm" type="button" onClick={onFinish}>
+            <Button variant="ghost" size="sm" type="button" onClick={onRetryFinish}>
               Retry
             </Button>
             <Button variant="ghost" size="sm" type="button" onClick={onDismissFinishError}>

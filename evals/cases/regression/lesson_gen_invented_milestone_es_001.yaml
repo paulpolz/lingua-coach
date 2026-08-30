@@ -1,0 +1,27 @@
+id: lesson_gen_invented_milestone_es_001
+suite: regression
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - invented_milestone
+    - grammar_focus_aligned
+    - exit_criteria_nonempty_unique
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_generation_v1
+notes: >-
+  Gold curriculum aligned to fixture roadmap milestone 0
+  "Artículos en lugares del viaje" and current_block grammar
+  "Artículos definidos e indefinidos". expect_fail: false (expect_outcome=pass).
+  Uses learner_a2_travel_es_regression.json so milestone titles stay frozen.
+expect_fail: false

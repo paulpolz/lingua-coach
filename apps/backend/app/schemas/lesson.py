@@ -113,10 +113,14 @@ class FinishLessonRequest(BaseModel):
     client-side signal (e.g. explicit per-slot completion UI) better than
     the server's own best-effort derivation from chat metadata. All fields
     optional — omitting the body (or sending `{}`) is fully supported and
-    falls back to server-side derivation (see `_build_session_summary`)."""
+    falls back to server-side derivation (see `_build_session_summary`).
+    `csat` is an optional 1–5 lesson rating persisted on `quality_events`
+    (`kind=lesson_csat`); it never blocks finish. `learner_feedback` still
+    lands on `session_summary` as before."""
 
     completed_slot_ids: list[str] | None = None
     learner_feedback: str | None = None
+    csat: int | None = Field(default=None, ge=1, le=5)
 
 
 class FinishLessonResponse(BaseModel):

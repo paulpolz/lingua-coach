@@ -1,0 +1,22 @@
+id: lesson_chat_truncated_lesson_turn_es_001_caught
+suite: regression
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "I go to store yesterday"
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+  judge:
+    rubric: lesson_turn_v1
+notes: >-
+  Known-bad: truncated ```json:lesson_turn fence (no closing fence, incomplete
+  JSON). extract_lesson_turn must fail. expect_fail: true (expect_outcome=fail).
+  Gold pair with a complete fence is lesson_chat_missing_lesson_turn_es_001.
+expect_fail: true

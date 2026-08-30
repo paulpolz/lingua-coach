@@ -1,0 +1,27 @@
+id: cal_lesson_chat_invented_correction_fail_001
+suite: calibration
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: "Quiero reservar una habitación doble para dos noches.\n"
+  history:
+    - role: model
+      text: |
+        Pide una habitación en la recepción, en una frase.
+checks:
+  deterministic:
+    - extract_lesson_turn
+  judge:
+    rubric: lesson_turn_v1
+labels:
+  immersion: pass
+  correction_accuracy: fail
+  pedagogy: pass
+  contract: pass
+notes: |
+  Author-proposed. Grammatical user turn; tutor invents a bogus article error.

@@ -1,0 +1,26 @@
+id: lesson_gen_schema_repair_es_001
+suite: regression
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es_regression.json
+  user_message: ""
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - invented_milestone
+    - grammar_focus_aligned
+    - exit_criteria_nonempty_unique
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_generation_v1
+notes: >-
+  Schema repair success path (production: one repair retry). Replay stores
+  completions[invalid, valid]; checks run on the last completion.
+  expect_fail: false (expect_outcome=pass).
+expect_fail: false

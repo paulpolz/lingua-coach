@@ -1,0 +1,21 @@
+id: lesson_generation_no_english_001
+suite: capability
+mode: lesson_generation
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Generate the next lesson's curriculum for this learner, per the Generation rules above.
+  history: []
+checks:
+  deterministic:
+    - curriculum_valid
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_generation_v1
+notes: |
+  Learner-facing curriculum strings (goals, labels, exercise_set, exit_criteria) are Spanish. JSON keys stay English. input_task.type remains the schema enum listening.

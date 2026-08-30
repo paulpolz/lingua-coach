@@ -1,0 +1,298 @@
+{
+  "native_language": "en",
+  "target_language": "es",
+  "goal_outcome": "Pedir comida y direcciones en un viaje a España",
+  "target_level": "A2",
+  "curriculum": {
+    "lesson_goal": "Artículos en lugares del viaje: pedir en una tienda con el, la, un, una",
+    "grammar_focus": "Artículos definidos e indefinidos",
+    "vocab_theme": "Tienda, calle y hotel",
+    "milestone_index": 0,
+    "slots": [
+      {
+        "id": "warmup",
+        "label": "Recuerdo activo — artículos con lugares",
+        "exercise_set": "Tres frases rápidas: la tienda, un hotel, el aeropuerto"
+      },
+      {
+        "id": "production",
+        "label": "Diálogo en la tienda",
+        "exercise_set": "Pedir dos productos y una dirección usando el, la, un, una"
+      }
+    ],
+    "input_task": {
+      "type": "listening",
+      "topic": "Un cliente pide pan en una panadería",
+      "focus": "Notar el, la, un, una delante de lugares y productos"
+    },
+    "goal_specific_task": {
+      "label": "Pedir direcciones hasta la tienda",
+      "format": "roleplay"
+    },
+    "exit_criteria": [
+      "Producir cinco frases con artículo correcto ante un lugar",
+      "Pedir un producto en la tienda sin omitir el artículo"
+    ],
+    "partner_session": null
+  },
+  "due_mistakes": [
+    {
+      "pattern_type": "missing articles",
+      "example_text": "voy a tienda"
+    }
+  ],
+  "roadmap": {
+    "version": 1,
+    "summary": {
+      "goal_outcome": "Pedir comida y direcciones en un viaje a España",
+      "goal_horizon": "3 months",
+      "starting_level": "A2",
+      "target_language": "es",
+      "native_language": "en",
+      "target_plan_days": 60,
+      "target_plan_days_range": [
+        50,
+        70
+      ],
+      "pace_description": "30 min/día, 5 días/semana"
+    },
+    "milestones": [
+      {
+        "index": 0,
+        "title": "Artículos en lugares del viaje",
+        "skill_developed": "el/la/un/una con lugares y objetos de viaje",
+        "why_now": "Los artículos son el error más frecuente al pedir direcciones",
+        "connects_to": [],
+        "success_criteria": "Usar artículos correctos en 8 de 10 frases de viaje",
+        "estimated_plan_days": 10
+      },
+      {
+        "index": 1,
+        "title": "Pretérito en el aeropuerto",
+        "skill_developed": "Contar lo que pasó en el viaje con pretérito",
+        "why_now": "Las anécdotas de viaje necesitan pasado",
+        "connects_to": [
+          0
+        ],
+        "success_criteria": "Monólogo de 60s sobre un vuelo con pretérito",
+        "estimated_plan_days": 15
+      }
+    ],
+    "weekly_template": {
+      "minutes_per_session": 30,
+      "activities": [
+        {
+          "id": "warmup",
+          "label": "Repaso y repetición espaciada",
+          "minutes": 5
+        },
+        {
+          "id": "grammar",
+          "label": "Gramática",
+          "minutes": 8
+        }
+      ],
+      "partner_session": {
+        "minutes": 20,
+        "phases": [
+          {
+            "id": "warmup",
+            "minutes": 5
+          },
+          {
+            "id": "main",
+            "minutes": 15
+          }
+        ]
+      },
+      "weekends": "repaso opcional de repetición espaciada"
+    },
+    "current_block": {
+      "milestone_index": 0,
+      "weeks": 1,
+      "focus_summary": "Artículos definidos e indefinidos con vocabulario de viaje",
+      "themes": [
+        {
+          "block_day": 1,
+          "grammar_focus": "Artículos definidos e indefinidos",
+          "vocab_theme": "Tienda, calle, hotel",
+          "input_type": "listening",
+          "production_focus": "Pedir algo en una tienda",
+          "goal_specific_focus": "Pedir direcciones"
+        }
+      ]
+    },
+    "learning_principles": [
+      "active_recall",
+      "spaced_repetition"
+    ],
+    "adaptation_rules": {
+      "failed_weekly_test": "repeat_milestone_content",
+      "recurring_error_pattern": "inject_retrieval_drill"
+    },
+    "current_milestone_index": 0
+  },
+  "generation_context": {
+    "lesson_number": 1,
+    "active_plan": {
+      "roadmap": {
+        "version": 1,
+        "summary": {
+          "goal_outcome": "Pedir comida y direcciones en un viaje a España",
+          "goal_horizon": "3 months",
+          "starting_level": "A2",
+          "target_language": "es",
+          "native_language": "en",
+          "target_plan_days": 60,
+          "target_plan_days_range": [
+            50,
+            70
+          ],
+          "pace_description": "30 min/día, 5 días/semana"
+        },
+        "milestones": [
+          {
+            "index": 0,
+            "title": "Artículos en lugares del viaje",
+            "skill_developed": "el/la/un/una con lugares y objetos de viaje",
+            "why_now": "Los artículos son el error más frecuente al pedir direcciones",
+            "connects_to": [],
+            "success_criteria": "Usar artículos correctos en 8 de 10 frases de viaje",
+            "estimated_plan_days": 10
+          },
+          {
+            "index": 1,
+            "title": "Pretérito en el aeropuerto",
+            "skill_developed": "Contar lo que pasó en el viaje con pretérito",
+            "why_now": "Las anécdotas de viaje necesitan pasado",
+            "connects_to": [
+              0
+            ],
+            "success_criteria": "Monólogo de 60s sobre un vuelo con pretérito",
+            "estimated_plan_days": 15
+          }
+        ],
+        "weekly_template": {
+          "minutes_per_session": 30,
+          "activities": [
+            {
+              "id": "warmup",
+              "label": "Repaso y repetición espaciada",
+              "minutes": 5
+            },
+            {
+              "id": "grammar",
+              "label": "Gramática",
+              "minutes": 8
+            }
+          ],
+          "partner_session": {
+            "minutes": 20,
+            "phases": [
+              {
+                "id": "warmup",
+                "minutes": 5
+              },
+              {
+                "id": "main",
+                "minutes": 15
+              }
+            ]
+          },
+          "weekends": "repaso opcional de repetición espaciada"
+        },
+        "current_block": {
+          "milestone_index": 0,
+          "weeks": 1,
+          "focus_summary": "Artículos definidos e indefinidos con vocabulario de viaje",
+          "themes": [
+            {
+              "block_day": 1,
+              "grammar_focus": "Artículos definidos e indefinidos",
+              "vocab_theme": "Tienda, calle, hotel",
+              "input_type": "listening",
+              "production_focus": "Pedir algo en una tienda",
+              "goal_specific_focus": "Pedir direcciones"
+            }
+          ]
+        },
+        "learning_principles": [
+          "active_recall",
+          "spaced_repetition"
+        ],
+        "adaptation_rules": {
+          "failed_weekly_test": "repeat_milestone_content",
+          "recurring_error_pattern": "inject_retrieval_drill"
+        },
+        "current_milestone_index": 0
+      },
+      "current_milestone_index": 0
+    },
+    "learner_profile": {
+      "goal_outcome": "Pedir comida y direcciones en un viaje a España",
+      "native_language": "en",
+      "target_language": "es",
+      "target_level": "A2",
+      "level_strengths": [
+        "reading"
+      ],
+      "level_weaknesses": [
+        "articles",
+        "speaking under pressure"
+      ],
+      "time_budget": {
+        "minutes_per_session": 30,
+        "sessions_per_week": 5,
+        "optional_partner_minutes": 20,
+        "intensity": "sustainable"
+      },
+      "focus": {
+        "skill_priorities": [
+          "speaking",
+          "listening"
+        ],
+        "topic_priorities": [
+          "travel",
+          "shops",
+          "directions"
+        ],
+        "vocab_priorities": [
+          "tienda",
+          "calle",
+          "hotel"
+        ],
+        "avoid": []
+      },
+      "constraints": {
+        "budget": "none",
+        "practice_partner": {
+          "available": false,
+          "minutes": 0,
+          "relationship": ""
+        },
+        "learning_style": "correction-heavy"
+      },
+      "grammar_mastery": {
+        "artículos": 20,
+        "pretérito": 15
+      },
+      "vocabulary_summary": {
+        "travel_places": [
+          "tienda",
+          "hotel",
+          "aeropuerto"
+        ]
+      }
+    },
+    "prior_lessons": [],
+    "open_mistakes": [
+      {
+        "pattern_type": "missing articles",
+        "example_text": "voy a tienda",
+        "correction": "voy a la tienda",
+        "occurrence_count": 3,
+        "next_review_at": "2026-08-29T00:00:00+00:00"
+      }
+    ]
+  }
+}
