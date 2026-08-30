@@ -1,280 +1,440 @@
 # Lingua Coach
 
-## Concept
+A pet project: a **personal language-tutor chat** in the browser. You state a real outcome (job interview in Spanish, travel English in six months). The tutor interviews you, writes a course, then runs short daily lessons in chat. It corrects answers, logs repeating mistakes, and keeps a pace — one progression unit is one finished lesson, not a calendar slot.
 
-A product that wraps a personalized AI English-learning agent into a UI for a public audience. Learners specify their own goals (e.g. "find a job in English in 6 months"), and an AI tutor creates a tailored program, generates daily exercises, checks mistakes, tracks progress, and mentors them at every step.
+The tutor does not rely on “remembering the conversation.” After each important moment it files a structured note (goal, plan, today’s curriculum, error patterns). The next lesson is built from those notes. When you accept a plan or finish a lesson, that transcript is deleted. What remains is the distilled record: profile, roadmap, lesson summary, mistakes, and reports.
 
-**Origin:** Built from a working setup where a learner uses a Claude agent with custom skills, artifacts, and workflows for daily English practice — with proven daily use and real outcomes.
-
-**Differentiation:** An AI tutor that *knows you* — goal → program → daily mentor — not open-ended chat practice.
+There is no custom model training. The product is orchestration over Gemini, with pedagogy skills and learner state in database.
 
 ---
 
-## Why the Core Idea Is Sound
 
-The setup addresses what most learners want but rarely get in one place:
 
-1. **Goal-first, not curriculum-first** — "Job in English in 6 months" is a real outcome; most apps optimize for streaks and levels.
-2. **Continuity** — the same tutor remembers mistakes, tone, pace, and what already failed.
-3. **Daily loop** — generate → practice → correct → track. That loop is the product, not "AI chat."
+## Current capability
 
-This is validated product research: a real user runs it daily with measurable engagement.
+The local MVP loop is implemented and runnable. This is what the stack can do today.
 
-The hard part is not AI — it's encoding a real teaching methodology into a product and maintaining learner state.
+
+| Layer             | What ships                                                                                                                                                                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Product loop**  | Sign-in → onboarding interview → accept roadmap → dashboard → generate lesson → lesson chat → finish → reports. Resume an in-flight lesson without starting a new one.                                                                                               |
+| **Auth**          | Clerk (email / magic link). Frontend holds a publishable key; API verifies the session JWT and upserts a `users` row. Sessions are not stored in Postgres.                                                                                                           |
+| **Frontend**      | Next.js App Router: `/` (sync + redirect), `/sign-in`, `/onboarding`, `/dashboard`, `/lesson/[id]`, `/reports/[slug]`. Chat-first UI. Thumbs on assistant bubbles; optional CSAT 1–5 on finish.                                                                      |
+| **Backend**       | FastAPI under `/api/v1`. REST + SSE chat. In-process `BackgroundTasks` for lesson generation (single API replica). Rate limits: 60 chat turns/hour, 10 lesson starts/day.                                                                                            |
+| **LLM**           | Gemini only. Two call types: streamed chat (`GEMINI_MODEL_CHAT`, flash-class) and validated lesson JSON (`GEMINI_MODEL_LESSON`, pro-class). One repair retry on invalid curriculum JSON. Report patches after finish reuse the generate path (best-effort).          |
+| **Pedagogy**      | Runtime-loaded Markdown in `[skills/](./skills/README.md)`: `onboarding_interviewer`, `course_composer`, `exercise_tutor`, `vocabulary_practice_formats`, `report_writer`. `feedback_giver` is **not** wired (weekly gates, automated replans).                      |
+| **Memory**        | Structured artifacts in Postgres — not chat history. Profile, draft/active goal, accepted roadmap, lesson payload, mistake SRS, living markdown reports. Chat rows are shredded on accept/finish.                                                                    |
+| **Languages**     | Onboarding starts in English to collect native then target language; then coaches in the target. Lessons are full immersion. Native language is L1-interference context only.                                                                                        |
+| **Pace**          | Sequential integer lessons. At most one `generating` / `active` lesson. 24-hour on-pace window from `started_at`. Late finish slips `projected_completion_at`; it does not lock you out.                                                                             |
+| **Observability** | Prometheus + Grafana + Loki (Compose `--profile monitoring`). Infra dashboards (API, LLM tokens, errors) plus an **AI Quality** dashboard wired to `quality_events`.                                                                                                 |
+| **Quality loop**  | Offline eval harness with a CI replay gate; online thumbs/CSAT; batch LLM-as-judge; SQL failure miner. Landed in `[480a4a16](https://github.com/paulpolz/lingua-coach/commit/480a4a16a47853ff2aa7f2ad58fea8dbfaa6de25)` — see [Quality evals](#quality-evals) below. |
+| **CI**            | GitHub Actions: backend pytest (Postgres 16), frontend lint/typecheck/vitest, `evals-replay` (no Gemini key).                                                                                                                                                        |
+
+
+**Not in this version:** voice / STT / TTS, billing, multi-replica job queue (Redis/Celery), plan-editor UI, `feedback_giver`, RAG / vector retrieval, LangChain, custom model fine-tuning.
+
+Production topology is designed (Vercel + Railway + Clerk + Gemini + Cloudflare) but the daily loop is validated locally. Lesson jobs are unsafe across many API replicas by design.
 
 ---
 
-## Tech requirements (MVP)
 
-Interview-locked stack and contracts live in [`docs/tech_requirements/`](./docs/tech_requirements/README.md):
 
-| Area | Doc |
-|------|-----|
-| **Agent skills** (pedagogy IP, source of truth) | [skills/](./skills/README.md) |
-| Customer journeys (onboarding, student, pacing) | [cjm.md](./docs/functional_requirements/cjm.md) |
-| Local MVP gate (setup, contracts, smoke tests) | [implementation-readiness.md](./docs/implementation-readiness.md) |
-| Backend (FastAPI, Clerk, REST+SSE, sequential lessons) | [backend.md](./docs/tech_requirements/backend.md) |
-| AI API (Gemini-only, collapsed 2-call engine) | [ai-api.md](./docs/tech_requirements/ai-api.md) |
-| Database (Postgres, SQLAlchemy+Alembic) | [database.md](./docs/tech_requirements/database.md) |
-| Frontend (Next.js, chat-first plan-driven UI) | [frontend.md](./docs/tech_requirements/frontend.md) |
-| Deployment (local+prod, manual, Alembic) | [deployment.md](./docs/tech_requirements/deployment.md) |
-| Hosting (Vercel + Railway + Cloudflare) | [hosting.md](./docs/tech_requirements/hosting.md) |
+## How the system fits together
+
+The map below is the engineer view of how the pieces connect: tables, routes, and UI triggers as they exist in this repo (not a target architecture).
+
+### Runtime
+
+The learner never holds a Gemini key or a database password.
 
 ```
-Frontend (Next.js) → FastAPI → Learning engine (skills) → Gemini → PostgreSQL
+Learner (browser)
+    → Next.js  (Vercel · :3000)  — screens, chat box, Clerk token
+    → Clerk                     — identity; issues JWT
+    → FastAPI (Railway · :8000) — rules, persistence, prompt assembly, SSE
+         ├→ PostgreSQL          — system of record
+         ├→ Gemini              — LLM
+         └→ skills/*.md         — pedagogy IP (system instructions)
 ```
 
----
+Local: Docker Compose (Postgres 16, API `:8000`, Next `:3000`, `skills/` volume-mounted). Optional monitoring profile: Grafana `:3001`, Prometheus `:9090`, Loki `:3100`.
 
-## Agent skills (the product)
+An authenticated request: page `getToken()` → `apiFetch` (Bearer + `X-Request-ID`) → CORS → request-id middleware → route → Clerk JWT → `users` row → handler → SQLAlchemy. Exceptions: `GET /health` and `POST /telemetry/client-errors` skip JWT. `POST /auth/sync` verifies JWT but creates the user if missing. Lesson / progress / report routes also require `users.onboarding_complete`.
 
-Behavior is defined in [`skills/`](./skills/README.md) at repo root — separate from tech requirements, which define how skill outputs persist and render. The agent:
-
-1. **Onboards** the learner (`onboarding_interviewer`) → profile in Postgres
-2. **Plans** the program (`course_composer`) → accepted roadmap in Postgres
-3. **Conducts** daily lessons (`exercise_tutor`) → lesson artifacts + mistakes in Postgres
-4. **Tracks** pace and session outcomes in MVP; full progress feedback loop post-MVP (`feedback_giver`)
-
-All structured outputs are persisted — not inferred from chat history alone. See [database.md](./docs/tech_requirements/database.md).
-
-**MVP skills:** onboarding, course composer, exercise tutor, vocabulary formats. **`feedback_giver` is post-MVP** (progress dashboard, weekly gates, automated replans).
-
----
-
-## Learning Engine (implementation)
-
-Avoid one giant prompt. MVP collapses to two call types (lesson JSON + chat/correction), each backed by **skill modules** in `skills/`:
+### Learner journey
 
 ```
-onboarding_interviewer → course_composer → exercise_tutor
-     (profile)              (roadmap)         (lessons + mistakes)
+Sign in → POST /auth/sync → interview (/onboarding)
+    → Accept plan → dashboard
+        → Start lesson → generate (job + Gemini) → lesson chat
+            → Finish → dashboard
+                 ↘ reports (seeded at accept, patched at finish)
 ```
 
-Post-MVP adds `feedback_giver` for progress dashboard and plan adjustments. A fuller internal pipeline can still grow behind the same skill boundaries:
+Resume skips Start: dashboard → existing `/lesson/[id]`. After finish you return to the dashboard. One in-flight lesson at a time; Start is rejected if a lesson is still `generating` or `active`.
 
-```
-Goal Analyzer → Curriculum Planner → Lesson Generator → Exercise Generator
-    → Correction Engine → Progress Analyzer → Report Generator
-```
 
-### Structured outputs
+| Route             | What the learner sees                       | Enter                                        | Act                                   |
+| ----------------- | ------------------------------------------- | -------------------------------------------- | ------------------------------------- |
+| `/`               | Sync then redirect                          | `POST /auth/sync`                            | `/onboarding` or `/dashboard`         |
+| `/sign-in`        | Clerk hosted sign-in                        | —                                            | Post-auth → `/`                       |
+| `/onboarding`     | Interview + plan card + Accept              | sync, create session, load messages          | SSE chat; `POST /onboarding/accept`   |
+| `/dashboard`      | Pace strip + Start / Resume / Stop / Finish | sync, `GET /progress`, `GET /lessons/active` | start + poll job/lesson; stop; finish |
+| `/lesson/[id]`    | Tutor chat + checklist + Finish             | `GET /lessons/{id}`; session + messages      | SSE chat; stop; finish                |
+| `/reports/[slug]` | Markdown notebooks                          | —                                            | `GET /reports/{type}`                 |
 
-Lessons return JSON the UI can render consistently (see [ai-api.md](./docs/tech_requirements/ai-api.md)):
 
-```json
-{
-  "lesson_goal": "...",
-  "grammar_focus": "...",
-  "warmup": [],
-  "dialogue": [],
-  "exercise": [],
-  "review": []
-}
-```
+Signed-out users land on Clerk. If `onboarding_complete` is false, `/dashboard` bounces to `/onboarding`; if true, `/onboarding` bounces to `/dashboard`.
 
-### Pedagogy engine (the IP)
+### Four drawers of memory
 
-The valuable part is not the frontend — it is the teaching methodology encoded as **agent skills** ([skills/](./skills/README.md)):
 
-- Skills and workflows (`onboarding_interviewer`, `course_composer`, `exercise_tutor`, …)
-- Rubrics and evaluation rules
-- Curriculum templates
-- Feedback style
-- Motivation rules
+| Drawer          | Meaning                                                         | Stored as                                                       |
+| --------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| Identity        | This signed-in person exists, and whether they have a plan      | Clerk + `users`                                                 |
+| Learner facts   | Languages, goal, level, time budget, current roadmap            | `profiles`, `learning_goals`, `learning_plans`                  |
+| Today’s session | Exercises planned for this lesson, and the live chat            | `lessons.payload` + `chat_*` (chat is temporary)                |
+| What to do next | Mistakes to review, pace, living reports, tutor-quality ratings | `mistakes`, `progress_events`, `user_reports`, `quality_events` |
 
-Prefer **configuration over hard-coding**: onboarding flow, coaching style, lesson templates, assessment rubrics, review cadence, feedback rules, progression logic. Today that config is "Personal English Coach"; later it could be IELTS, Business English, or another language without rewriting the platform.
 
-### Learner memory (not chat history)
+`quality_events` is the twelfth table (thumbs, CSAT, sampled judges). Chat `session_id` / `message_id` on those rows are opaque — no FK — because finish deletes the transcript and ratings must survive.
 
-Don't ask the model to infer everything from conversations. Store structured knowledge about the learner and inject it into every prompt:
+**Identity graph:** `users` is the hub. `profiles` is 1:1. A draft `learning_goal` is required before accept can insert `learning_plans`. `profiles.active_learning_plan_id` points at the accepted plan (cycle). `user_reports` are four rows max per user (`progress`, `errors_log`, `roadmap`, `four_week_plan`).
 
-| Profile field | Example |
-|---------------|---------|
-| Target / goal | Job interview in 18 days |
-| English level | B1 → B2 |
-| Grammar mastery | Articles: 40, Present Perfect: 82 |
-| Vocabulary | Size + consistently missed items |
-| Skills | Interview readiness, speaking vs reading confidence |
-| Habits | Preferred lesson length, skip patterns, motivation |
-| Style | Learning style, review schedule |
+**Practice graph:** `jobs.result_ref` is a soft pointer to `lessons.id` (not an FK). Onboarding `chat_sessions` have no `lesson_id`. Chat rows die with the session; lessons, mistakes, and events stay.
 
-Every lesson updates this profile. **Real complexity is state, not prompts.** Schema details: [database.md](./docs/tech_requirements/database.md).
+JSONB the next lesson actually reads:
 
----
 
-## How Complicated Is It?
+| Location                          | Written                             | Consumed by                                              |
+| --------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `learning_plans.roadmap`          | Plan accept                         | Lesson generation (structure, current block, milestones) |
+| `lessons.payload.curriculum`      | Generation job success              | Lesson chat slots; finish; next generation (last 5)      |
+| `lessons.payload.session_summary` | Finish                              | Next generation; `report_writer`                         |
+| `profiles.*` maps                 | Interview + optional `plan_updates` | Compact profile block on every lesson-chat turn          |
 
-Think in layers:
 
-| Layer | What it is | Difficulty |
-|-------|------------|------------|
-| **MVP** | Onboarding (goal, level, time), daily session, corrections, simple progress log | **Moderate** — weeks of focused work for 1–2 devs |
-| **"Feels personal"** | Memory, mistake taxonomy, adaptive difficulty, spaced repetition | **Hard** — this is where quality lives |
-| **"Feels like a tutor"** | Speaking/pronunciation, roleplay (interviews, meetings), structured retry | **Hard** — voice, latency, evaluation |
-| **Production product** | Auth, billing, mobile, retention, content safety, cost control | **Very hard** |
 
-### Hidden Complexity
 
-The hard parts are not the UI:
+### Rules the code enforces
 
-- **Evaluation** — knowing if an answer is wrong *and why*, with useful feedback
-- **Curriculum logic** — when to reinforce vs advance
-- **Retention** — people churn when sessions feel random or repetitive
-- **Unit economics** — daily LLM (+ voice) usage per user adds up fast
-- **State** — each lesson must adapt from level, weak grammar, missed vocab, pace/slips, role target, and confidence gaps
+- **One in-flight lesson.** Start is rejected (`409 ACTIVE_LESSON_EXISTS`; UI treats it as Resume). Finish unlocks the next `lesson_number`.
+- **24-hour pace window.** On pace = finish within 24 hours of the lesson becoming `active`. Slip reschedules the projection; it does not block practice.
+- **Plan day = accomplished lesson.** No “Tuesday’s unit.” You start when ready; sequence is 1, 2, 3…
+- **Accept is a button.** The model can draft a `course_roadmap` in chat; nothing is official until `POST /onboarding/accept`.
 
-For a pet project: ship a narrow MVP around **one persona** (e.g. "B1→B2, job interview in 6 months, 20 min/day").
 
-No custom model training, GPUs, or inference servers required — the product is orchestration over public LLM APIs.
 
----
+### Skills and Gemini call types
 
-## Monetization & Cost Control
+One provider, one client (`app/services/gemini.py`). Pedagogy is not hard-coded in Python except for wiring: load skills, assemble prompts, parse fenced JSON, persist artifacts.
 
-MVP ships as a **single product version** — no billing or free/premium split. Lessons are **sequential and on-demand** (one in-flight at a time); **plan pacing** uses a 24-hour window per plan day (slip reschedules projection, does not block practice). Longer-term freemium thinking still applies:
 
-### Freemium direction (limit experiences, not tokens)
+| Call                   | Skills                                                                      | Output                                                               | Trigger                                   |
+| ---------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------- |
+| Chat turn (onboarding) | `onboarding_interviewer` + `course_composer`                                | SSE tokens + optional `json:learner_profile` / `json:course_roadmap` | `POST /chat/sessions/{id}/messages`       |
+| Chat turn (lesson)     | `exercise_tutor` (+ `vocabulary_practice_formats` on week-end review slots) | SSE + `json:lesson_turn` / `lesson_plan` / `task_update`             | Same endpoint, `session.type=lesson`      |
+| Generate curriculum    | `exercise_tutor` + `LESSON_GENERATION_CONTRACT`                             | Validated `LessonCurriculum` JSON                                    | Background job from `POST /lessons/start` |
+| Patch reports          | `report_writer` + `REPORT_PATCH_CONTRACT`                                   | `json:report_ops` applied to markdown sections                       | `POST /lessons/{id}/finish` (best-effort) |
 
-Users don't understand tokens. Limit what they can *do*:
 
-| Free | Pro |
-|------|-----|
-| One lesson / day | Unlimited lessons & conversations |
-| 15-minute session | Voice mode |
-| Limited voice | Interview simulation |
-| 30-day history | Resume review |
-| One active goal | Personal roadmap, weekly reports, priority models |
+Hidden fences and backend effect:
 
-### Internal cost controls
 
-Budget by tokens internally even if users never see them:
+| Fence                                   | Effect                                                                                                                                 |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `json:lesson_turn`                      | Corrections/tips → message metadata; `mistakes[]` upsert (SRS +1/+3/+7/+14 days); optional `plan_updates` on profile; `suggest_finish` |
+| `json:lesson_plan` / `json:task_update` | UI checklist only                                                                                                                      |
+| `json:learner_profile`                  | Onboarding: upsert `profiles` + draft goal                                                                                             |
+| `json:course_roadmap`                   | Onboarding: draft in `done.metadata` until Accept                                                                                      |
 
-- Short interactions → fast, cheaper model
-- Curriculum planning (infrequent) → stronger model
-- Weekly reports → higher-end model, once a week
-- Reuse generated content where appropriate
-- Keep learner profiles compact; avoid shipping full chat history every turn
 
----
+Prompt assembly is shared (`app/services/prompt_assembly.py`). Production loads ORM rows then calls the same helpers the eval runner uses, so assembled strings cannot drift from the API.
 
-## What Would Make This Version Defensible
+### Key flows
 
-Even as a pet project:
+**1. Sign-in → sync → gate.** Clerk finishes in the browser. Pages attach `Authorization: Bearer <session JWT>` and `X-Request-ID`. Sync creates the Postgres user if needed and returns `onboarding_complete` for the redirect.
 
-1. **Domain playbook, not generic prompts** — skills for assessment, lesson types, error patterns, "what to do after 3 grammar mistakes on articles," etc.
-2. **Outcome templates** — "remote job interview," "relocation," "daily small talk at work" with milestones and mock scenarios.
-3. **Visible progress** — learners need to *feel* they're getting somewhere (error heatmap, speaking confidence, interview readiness score).
-4. **Opinionated daily ritual** — 15–25 minutes, fixed structure; personalization inside the ritual beats open-ended chat.
-5. **Configurable methodology** — engine executes teaching config; English coach is the first app, not the whole company.
+**2. Onboarding → accept.** One chat session for interviewer and course composer. Structured facts ride as hidden fenced JSON; the learner sees prose (and a plan card when a valid `course_roadmap_draft` appears). Accept inserts the plan, points the profile at it, sets the 24h schedule, activates the goal, seeds roadmap + 4-week reports, deletes the interview chat, and sets `onboarding_complete`.
 
----
+**3. Start → generate.** `POST /lessons/start` returns 202 with real IDs (`generating` + `pending` job), then `BackgroundTasks` continues. Prompt = profile + accepted roadmap + last 5 accomplished payloads + open mistakes. Success writes `payload.curriculum`, sets `started_at` (pace clock), marks the job done. Failure marks both failed — not treated as a learner failure. Dashboard polls `GET /jobs/{id}` (fresh start) or `GET /lessons/{id}` (reload-while-generating).
 
-## Competitor Summary
+**4. Lesson chat (SSE).** Persist user message → assemble prompt (curriculum snippet + compact profile including due mistakes as a leading user turn, then last 10 real messages) → stream Gemini → parse fences → write artifacts → SSE `done` with metadata. Events: `token`, `done`, `error`. Gemini errors become SSE `error`, not HTTP 500. Onboarding uses the same SSE shape without the curriculum/mistakes block.
 
-Many adjacent players, few exact matches. "Fully personal AI mentor with a custom program from your life goal" is still a **positioning gap**, not a blue ocean.
+**5. Finish.** Write `session_summary` (client `completed_slot_ids`, else all slots if any `suggest_finish`, else empty). Set `pace_status`. If slipped: `plan_slip_days += 1`, recompute projection. Best-effort `report_writer` patch on progress + errors_log. Delete this lesson’s chat. Finish is never blocked by missing CSAT.
 
-### Direct-ish (AI English Tutor)
-
-| Player | Focus |
-|--------|--------|
-| **Speak, Loora, Langua** | Conversation volume, open-ended practice |
-| **ELSA Speak** | Pronunciation and accent coaching |
-| **Duolingo Max** | Habit-building + light AI roleplay |
-| **Praktika, TalkPal** | Avatar/scenario practice |
-| **Eli (Elispeak)** | Scenario loops (interviews, meetings) with repeat-and-improve |
-| **Enverson AI** | "Agentic" personalization, mood/memory tracking |
-
-### Indirect
-
-| Player | Focus |
-|--------|--------|
-| **italki / Cambly** | Human tutors (different model, still "personal") |
-| **Babbel, Lingoda** | Structured courses + some live classes |
-| **Preply, Pearson, Babbel (enterprise)** | Scale, credentials, B2B workflows |
-
-### Very Close in Spirit (DIY / Open Source)
-
-- [claude-language-tutor](https://github.com/gislio/claude-language-tutor) — multi-agent assessor, sessions, progress tracking; conceptually close to a custom Claude-agent setup
-- Various LangGraph-based learning agents — personalized roadmaps, curriculum generation, quiz loops (pet-project / dev-tool level)
-
-### Market Context
-
-- Cloud-based English learning is **large but moderately fragmented** — AI-native apps, human-tutor marketplaces, and assessment platforms coexist.
-- Well-funded players (Speak, Preply, Duolingo, etc.) are investing heavily in conversational AI and hybrid human+AI models.
-- Differentiation is shifting toward **distribution, workflow integration, and verifiable outcomes** — not just content volume.
-
-### Takeaway
-
-**Many competitors in "AI English practice"; fewer in "AI designs your program from your goal and mentors you daily."** The second is the wedge if workflows are productized, not just wrapped in a chat box.
-
----
-
-## Honest Verdict
-
-| Question | Take |
-|----------|------|
-| Good pet project? | **Yes** — real user at home, clear loop, fun to build, portfolio-worthy |
-| Good billion-dollar idea as-is? | **Risky** — crowded space, well-funded incumbents, high bar on speaking quality |
-| Complicated? | **Moderate MVP, hard to make great** — agent orchestration is tractable; tutor-quality feedback and retention are the grind |
-| Many direct competitors? | **Many in AI English; few that nail goal → program → daily mentor end-to-end** |
-
-**Positioning wedge:** Few products nail "your goal → your program → daily mentor" end-to-end. That is the differentiation if the workflows are productized, not just wrapped in a chat box.
-
-**Secret sauce:** The mentor workflow / pedagogy engine — not the React app.
-
----
-
-## Suggested Path If We Build It
-
-1. **Document the system** — agent skills, session types, correction rules, progress signals (this is the IP). Skills: [`skills/`](./skills/README.md); tech contracts: [`docs/tech_requirements/`](./docs/tech_requirements/README.md); **local MVP gate:** [implementation-readiness.md](./docs/implementation-readiness.md).
-2. **Pick one ICP** — e.g. employed adults, B1–B2, job/career English, 6-month horizon.
-3. **MVP** — onboarding → course plan → sequential lessons + chat (text first) → mistake log → dashboard pace hints.
-4. **Validate with 10–20 strangers** before voice, payments, or mobile.
-5. **Keep the repo private first** — skills, workflows, evaluation, and pedagogy should not go public until intentional.
-
-### Repo layout (local MVP)
+### Layers in the repo
 
 ```
 apps/
-  frontend/              # Next.js
-  backend/               # FastAPI + Alembic
-skills/                  # agent pedagogy IP (source of truth; loaded at runtime)
+  frontend/          # Next.js — pages, ClerkProvider, lib/* REST+SSE clients
+  backend/           # FastAPI — /api/v1, deps, ORM, services, Alembic
+skills/              # Markdown loaded at runtime as system_instruction
+evals/               # Offline suites, judges, miner, replay fixtures
+docs/mvp/            # Locked contracts + dated improvement notes
+infra/monitoring/    # Prometheus / Grafana / Loki provisioning
 docker-compose.yml
-docs/
 ```
 
-### Suggested repo layout (broader than the MVP)
 
-English coach is the first application; the platform should outgrow it:
+| Layer     | Path                               | Job                                                                       |
+| --------- | ---------------------------------- | ------------------------------------------------------------------------- |
+| UI        | `apps/frontend`                    | App Router, chat, dashboard, reports, quality clients                     |
+| HTTP API  | `apps/backend/app/api/v1`          | FastAPI routers                                                           |
+| Auth deps | `apps/backend/app/api/deps.py`     | JWT → Clerk principal → `User` → onboarding gate                          |
+| ORM       | `apps/backend/app/models`          | SQLAlchemy 2; Alembic migrations                                          |
+| Services  | `apps/backend/app/services`        | Gemini, skills, extraction, prompt assembly, jobs, pace, reports, quality |
+| Pedagogy  | `skills/`                          | System instructions                                                       |
+| Evals     | `evals/`                           | Replay gate, live judges, miner                                           |
+| Contracts | `docs/mvp/init/tech_requirements/` | Locked API / DB / UI / AI / hosting docs                                  |
+
+
+Run locally: `[apps/README.md](./apps/README.md)`. Locked contracts: `[docs/mvp/init/tech_requirements/README.md](./docs/mvp/init/tech_requirements/README.md)`. Skills: `[skills/README.md](./skills/README.md)`.
+
+---
+
+
+
+## Quality evals
+
+Merged in `[480a4a16](https://github.com/paulpolz/lingua-coach/commit/480a4a16a47853ff2aa7f2ad58fea8dbfaa6de25)` (*Add AI quality eval loop with CI replay gate*). Infra already answered “did the request succeed?” and “how slow / expensive?”. This loop answers whether the tutor was *good*: stayed in the learning language, corrected a real error, did not invent curriculum.
+
+Three layers stay separate:
 
 ```
-apps/
-  english-coach/
-packages/
-  learning-engine/
-  memory-system/
-  agent-framework/
-  evaluation-engine/
+PostgreSQL     = what happened for this learner
+Prometheus     = did the system work (latency, tokens, 5xx, retries)
+Eval loop      = was the AI good — and should we change it?
 ```
 
-Optional later hybrid: open-source SDK / UI / demos; keep curriculum engine, user modeling, and evaluation private.
+```
+SQL context  = what we know about the learner
+Skills       = what the agent is supposed to do
+Offline      = do we still do that on known cases?
+Online       = is production drifting?
+Mining       = which new cases enter the suite this week?
+```
+
+The product goal is decisions: **ship / don't ship / rollback / rewrite a skill** — not another dashboard.
+
+### Why `prompt_assembly` exists
+
+Evals must exercise the same prompt the API sends. `app/services/prompt_assembly.py` is the single concatenator (skills + extraction contracts + language policy + compact context). The runner loads YAML fixtures and calls those helpers; production loads ORM rows and calls the same functions. Pedagogy stays in `skills/*.md`.
+
+### Four suites
+
+
+| Suite                                        | Question                                                                                 | Ship gate?                                                        |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Capability** (`evals/cases/capability/`)   | Can the agent still do the job? Gold onboarding / lesson-chat / lesson-generation cases. | Deterministic checks must pass (local / nightly). Not the CI job. |
+| **Regression** (`evals/cases/regression/`)   | Does this exact failure come back? Gold + known-bad pairs.                               | **Yes.** CI + `baseline.json`. Zero **new** gated failures.       |
+| **Calibration** (`evals/cases/calibration/`) | Is the judge itself trustworthy? Author-proposed `labels:` vs judge scores.              | No. Agreement / self-consistency only.                            |
+| **Inbox** (`evals/cases/inbox/`)             | Miner stubs from production-shaped SQL.                                                  | No until a human promotes after stripping PII. Gitignored YAML.   |
+
+
+`--suite all` = capability + regression. Calibration and inbox are never a ship gate; a check failure there does not exit 1 (harness errors still do).
+
+Modes: `onboarding` | `lesson` | `lesson_generation`. A case YAML names an id, suite, mode, locale (`native` / `target`), a fixture, a user message (omitted for generation), and `checks`. `system_from_skills: true` is always assembled via production helpers.
+
+### Replay vs live
+
+```bash
+# Ship gate — CI and local. Never calls Gemini (tutor or judge).
+PYTHONPATH=apps/backend:. python -m evals.run --suite regression --replay
+
+# Live Gemini (needs GEMINI_API_KEY). Judges run after deterministic pass
+# when checks.judge is set. --no-judge skips them.
+PYTHONPATH=apps/backend:. python -m evals.run --suite capability
+PYTHONPATH=apps/backend:. python -m evals.run --suite regression
+PYTHONPATH=apps/backend:. python -m evals.run --suite all
+
+# Calibration (not a gate)
+PYTHONPATH=apps/backend:. python -m evals.run --suite calibration --replay --agreement
+PYTHONPATH=apps/backend:. python -m evals.run --suite calibration --agreement --self-consistency 3
+```
+
+**Replay** loads `evals/fixtures/replay/<id>.json` (`raw_completion`, or `completions[]` for schema-repair — checks run on the last string). CI has no `GEMINI_API_KEY`. Optional canned scores: `evals/fixtures/replay/<id>.judge.json`.
+
+**Live** calls the real tutor path, then (if configured) one Gemini `generate_json` judge with a fixed rubric markdown — repair-once, same pattern as lesson generation.
+
+Each run is tagged with `model`, `skill_sha` (git tree of `skills/` at HEAD), `git_sha`, and `rubric_version` (`v1`). Results: `evals/results/<run_id>.json` (gitignored) plus a markdown summary on stdout.
+
+`expect_fail: true` is for known-bad replay completions: the case **passes** only if a listed check fails. If those checks unexpectedly pass, the case fails. That keeps the detector honest.
+
+After an intentional skill / prompt / contract change: run live, confirm behavior (not only JSON parse), copy new completions into replay files, refresh `evals/fixtures/baseline.json` `failed_ids` if the known-fail set changed, land replay + baseline **in the same PR** as the skill change.
+
+### Deterministic checks (the gate)
+
+These run first. Do not spend tokens judging invalid output. Unknown check names are always a case error (not inverted by `expect_fail`).
+
+
+| Check                             | Pass when                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `extract_lesson_turn`             | Last valid `json:lesson_turn` parses                                                                             |
+| `extract_learner_profile`         | Last valid `json:learner_profile` parses                                                                         |
+| `extract_course_roadmap`          | Last valid `json:course_roadmap` parses                                                                          |
+| `no_english_learner_facing`       | Stripped learner-facing prose has no English explanation markers (`locale.target` ≠ `en`; JSON **keys** ignored) |
+| `roadmap_target_language_matches` | Roadmap `summary.target_language` matches `locale.target`                                                        |
+| `pattern_type_articles`           | A mistake/correction label contains `article`                                                                    |
+| `curriculum_valid`                | Completion JSON validates as `LessonCurriculum`                                                                  |
+| `grammar_focus_aligned`           | `grammar_focus` overlaps fixture roadmap theme / milestone                                                       |
+| `exit_criteria_nonempty_unique`   | Exit criteria non-empty, non-blank, unique                                                                       |
+| `invented_milestone`              | `milestone_index` exists on the fixture roadmap                                                                  |
+| `one_question_rule`               | At most one `?` in stripped prose                                                                                |
+
+
+Judge scores **never** change the process exit code.
+
+### Judges (informational)
+
+
+| Rubric                 | Dimensions                                                         |
+| ---------------------- | ------------------------------------------------------------------ |
+| `lesson_turn_v1`       | Immersion, correction accuracy, pedagogy, contract                 |
+| `lesson_generation_v1` | Groundedness, difficulty, immersion (schema is deterministic only) |
+| `onboarding_v1`        | Completeness, one-question rule, roadmap honesty                   |
+
+
+A rubric edit is a new file (`lesson_turn_v2`); never silently compare v1 to v2.
+
+`--self-consistency 3` re-judges the same completion three times (live) and flags dimension flips. `--agreement` compares scores (or canned `.judge.json`) to calibration `labels:` and prints % agree and Cohen’s κ per dimension. First labels are **author-proposed**. Independent double-label + agreement ≥ ~0.7 is required before any judge dimension becomes a ship gate. Drop a noisy dimension rather than theatrical scores.
+
+### CI
+
+`.github/workflows/ci.yml` runs three jobs on every PR and every push to `main`:
+
+
+| Job             | What                                                               |
+| --------------- | ------------------------------------------------------------------ |
+| `backend-test`  | Postgres 16 + `uv run pytest`                                      |
+| `evals-replay`  | `python -m evals.run --suite regression --replay` — **no API key** |
+| `frontend-test` | lint, typecheck, vitest                                            |
+
+
+`evals-replay` can be a required status check after the first green run on `main`. Pytest with a mocked Gemini still guards contracts; a skill change can also fail CI because a regression case failed replay. That is the ship gate.
+
+### Online signals
+
+Do **not** call Gemini on the chat SSE path.
+
+Authenticated `POST /api/v1/quality/events` stores:
+
+- **Thumbs** on assistant bubbles after SSE `done` (`kind=thumbs`, `value.thumb` = `1` or `-1`). Surfaces: onboarding and lesson. Fire-and-forget `204`.
+- **Lesson CSAT** optional 1–5 on Finish (`kind=lesson_csat`). Empty is allowed; finish is never blocked. Free-text `learner_feedback` still lands on `session_summary`.
+
+Chat rows are deleted on finish. Thumbs copy a compact snapshot into the event while the message still exists so a later batch judge has something to score.
+
+```bash
+PYTHONPATH=apps/backend:. python -m evals.judge_online
+PYTHONPATH=apps/backend:. python -m evals.judge_online --limit 25
+```
+
+Reads unjudged `judge_candidate` rows (10% of lesson turns with corrections, plus all thumbs-down that still had a snapshot) and writes `kind=judge` (rubric version, scores, model id). If `GEMINI_API_KEY` is unset, the script prints a skip and exits 0.
+
+Grafana dashboard **AI Quality** (`infra/monitoring/grafana/provisioning/dashboards/json/ai-quality.json`): thumbs-down rate by surface, lesson CSAT, judge fail rate by dimension, plus existing infra (HTTP p95, `llm_retries_total`). Empty until events exist. Use it to decide what to mine — not to page, and not to override the replay gate.
+
+`llm_retries_total` is format fragility, not quality. Do not rewrite a skill because thumbs dropped on N < 30. Do not switch models because one judge run moved 3 points.
+
+### Failure mining (closed loop)
+
+SQL + rules, no LLM. Writes candidate stubs under `evals/cases/inbox/` (`suite: inbox`).
+
+```bash
+PYTHONPATH=apps/backend:. python -m evals.mine
+PYTHONPATH=apps/backend:. python -m evals.mine --days 7 --limit 20 --out evals/cases/inbox
+```
+
+Sources (last N days): thumbs-down and CSAT ≤ 2, finish `learner_feedback`, failed `jobs`, high-occurrence `mistakes` with the same correction. Crude tags: `immersion`, `schema`, `user_too_hard`, `job_fail`, `thumbs_down`.
+
+**Ritual:** run the miner once a week. Promote 3–5 stubs (or write “nothing to add”): copy to `cases/regression/`, strip PII, set checks, add a replay fixture, confirm `--suite regression --replay`.
+
+Worked example already in-repo (not fabricated prod traffic): Spanish-immersion lesson, English learner turn, tutor must not lecture in English (L1 leakage).
+
+
+| File                                                               | Role                                                                                               |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `evals/cases/regression/lesson_chat_l1_leakage_es_001.yaml`        | Gold: tutor stays in Spanish. `expect_fail: false`.                                                |
+| `evals/cases/regression/lesson_chat_l1_leakage_es_001_caught.yaml` | Known-bad English lecture. `expect_fail: true` — passes only if `no_english_learner_facing` fails. |
+
+
+A skill edit that leaks English on the gold case fails `evals-replay`.
+
+Commands, YAML contract, check catalog: `[evals/README.md](./evals/README.md)`. Decisions and noise rules: `[evals/docs/shareable.md](./evals/docs/shareable.md)`, `[evals/docs/methodology.md](./evals/docs/methodology.md)`. Design note: `[docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md](./docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md)`.
+
+---
+
+
+
+## Next steps
+
+Immediate product/engine gaps (still post-MVP, not started):
+
+- `feedback_giver` — progress dashboard, weekly gates, automated replans. Session summaries and reports already exist; the closed analysis loop does not.
+- **Voice** — STT/TTS; text-only until then.
+- **Job queue** — Redis/Celery (or equivalent) before a second API replica. In-process `BackgroundTasks` is a single-instance constraint.
+- **Judge calibration** — independent double-label on the calibration set; promote a dimension to the ship gate only after agreement is documented.
+
+The next architecture bet under consideration is **RAG over teaching knowledge**, with **LangChain / LangGraph** for orchestration and **LangSmith or DeepEval** for traces/eval — see `[docs/mvp/llm_improvement_20260823/rag_langchain.md](./docs/mvp/llm_improvement_20260823/rag_langchain.md)`. That is a design note, not an implementation.
+
+### What we would change (if we go this way)
+
+Today every Gemini call gets the **same** skill Markdown plus a **SQL-assembled** compact context (profile, roadmap slice, last 5 lessons, due mistakes). That already works; the pain is scale: static instructions do not vary by the learner’s current weakness, and stuffing more history into the prompt is the wrong long-term memory model.
+
+Proposed split (do **not** replace Postgres with a vector store):
+
+```
+PostgreSQL  = what we know about this learner (profile, mastery, errors)
+pgvector    = which teaching knowledge is relevant (grammar, templates, error patterns)
+LangChain   = how we connect models, prompts, retrieval, tools
+LangGraph   = how we control a branching multi-step tutor workflow (only if we need it)
+```
+
+Learner facts stay SQL. Teaching material (curriculum snippets, grammar notes, exercise templates, L1 error patterns) would be chunked, embedded, and retrieved with metadata filters (language, CEFR, skill, topic). Hybrid: SQL decides “today’s objective = past tense / travel / A2”; vectors fetch the few relevant chunks; the LLM generates from that, not from the whole skill pack.
+
+### RAG + LangChain / LangGraph — short pros and cons
+
+
+|                    | For                                                                                                                                                                   | Against                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **RAG + pgvector** | Retrieves only the grammar / templates / error notes for *this* turn. Keeps Postgres as SoR. Same DB ops we already run. Shrinks prompt size as history grows.        | Chunking and embeddings are a new ops surface. Bad retrieval is a new failure mode (wrong grammar note, invented citation). Does not fix pedagogy by itself. Current context is already compact — RAG helps when the *knowledge base* grows, not when the *skill file* is 4 KB. Need retrieval evals we do not have yet. |
+| **LangChain**      | Prompt templates, retrievers, structured output, streaming, tool calling in one toolkit. Matches the proposed “assemble student + memory + chunks → lesson” pipeline. | We already have a working Gemini client, SSE mapping, Pydantic contracts, and `prompt_assembly`. Another abstraction over a thin vendor SDK. API churn. Risk of rewriting working extraction/repair for little gain.                                                                                                     |
+| **LangGraph**      | Explicit state machine for “review weakness vs teach new vs practice,” retries, human-in-the-loop, later multi-node agents.                                           | Overkill for the current two call types. Our lifecycle (onboarding → accept → generate → chat → finish) is already encoded in FastAPI + tables. Adopt only when a flow actually branches in-process.                                                                                                                     |
+
+
+Principle from the note: **PostgreSQL is “what we know about this learner”; pgvector is “what teaching knowledge is relevant.”** Do not embed the user profile.
+
+### LangSmith vs DeepEval vs the harness we just shipped
+
+The eval loop in `evals/` is custom and already the ship gate. A library is optional — adopt only if it reduces rubric drift or tracing cost. The evals design note said a 100-line judge module is enough ([§6.2](./docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md)).
+
+
+|                   | For                                                                                                                                                                                                 | Against                                                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Keep** `evals/` | Replay CI with no API key. Domain checks (`no_english_learner_facing`, `invented_milestone`) match this product. Same `prompt_assembly` as production. Miner → inbox → regression is already coded. | We own rubric files, agreement math, and runner. No hosted trace UI. Live judge is one Gemini call we maintain.                                                                                  |
+| **LangSmith**     | Traces every LLM call, prompt versions, datasets, comparison runs. Natural pair if we adopt LangChain. Hosted evals and annotation queues.                                                          | SaaS + cost. Learner chat in traces is PII. Overlaps the replay gate we already block PRs on. Another dashboard next to Grafana. Vendor lock-in on the quality loop.                             |
+| **DeepEval**      | Local-first, pytest-shaped LLM-as-judge and RAG metrics (faithfulness, relevancy). Useful if RAG ships and we need retrieval scores the current harness does not compute.                           | Another framework around judges we already run. Migrating v1 rubrics risks silent score drift. Custom immersion / milestone checks would still be ours. Does not replace the CI replay fixtures. |
+
+
+Practical order if we proceed: (1) keep the replay gate as the ship decision, (2) split skill Markdown into instructions vs teachable knowledge and add `pgvector` retrieval behind the existing call types, (3) add retrieval-quality cases to `evals/` (deterministic first), (4) consider DeepEval **only** for RAG metrics or LangSmith **only** if we want traces — not as a replacement for `--replay`.
+
+---
+
+
+
+## Docs
+
+
+| Doc                                                                                                                                      | Role                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| [skills/README.md](./skills/README.md)                                                                                                   | Pedagogy IP — skill files and pipeline                 |
+| [apps/README.md](./apps/README.md)                                                                                                       | Local Docker / host run, monitoring profile            |
+| [evals/README.md](./evals/README.md)                                                                                                     | How to run, add a case, update replay                  |
+| [evals/docs/shareable.md](./evals/docs/shareable.md)                                                                                     | Ship-gate decisions, L1-leakage loop, Grafana          |
+| [docs/mvp/init/tech_requirements/](./docs/mvp/init/tech_requirements/README.md)                                                          | Locked backend / AI / DB / frontend / deploy / hosting |
+| [docs/mvp/init/implementation-readiness.md](./docs/mvp/init/implementation-readiness.md)                                                 | Local MVP gate, env, smoke tests                       |
+| [docs/mvp/init/functional_requirements/cjm.md](./docs/mvp/init/functional_requirements/cjm.md)                                           | Customer journeys                                      |
+| [docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md](./docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md) | Eval-loop design                                       |
+| [docs/mvp/llm_improvement_20260823/rag_langchain.md](./docs/mvp/llm_improvement_20260823/rag_langchain.md)                               | RAG / LangChain proposal                               |
+| [docs/mvp/monitoring_20260811/monitoring_20260811.md](./docs/mvp/monitoring_20260811/monitoring_20260811.md)                             | Infra monitoring                                       |
+
+
