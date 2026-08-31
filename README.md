@@ -15,20 +15,20 @@ There is no custom model training. The product is orchestration over Gemini, wit
 The local MVP loop is implemented and runnable. This is what the stack can do today.
 
 
-| Layer             | What ships                                                                                                                                                                                                                                                           |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Product loop**  | Sign-in → onboarding interview → accept roadmap → dashboard → generate lesson → lesson chat → finish → reports. Resume an in-flight lesson without starting a new one.                                                                                               |
-| **Auth**          | Clerk (email / magic link). Frontend holds a publishable key; API verifies the session JWT and upserts a `users` row. Sessions are not stored in Postgres.                                                                                                           |
-| **Frontend**      | Next.js App Router: `/` (sync + redirect), `/sign-in`, `/onboarding`, `/dashboard`, `/lesson/[id]`, `/reports/[slug]`. Chat-first UI. Thumbs on assistant bubbles; optional CSAT 1–5 on finish.                                                                      |
-| **Backend**       | FastAPI under `/api/v1`. REST + SSE chat. In-process `BackgroundTasks` for lesson generation (single API replica). Rate limits: 60 chat turns/hour, 10 lesson starts/day.                                                                                            |
-| **LLM**           | Gemini only. Two call types: streamed chat (`GEMINI_MODEL_CHAT`, flash-class) and validated lesson JSON (`GEMINI_MODEL_LESSON`, pro-class). One repair retry on invalid curriculum JSON. Report patches after finish reuse the generate path (best-effort).          |
-| **Pedagogy**      | Runtime-loaded Markdown in `[skills/](./skills/README.md)`: `onboarding_interviewer`, `course_composer`, `exercise_tutor`, `vocabulary_practice_formats`, `report_writer`. `feedback_giver` is **not** wired (weekly gates, automated replans).                      |
-| **Memory**        | Structured artifacts in Postgres — not chat history. Profile, draft/active goal, accepted roadmap, lesson payload, mistake SRS, living markdown reports. Chat rows are shredded on accept/finish.                                                                    |
-| **Languages**     | Onboarding starts in English to collect native then target language; then coaches in the target. Lessons are full immersion. Native language is L1-interference context only.                                                                                        |
-| **Pace**          | Sequential integer lessons. At most one `generating` / `active` lesson. 24-hour on-pace window from `started_at`. Late finish slips `projected_completion_at`; it does not lock you out.                                                                             |
-| **Observability** | Prometheus + Grafana + Loki (Compose `--profile monitoring`). Infra dashboards (API, LLM tokens, errors) plus an **AI Quality** dashboard wired to `quality_events`.                                                                                                 |
-| **Quality loop**  | Offline eval harness with a CI replay gate; online thumbs/CSAT; batch LLM-as-judge; SQL failure miner. Landed in `[480a4a16](https://github.com/paulpolz/lingua-coach/commit/480a4a16a47853ff2aa7f2ad58fea8dbfaa6de25)` — see [Quality evals](#quality-evals) below. |
-| **CI**            | GitHub Actions: backend pytest (Postgres 16), frontend lint/typecheck/vitest, `evals-replay` (no Gemini key).                                                                                                                                                        |
+| Layer             | What ships                                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Product loop**  | Sign-in → onboarding interview → accept roadmap → dashboard → generate lesson → lesson chat → finish → reports.                                                             |
+| **Auth**          | Clerk (email / magic link). Frontend holds a publishable key; API verifies the session JWT and upserts a `users` row. Sessions are not stored in Postgres.                  |
+| **Frontend**      | Next.js App Router: `/` (sync + redirect), `/sign-in`, `/onboarding`, `/dashboard`, `/lesson/[id]`, `/reports/[slug]`. Chat-first UI.                                       |
+| **Backend**       | FastAPI under `/api/v1`. REST + SSE chat. In-process `BackgroundTasks` for lesson generation (single API replica).                                                          |
+| **LLM**           | Gemini API. Two call types: streamed chat (`GEMINI_MODEL_CHAT`, flash-class) and validated lesson JSON (`GEMINI_MODEL_LESSON`, pro-class).                                  |
+| **Pedagogy**      | Runtime-loaded Markdown in `[skills/](./skills/README.md)`: `onboarding_interviewer`, `course_composer`, `exercise_tutor`, `vocabulary_practice_formats`, `report_writer`.  |
+| **Memory**        | Structured artifacts in Postgres. Profile, draft/active goal, accepted roadmap, lesson payload, mistake SRS, living markdown reports. Chat rows are split on accept/finish. |
+| **Languages**     | Onboarding starts in English to collect native then target language, then coaches in the target.                                                                            |
+| **Pace**          | Sequential integer lessons. At most one `generating` / `active` lesson. 24-hour on-pace window from `started_at`.                                                           |
+| **Observability** | Prometheus + Grafana + Loki (Compose `--profile monitoring`). Infra dashboards (API, LLM tokens, errors) plus an **AI Quality** dashboard wired to `quality_events`.        |
+| **Quality loop**  | Offline eval harness with a CI replay gate; online thumbs/CSAT; batch LLM-as-judge; SQL failure miner.                                                                      |
+| **CI**            | GitHub Actions: backend pytest (Postgres 16), frontend lint/typecheck/vitest, `evals-replay` (no Gemini key).                                                               |
 
 
 **Not in this version:** voice / STT / TTS, billing, multi-replica job queue (Redis/Celery), plan-editor UI, `feedback_giver`, RAG / vector retrieval, LangChain, custom model fine-tuning.
@@ -380,7 +380,7 @@ The next architecture bet under consideration is **RAG over teaching knowledge**
 
 Today every Gemini call gets the **same** skill Markdown plus a **SQL-assembled** compact context (profile, roadmap slice, last 5 lessons, due mistakes). That already works; the pain is scale: static instructions do not vary by the learner’s current weakness, and stuffing more history into the prompt is the wrong long-term memory model.
 
-Proposed split (do **not** replace Postgres with a vector store):
+Proposed split:
 
 ```
 PostgreSQL  = what we know about this learner (profile, mastery, errors)
@@ -391,14 +391,19 @@ LangGraph   = how we control a branching multi-step tutor workflow (only if we n
 
 Learner facts stay SQL. Teaching material (curriculum snippets, grammar notes, exercise templates, L1 error patterns) would be chunked, embedded, and retrieved with metadata filters (language, CEFR, skill, topic). Hybrid: SQL decides “today’s objective = past tense / travel / A2”; vectors fetch the few relevant chunks; the LLM generates from that, not from the whole skill pack.
 
-### RAG + LangChain / LangGraph — short pros and cons
+### RAG + LangChain / LangGraph — quick comparison
 
+**RAG + pgvector**
+- **Pros:** Pull only the grammar, templates, and error notes needed for this turn. Postgres stays the source of truth. Prompts stay smaller as history grows.
+- **Cons:** Chunking and embeddings add ops work. Bad retrieval can surface the wrong note or a fake citation. Helps when the knowledge base is large — less so when the skill file is only ~4 KB. We still need retrieval evals.
 
-|                    | For                                                                                                                                                                   | Against                                                                                                                                                                                                                                                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **RAG + pgvector** | Retrieves only the grammar / templates / error notes for *this* turn. Keeps Postgres as SoR. Same DB ops we already run. Shrinks prompt size as history grows.        | Chunking and embeddings are a new ops surface. Bad retrieval is a new failure mode (wrong grammar note, invented citation). Does not fix pedagogy by itself. Current context is already compact — RAG helps when the *knowledge base* grows, not when the *skill file* is 4 KB. Need retrieval evals we do not have yet. |
-| **LangChain**      | Prompt templates, retrievers, structured output, streaming, tool calling in one toolkit. Matches the proposed “assemble student + memory + chunks → lesson” pipeline. | We already have a working Gemini client, SSE mapping, Pydantic contracts, and `prompt_assembly`. Another abstraction over a thin vendor SDK. API churn. Risk of rewriting working extraction/repair for little gain.                                                                                                     |
-| **LangGraph**      | Explicit state machine for “review weakness vs teach new vs practice,” retries, human-in-the-loop, later multi-node agents.                                           | Overkill for the current two call types. Our lifecycle (onboarding → accept → generate → chat → finish) is already encoded in FastAPI + tables. Adopt only when a flow actually branches in-process.                                                                                                                     |
+**LangChain**
+- **Pros:** One toolkit for prompts, retrieval, structured output, streaming, and tools. Fits the “student + memory + chunks → lesson” pipeline.
+- **Cons:** We already have Gemini, SSE, Pydantic, and `prompt_assembly`. Adds another layer on a thin SDK, with API churn and little gain if we rewrite working code.
+
+**LangGraph**
+- **Pros:** Clear state machine for “review vs teach vs practice,” retries, human-in-the-loop, and later multi-step agents.
+- **Cons:** Too much for our two call types today. Onboarding → lesson → chat → finish already lives in FastAPI and the DB. Add it only when a flow truly branches in-process.
 
 
 Principle from the note: **PostgreSQL is “what we know about this learner”; pgvector is “what teaching knowledge is relevant.”** Do not embed the user profile.
@@ -408,11 +413,17 @@ Principle from the note: **PostgreSQL is “what we know about this learner”; 
 The eval loop in `evals/` is custom and already the ship gate. A library is optional — adopt only if it reduces rubric drift or tracing cost. The evals design note said a 100-line judge module is enough ([§6.2](./docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md)).
 
 
-|                   | For                                                                                                                                                                                                 | Against                                                                                                                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Keep** `evals/` | Replay CI with no API key. Domain checks (`no_english_learner_facing`, `invented_milestone`) match this product. Same `prompt_assembly` as production. Miner → inbox → regression is already coded. | We own rubric files, agreement math, and runner. No hosted trace UI. Live judge is one Gemini call we maintain.                                                                                  |
-| **LangSmith**     | Traces every LLM call, prompt versions, datasets, comparison runs. Natural pair if we adopt LangChain. Hosted evals and annotation queues.                                                          | SaaS + cost. Learner chat in traces is PII. Overlaps the replay gate we already block PRs on. Another dashboard next to Grafana. Vendor lock-in on the quality loop.                             |
-| **DeepEval**      | Local-first, pytest-shaped LLM-as-judge and RAG metrics (faithfulness, relevancy). Useful if RAG ships and we need retrieval scores the current harness does not compute.                           | Another framework around judges we already run. Migrating v1 rubrics risks silent score drift. Custom immersion / milestone checks would still be ours. Does not replace the CI replay fixtures. |
+**Keep `evals/` (what we have now)**
+- **Pros:** Runs in CI with no API key. Custom checks fit this product (no English leakage, invented milestones). Uses the same prompts as production. Miner → inbox → regression is already built.
+- **Cons:** We maintain rubrics, agreement math, and the runner. No hosted trace UI. The live judge is a Gemini call we own.
+
+**LangSmith**
+- **Pros:** Traces every LLM call, prompt versions, datasets, and comparison runs. Pairs well with LangChain. Hosted evals and annotation queues.
+- **Cons:** SaaS cost. Learner chat in traces is PII. Overlaps the replay gate we already use to block PRs. Another dashboard beside Grafana. Vendor lock-in on the quality loop.
+
+**DeepEval**
+- **Pros:** Local-first, pytest-style LLM judges. RAG metrics (faithfulness, relevancy) if we add retrieval.
+- **Cons:** Another framework around judges we already run. Moving v1 rubrics risks silent score drift. Custom immersion and milestone checks stay ours. Does not replace CI replay fixtures.
 
 
 Practical order if we proceed: (1) keep the replay gate as the ship decision, (2) split skill Markdown into instructions vs teachable knowledge and add `pgvector` retrieval behind the existing call types, (3) add retrieval-quality cases to `evals/` (deterministic first), (4) consider DeepEval **only** for RAG metrics or LangSmith **only** if we want traces — not as a replacement for `--replay`.
