@@ -47,7 +47,7 @@ input:
         ¿Qué habilidades importan más para tu meta?
     - role: user
       text: |
-        Speaking and listening. Topics: hotels and food. Skip exam prep.
+        Writing and listening. Topics: hotels and food. Skip exam prep.
 checks:
   deterministic:
     - extract_learner_profile

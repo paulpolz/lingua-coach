@@ -195,7 +195,7 @@ async def test_finish_happy_path_on_pace_no_slip(client: AsyncClient, as_princip
     assert lesson.accomplished_at is not None
     summary = lesson.payload["session_summary"]
     assert summary["exit_criteria_met"] is True
-    assert set(summary["completed_slots"]) == {"warmup", "production"}
+    assert set(summary["completed_slots"]) == {"warmup", "writing"}
     assert summary["deferred_items"] == []
     # curriculum must survive the payload merge untouched.
     assert lesson.payload["curriculum"]["lesson_goal"] == VALID_LESSON_CURRICULUM["lesson_goal"]
@@ -227,7 +227,7 @@ async def test_finish_early_without_suggest_finish_has_empty_completed_slots(
     summary = lesson.payload["session_summary"]
     assert summary["completed_slots"] == []
     assert summary["exit_criteria_met"] is False
-    assert {d["slot_id"] for d in summary["deferred_items"]} == {"warmup", "production"}
+    assert {d["slot_id"] for d in summary["deferred_items"]} == {"warmup", "writing"}
 
 
 async def test_finish_accepts_explicit_completed_slot_ids_body(

@@ -52,10 +52,23 @@ export interface LessonCurriculumSlot {
   exercise_set: string;
 }
 
+export interface LessonInputTaskResource {
+  id: string;
+  kind: "video" | "audio" | string;
+  title: string;
+  url: string;
+  duration_sec: number;
+  source: string;
+  captions: string;
+  synopsis: string;
+  notice_points: string[];
+}
+
 export interface LessonInputTask {
   type: string;
   topic: string;
   focus: string;
+  resource?: LessonInputTaskResource | null;
 }
 
 export interface LessonGoalSpecificTask {

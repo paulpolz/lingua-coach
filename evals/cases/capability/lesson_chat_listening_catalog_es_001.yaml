@@ -1,0 +1,23 @@
+id: lesson_chat_listening_catalog_es_001
+suite: capability
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Hola, estoy listo.
+  history: []
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - catalog_url_used
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: |
+  Listening day: tutor must Markdown-link the injected catalog URL (Notes in Spanish hotel)
+  and not invent a different YouTube id.

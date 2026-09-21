@@ -37,6 +37,10 @@ try:
     from app.config import settings
     from app.services.gemini import ChatTurn, GeminiError, generate_json, stream_chat
     from app.services.lesson_generation import _build_repair_prompt, _parse_curriculum
+    from app.services.listening_catalog import (
+        assignment_from_generation_context,
+        enrich_generation_context,
+    )
     from app.services.prompt_assembly import (
         build_generation_user_prompt,
         lesson_curriculum_snippet_from_payload,
@@ -426,7 +430,7 @@ def assemble_case(
     if mode == "lesson_generation":
         system = lesson_generation_system_instruction(native, target)
         context = _generation_context(fixture)
-        prompt = build_generation_user_prompt(context)
+        prompt = build_generation_user_prompt(enrich_generation_context(context))
         return system, None, prompt
 
     raise CaseError(f"unknown mode: {mode!r}")
@@ -440,7 +444,9 @@ async def _stream_once(system_instruction: str, history: list[ChatTurn]) -> str:
 
 
 async def _generate_with_optional_repair(
-    system_instruction: str, prompt: str
+    system_instruction: str,
+    prompt: str,
+    assignment: Any | None = None,
 ) -> list[str]:
     """Match production: one generate_json, then at most one schema repair."""
     completions: list[str] = []
@@ -450,7 +456,7 @@ async def _generate_with_optional_repair(
     )
     completions.append(raw)
     try:
-        _parse_curriculum(raw)
+        _parse_curriculum(raw, assignment)
         return completions
     except (json.JSONDecodeError, ValidationError) as exc:
         repair_prompt = _build_repair_prompt(prompt, raw, exc)
@@ -627,7 +633,10 @@ async def _run_case(
             completions = _load_replay(case_id, case)
         elif mode == "lesson_generation":
             assert gen_prompt is not None
-            completions = await _generate_with_optional_repair(system, gen_prompt)
+            assignment = assignment_from_generation_context(_generation_context(fixture))
+            completions = await _generate_with_optional_repair(
+                system, gen_prompt, assignment
+            )
         else:
             assert history is not None
             completions = [await _stream_once(system, history)]

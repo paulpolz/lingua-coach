@@ -114,7 +114,7 @@ function FinishLessonDialogForm({
           onChange={(event) => setFeedback(event.target.value)}
           disabled={isSubmitting}
           rows={3}
-          placeholder="Optional — too hard, wrong language, more speaking…"
+          placeholder="Optional — too hard, wrong language, more writing…"
           className="mt-1.5 w-full resize-none rounded-xl border border-border-strong bg-background px-3.5 py-2.5 text-sm leading-[22px] text-foreground outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:opacity-60"
         />
 

@@ -30,7 +30,7 @@ const COPY: Record<
   "four-week-plan": {
     title: "4-Week Plan",
     reportType: "four_week_plan",
-    description: "Day-by-day grammar, vocabulary, listening, speaking, writing, and interview prep.",
+    description: "Day-by-day grammar, vocabulary, listening, reading, writing, and goal-specific work.",
     icon: "layers",
   },
 };

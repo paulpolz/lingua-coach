@@ -1,0 +1,690 @@
+clips:
+  # --- English ---
+  - id: en-voa-lle-welcome-a1
+    language: en
+    cefr: [A1, A2]
+    kind: video
+    duration_sec: 300
+    title: "VOA Let's Learn English — Lesson 1: Welcome"
+    url: https://learningenglish.voanews.com/a/lets-learn-english-lesson-1-welcome/3127209.html
+    source: VOA Learning English
+    topics: [daily_life]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Anna arrives at a Washington studio. People greet her, say their names,
+      and show a few rooms. Speech is slow. Useful phrases: hello, my name is,
+      nice to meet you, welcome, this is.
+    notice_points:
+      - Greetings and name exchanges
+      - This is / that is for rooms
+      - Slow, clear word stress
+
+  - id: en-voa-lle-where-a2
+    language: en
+    cefr: [A1, A2]
+    kind: video
+    duration_sec: 360
+    title: "VOA Let's Learn English — Lesson 5: Where Are You?"
+    url: https://learningenglish.voanews.com/a/lets-learn-english-lesson-5-where-are-you/3212368.html
+    source: VOA Learning English
+    topics: [city, travel, daily_life]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Characters ask where someone is and give simple directions around a
+      building and a street. Prepositions of place and short questions.
+    notice_points:
+      - Where are you / where is
+      - Next to, in, on, near
+      - Short clarifying questions
+
+  - id: en-voa-lle-work-a2
+    language: en
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 480
+    title: "VOA Let's Learn English Level 2 — Budget Cuts"
+    url: https://www.youtube.com/watch?v=fUmNAGJBLSA
+    source: VOA Learning English
+    topics: [work]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Studio staff overhear talk of budget cuts and worry about jobs. The
+      meeting is actually about new assignments. Workplace nouns and rumor vs
+      fact.
+    notice_points:
+      - Job titles and workplace nouns
+      - Going to for rumors and plans
+      - How the misunderstanding is resolved
+
+  - id: en-voa-stories-magi-b1
+    language: en
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 900
+    title: "VOA American Stories — The Gift of the Magi"
+    url: https://www.manythings.org/voa/stories/The.Gift.of.the.Magi.html
+    source: ManyThings / VOA
+    topics: [culture, daily_life]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Della and Jim each sell a treasured possession to buy a Christmas gift
+      for the other. Special English narration; MP3 and matching text.
+      Listen once without reading if possible.
+    notice_points:
+      - Past simple narrative
+      - Sacrifice and irony
+      - Time markers (Christmas, morning)
+
+  - id: en-voa-words-food-a2
+    language: en
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 420
+    title: "VOA Learning English — Words and Their Stories (food expressions)"
+    url: https://learningenglish.voanews.com/z/986
+    source: VOA Learning English
+    topics: [food, culture]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Hosts explain common food idioms with slow examples (piece of cake,
+      spill the beans, and similar). Play any short recent episode on that
+      Words and Their Stories list.
+    notice_points:
+      - Idiom plus a plain paraphrase
+      - Example sentence after the idiom
+      - Informal vs careful register
+
+  - id: en-voa-news-b1
+    language: en
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 600
+    title: "VOA Learning English — News"
+    url: https://learningenglish.voanews.com/z/599
+    source: VOA Learning English
+    topics: [news, culture]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Levelled news read slower than native broadcasts. Pick the latest
+      short science or culture feature (not agency video). Who / what /
+      where is usually restated.
+    notice_points:
+      - Present perfect vs past for news
+      - Numbers and places
+      - One cause or consequence sentence
+
+  - id: en-voa-lle-eating-a2
+    language: en
+    cefr: [A2]
+    kind: video
+    duration_sec: 360
+    title: "VOA Let's Learn English — Lesson 12: A Busy Day"
+    url: https://learningenglish.voanews.com/a/lets-learn-english-lesson-12-take-an-umbrella/3472477.html
+    source: VOA Learning English
+    topics: [daily_life, food]
+    captions: target
+    license: public_domain
+    synopsis: |
+      Everyday plans, weather, and going out. Present continuous for now
+      vs going-to for later. Useful for daily-life listening at A2.
+    notice_points:
+      - Present continuous vs going to
+      - Weather and time of day
+      - Suggestions (let's / how about)
+
+  # --- German ---
+  - id: de-goethe-ewd-a1
+    language: de
+    cefr: [A1, A2]
+    kind: video
+    duration_sec: 240
+    title: "Goethe-Institut — Mein Weg nach Deutschland: Erste Wege (A1)"
+    url: https://www.goethe.de/prj/mwd/de/deu/ewd.html
+    source: Goethe-Institut
+    topics: [daily_life, city, travel, work]
+    captions: target
+    license: link_only
+    synopsis: |
+      Nevin is new in Germany. Short videos cover bus, work, and making
+      friends. Slow, staged learner German with on-page exercises. Play one
+      episode (bus or first workday).
+    notice_points:
+      - Separable verbs (einsteigen, ankommen)
+      - Formal Sie vs informal du
+      - Place prepositions (zum, zur, in die)
+
+  - id: de-extra-01-a2
+    language: de
+    cefr: [A1, A2]
+    kind: video
+    duration_sec: 480
+    title: "Extra auf Deutsch — Folge 01 (first 8 minutes)"
+    url: https://www.youtube.com/watch?v=F6khA8eZaD4
+    source: Extra auf Deutsch
+    topics: [daily_life, city]
+    captions: target
+    license: link_only
+    synopsis: |
+      Sam arrives from America to stay with Sascha and Anna in Berlin. Nic
+      the neighbour is jealous. Stop after the first eight minutes: greetings,
+      apartment rooms, and a comic misunderstanding about a bed.
+    notice_points:
+      - Wohnen / kommen aus
+      - Rooms of a flat
+      - Word-order in simple statements
+
+  - id: de-super-easy-slow-a2
+    language: de
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 700
+    title: "Super Easy German 287 — 10-minute slow conversation"
+    url: https://www.youtube.com/watch?v=LwJfk1NUeg4
+    source: Easy German
+    topics: [daily_life, city]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Hosts walk and talk slowly about everyday plans. Dual subtitles.
+      Listen once with German captions only if possible.
+    notice_points:
+      - Filler words (also, genau, ja)
+      - Present tense plans
+      - Questions with wo / was / wie
+
+  - id: de-coerll-dib-a2
+    language: de
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 300
+    title: "COERLL Deutsch im Blick — Kapitel 1 interviews"
+    url: https://coerll.utexas.edu/dib/
+    source: COERLL Deutsch im Blick
+    topics: [daily_life, culture, city]
+    captions: target
+    license: cc_by
+    synopsis: |
+      Open interviews with students and people in German-speaking places
+      about daily life. Choose a Kapitel 1 native-speaker clip (not the
+      grammar animation). Natural speed, short turns.
+    notice_points:
+      - Self-introduction patterns
+      - Regional names and places
+      - How they rephrase when stuck
+
+  - id: de-dw-langsam-b1
+    language: de
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 600
+    title: "DW — Langsam gesprochene Nachrichten"
+    url: https://www.dw.com/de/langsam-gesprochene-nachrichten/s-8030
+    source: Deutsche Welle
+    topics: [news, culture]
+    captions: target
+    license: link_only
+    synopsis: |
+      Daily news read slowly. Play the latest bulletin. Who, where, and one
+      event per item. Do not use Nicos Weg or the DW Learn German course.
+    notice_points:
+      - Passive or official verbs (wurde, berichtet)
+      - Dates and country names
+      - One cause/result linker (deshalb, weil)
+
+  - id: de-easy-german-food-b1
+    language: de
+    cefr: [B1, B2]
+    kind: video
+    duration_sec: 600
+    title: "Easy German — street interviews (food or city life)"
+    url: https://www.easygerman.org/
+    source: Easy German
+    topics: [food, city, culture]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Native street interviews at natural speed with German and English
+      subtitles. Pick a recent food, market, or neighbourhood episode.
+      First listen: German captions only.
+    notice_points:
+      - Opinions (ich finde, ich mag)
+      - Modal verbs (kann, muss, will)
+      - How speakers restart a sentence
+
+  - id: de-slow-german-daily-a2
+    language: de
+    cefr: [A2, B1]
+    kind: audio
+    duration_sec: 540
+    title: "Slow German — everyday life (free episode)"
+    url: https://slowgerman.com/
+    source: Slow German (Annik Rubens)
+    topics: [daily_life, culture]
+    captions: none
+    license: link_only
+    synopsis: |
+      Host reads a short text about daily life in Germany, slowly, with
+      clear pronunciation. Use only a freely playable episode (skip
+      paywalled transcripts).
+    notice_points:
+      - Topic sentence then examples
+      - Separable verbs
+      - Time adverbs (manchmal, oft, heute)
+
+  # --- French ---
+  - id: fr-tv5-a1-daily
+    language: fr
+    cefr: [A1, A2]
+    kind: video
+    duration_sec: 180
+    title: "TV5MONDE Apprendre — A1 beginner videos"
+    url: https://apprendre.tv5monde.com/en/exercices/a1-beginner
+    source: TV5MONDE Apprendre
+    topics: [daily_life, city]
+    captions: target
+    license: link_only
+    synopsis: |
+      Very short authentic clips with comprehension exercises. Open one A1
+      “quotidien” item (greetings, shops, or the street). Slow enough for
+      beginners; visuals support the audio.
+    notice_points:
+      - Greetings and merci / s'il vous plaît
+      - Articles le / la / un / une
+      - Liaison on frequent phrases
+
+  - id: fr-tv5-travel-a2
+    language: fr
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 240
+    title: "TV5MONDE Apprendre — A2 travel / city"
+    url: https://apprendre.tv5monde.com/en/exercices/a2-intermediate
+    source: TV5MONDE Apprendre
+    topics: [travel, city]
+    captions: target
+    license: link_only
+    synopsis: |
+      Short reports about places and travel. Pick one A2 clip on a city,
+      station, or hotel. Speakers are authentic but the excerpt is brief.
+    notice_points:
+      - Il y a / c'est
+      - Place prepositions
+      - Numbers (times, prices, platforms)
+
+  - id: fr-rfi-journal-b1
+    language: fr
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 600
+    title: "RFI — Journal en français facile"
+    url: https://francaisfacile.rfi.fr/en/
+    source: RFI
+    topics: [news, culture]
+    captions: target
+    license: link_only
+    synopsis: |
+      Daily news in easier French. Play the latest journal. Items follow
+      who / where / what. On-site exercises optional; chat checks
+      comprehension.
+    notice_points:
+      - Past tense in headlines vs body
+      - Country and institution names
+      - One connecting word (mais, donc, parce que)
+
+  - id: fr-pff-restaurant-a2
+    language: fr
+    cefr: [A2]
+    kind: audio
+    duration_sec: 240
+    title: "Podcast Français Facile — Au restaurant"
+    url: https://www.podcastfrancaisfacile.com/dialogues/au-restaurant.html
+    source: Podcast Français Facile
+    topics: [food, daily_life]
+    captions: target
+    license: link_only
+    synopsis: |
+      Graded dialogue ordering food. Clear studio French. Transcript is on
+      the page — listen first, then check.
+    notice_points:
+      - Je voudrais / je prends
+      - Dishes and drinks
+      - Questions from the server
+
+  - id: fr-innerfrench-e01-b1
+    language: fr
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 720
+    title: "innerFrench — Episode 01 (with free transcript)"
+    url: https://innerfrench.com/e01/
+    source: innerFrench
+    topics: [culture]
+    captions: target
+    license: link_only
+    synopsis: |
+      Intermediate talk about how we learn languages (Krashen, input).
+      Natural but clear. Transcript is on the episode page. Listen for
+      8–12 minutes, not the whole archive.
+    notice_points:
+      - Opinion phrases (je pense que)
+      - Examples after a claim
+      - How he slows on key terms
+
+  - id: fr-tv5-7jours-b1
+    language: fr
+    cefr: [B1, B2]
+    kind: video
+    duration_sec: 360
+    title: "TV5MONDE — 7 jours (weekly news)"
+    url: https://apprendre.tv5monde.com/en/exercices/7-jours
+    source: TV5MONDE Apprendre
+    topics: [news, culture]
+    captions: target
+    license: link_only
+    synopsis: |
+      Short weekly news reports with exercises. Open the latest available
+      “7 jours” video. Visuals plus reporter speech.
+    notice_points:
+      - Report structure (place, then event)
+      - Numbers and dates
+      - Formal news vocabulary vs everyday words
+
+  - id: fr-pff-travel-a2
+    language: fr
+    cefr: [A2, B1]
+    kind: audio
+    duration_sec: 300
+    title: "Podcast Français Facile — À la gare"
+    url: https://www.podcastfrancaisfacile.com/dialogues/a-la-gare.html
+    source: Podcast Français Facile
+    topics: [travel]
+    captions: target
+    license: link_only
+    synopsis: |
+      Buying a ticket and asking for a platform. Slow dialogue, on-page
+      text. Good A2 travel listening.
+    notice_points:
+      - Aller / partir / arriver
+      - Ticket vocabulary
+      - Times and track numbers
+
+  # --- Spanish ---
+  - id: es-notes-beginners-hotel-a2
+    language: es
+    cefr: [A2, B1]
+    kind: audio
+    duration_sec: 480
+    title: "Notes in Spanish — Inspired Beginners (hotel / travel)"
+    url: https://www.notesinspanish.com/beginners-spanish-audio/
+    source: Notes in Spanish
+    topics: [travel, daily_life]
+    captions: none
+    license: link_only
+    synopsis: |
+      Ben and Marina talk slowly about everyday Spain. Open a beginners
+      episode on hotels, arriving, or asking for a room. Free audio; notes
+      on the episode page. Madrid Spanish, clear turn-taking.
+    notice_points:
+      - Articles el / la / un / una before hotel, habitación, reserva
+      - Quisiera / quiero for requests
+      - How they repair a missed word
+
+  - id: es-notes-beginners-food-a2
+    language: es
+    cefr: [A2]
+    kind: audio
+    duration_sec: 420
+    title: "Notes in Spanish — Inspired Beginners (food)"
+    url: https://www.notesinspanish.com/beginners-spanish-audio/
+    source: Notes in Spanish
+    topics: [food, daily_life]
+    captions: none
+    license: link_only
+    synopsis: |
+      A free beginners episode about food, tapas, or ordering. Listen for
+      dishes, likes, and café talk. Same hosts as the hotel set.
+    notice_points:
+      - Me gusta / me encanta
+      - Food nouns and articles
+      - Informal tú questions
+
+  - id: es-coerll-spintx-a2
+    language: es
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 240
+    title: "COERLL Spanish in Texas — short interviews"
+    url: https://www.coerll.utexas.edu/spintx/
+    source: COERLL Spanish in Texas
+    topics: [daily_life, culture, city]
+    captions: target
+    license: cc_by
+    synopsis: |
+      Short interviews with Spanish speakers in Texas about work, family,
+      and city life. Pick one clip with captions. Mixed accents; turns are
+      short.
+    notice_points:
+      - Present tense self-description
+      - Place names
+      - How speakers switch formality
+
+  - id: es-easy-spanish-city-a2
+    language: es
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 600
+    title: "Easy Spanish — street interviews (city / travel)"
+    url: https://www.youtube.com/@EasySpanish
+    source: Easy Spanish
+    topics: [city, travel, daily_life]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Street interviews with dual subtitles. Open a Super Easy or Easy
+      Spanish episode in a city or at a station/hotel. First listen:
+      Spanish captions only. Do not invent a different YouTube URL.
+    notice_points:
+      - Where people are going
+      - Hay / está for places
+      - Fillers (pues, bueno, o sea)
+
+  - id: es-easy-spanish-food-a2
+    language: es
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 540
+    title: "Easy Spanish — food and markets"
+    url: https://www.youtube.com/@EasySpanish
+    source: Easy Spanish
+    topics: [food, city]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Market or restaurant street talk. Pick a food-themed Easy Spanish or
+      Super Easy Spanish video from the same channel. Prices, dishes, and
+      opinions.
+    notice_points:
+      - Quiero / me pone for ordering
+      - Numbers and prices
+      - Adjectives after nouns (tapa rica)
+
+  - id: es-cervantes-sintonía-b1
+    language: es
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 600
+    title: "Instituto Cervantes — En sintonía con el español"
+    url: https://cvc.cervantes.es/ensenanza/actividades_ave/unesco/radio.htm
+    source: Instituto Cervantes
+    topics: [culture, news, daily_life]
+    captions: target
+    license: link_only
+    synopsis: |
+      Graded radio with transcripts when the page is free. Choose one
+      intermediate programme about daily culture. Clear studio Spanish.
+    notice_points:
+      - Topic sentence then detail
+      - Imperfect vs pretérito if present
+      - Connectors (además, sin embargo)
+
+  - id: es-radio-ambulante-b2
+    language: es
+    cefr: [B2]
+    kind: audio
+    duration_sec: 720
+    title: "Radio Ambulante — one feature (first 12 minutes)"
+    url: https://radioambulante.org/
+    source: Radio Ambulante
+    topics: [culture, news]
+    captions: target
+    license: link_only
+    synopsis: |
+      Narrative journalism in Latin American Spanish. Open a recent episode
+      and stop at 12 minutes. Natural speed; use the published transcript
+      only after the first listen.
+    notice_points:
+      - Who is speaking vs who is quoted
+      - Time shifts in the story
+      - One striking image or scene
+
+  # --- Italian ---
+  - id: it-super-easy-coffee-a1
+    language: it
+    cefr: [A1, A2]
+    kind: video
+    duration_sec: 600
+    title: "Super Easy Italian 52 — slow conversation (caffè)"
+    url: https://www.youtube.com/watch?v=-TMHzkcCjSw
+    source: Easy Italian
+    topics: [food, daily_life, city]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Hosts walk, order coffee, and speak slowly about daily plans.
+      Dual subtitles. Stop around the café order if the full video is long.
+    notice_points:
+      - Vorrei / prendo for orders
+      - Caffè vocabulary (macchiato, cappuccino)
+      - Informal greetings (ciao, salve)
+
+  - id: it-super-easy-daily-a2
+    language: it
+    cefr: [A2]
+    kind: video
+    duration_sec: 600
+    title: "Super Easy Italian 63 — everyday conversation"
+    url: https://www.youtube.com/watch?v=DtkPriOj59U
+    source: Easy Italian
+    topics: [daily_life, travel]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Slow chat about work, a dog, trains to Napoli, and family food.
+      Good A2 listening for daily verbs and time.
+    notice_points:
+      - Passato prossimo (ho lavorato, ho letto)
+      - Train times and delay talk
+      - Family meal vocabulary
+
+  - id: it-easy-italian-street-a2
+    language: it
+    cefr: [A2, B1]
+    kind: video
+    duration_sec: 600
+    title: "Easy Italian — real street conversations"
+    url: https://www.youtube.com/@EasyItalian
+    source: Easy Italian
+    topics: [city, culture, daily_life]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Authentic street interviews with dual captions. Pick one city-life
+      episode from the Easy Italian channel (not a random other channel).
+    notice_points:
+      - Mi chiamo / sono di
+      - Why they like a place
+      - Fillers (allora, quindi, ecco)
+
+  - id: it-easy-italian-food-b1
+    language: it
+    cefr: [B1]
+    kind: video
+    duration_sec: 540
+    title: "Easy Italian — food and markets"
+    url: https://www.youtube.com/@EasyItalian
+    source: Easy Italian
+    topics: [food, city]
+    captions: dual
+    license: link_only
+    synopsis: |
+      Market or restaurant interviews at closer-to-natural speed. Same
+      channel as Super Easy; choose a food episode.
+    notice_points:
+      - Quantities and prices
+      - Advice (devi, prova)
+      - Regional food names
+
+  - id: it-podcast-italiano-a2
+    language: it
+    cefr: [A2, B1]
+    kind: audio
+    duration_sec: 480
+    title: "Podcast Italiano Principiante — graded episode"
+    url: https://podcastitaliano.com/
+    source: Podcast Italiano
+    topics: [daily_life, culture]
+    captions: target
+    license: link_only
+    synopsis: |
+      Slow Italian for learners with a free transcript on beginner
+      episodes. Open a principiante episode about daily life or travel.
+      Skip membership-only extras.
+    notice_points:
+      - Clear topic sentence
+      - Present vs passato prossimo
+      - Recast of a hard word
+
+  - id: it-easy-italian-fm-b1
+    language: it
+    cefr: [B1, B2]
+    kind: audio
+    duration_sec: 720
+    title: "Easy Italian podcast — daily life"
+    url: https://easyitalian.fm/
+    source: Easy Italian
+    topics: [daily_life, culture]
+    captions: none
+    license: link_only
+    synopsis: |
+      Matteo and Raffaele talk about everyday Italy at a moderate pace.
+      Use a freely playable episode; interactive transcripts are often
+      paid — rely on this synopsis and notice-points.
+    notice_points:
+      - Turn-taking and interruptions
+      - Stories in passato prossimo
+      - Informal vs careful words
+
+  - id: it-culture-b2-news
+    language: it
+    cefr: [B2]
+    kind: video
+    duration_sec: 180
+    title: "Rai News — short bulletin"
+    url: https://www.rainews.it/
+    source: Rai News
+    topics: [news, culture]
+    captions: none
+    license: link_only
+    synopsis: |
+      Authentic news Italian. Play one short homepage video or “tg”
+      clip (about 2–3 minutes). B2 only; too hard for A1–A2.
+    notice_points:
+      - Who / where / what in the first sentence
+      - Formal verbs
+      - One number or date

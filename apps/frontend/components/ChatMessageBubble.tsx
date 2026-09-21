@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 
 import type { ChatMessageMetadata } from "@/lib/chat";
+import { CHAT_EXTERNAL_LINK } from "@/lib/chat";
 import {
   buildThumbsEvent,
   canRateAssistantMessage,
@@ -28,6 +29,16 @@ const chatMarkdownComponents: Components = {
   h3: ({ children }) => <h3 className="mb-1.5 text-sm font-bold">{children}</h3>,
   blockquote: ({ children }) => (
     <blockquote className="my-2 border-l-2 border-border pl-3 text-muted">{children}</blockquote>
+  ),
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target={CHAT_EXTERNAL_LINK.target}
+      rel={CHAT_EXTERNAL_LINK.rel}
+      className="text-accent underline-offset-2 hover:underline"
+    >
+      {children}
+    </a>
   ),
   code: ({ children, className }) =>
     className ? (

@@ -11,7 +11,7 @@ Keep four learner-facing markdown files current without regenerating accumulated
 - **progress** — category table (level, target, %, weaknesses, recommendations); latest session findings at the top; running update log
 - **errors_log** — live pattern tracker (active/closed) at the top; day-by-day mistakes + fixes; word-family / sound-alike list
 - **roadmap** — milestones from diagnostic toward the learner's stated goal, success criteria, scope notes
-- **four_week_plan** — day-by-day grammar / vocabulary / listening / speaking / writing / goal-specific focus for the current block
+- **four_week_plan** — day-by-day grammar / vocabulary / listening / reading / writing / goal-specific focus for the current block
 
 ## Language
 
@@ -25,7 +25,7 @@ Product UI around reports (page titles Progress / Error Log / Roadmap / 4-Week P
 
 1. Prefer `append_entry` for dated logs (progress update log, error daily log).
 2. Prefer `patch_section` for tables and "latest session" / "pattern tracker" / current-block day tables.
-3. Do not invent categories the learner's goal does not need. Default skill rows: Grammar, Vocabulary, Listening, Speaking, Writing, Interview readiness (rename if the goal is not interview-shaped). Write those row labels in `target_language`.
+3. Do not invent categories the learner's goal does not need. Default skill rows: Grammar, Vocabulary, Listening, Reading, Writing, Goal-specific readiness (rename if the goal is not interview-shaped). Write those row labels in `target_language`. Never add a Speaking row.
 4. Be specific and brief. Cite patterns, not isolated typos.
 5. If a report section has nothing new, omit that op.
 6. Keep existing heading structure. Markdown you emit is placed *inside* the named section, not around it.

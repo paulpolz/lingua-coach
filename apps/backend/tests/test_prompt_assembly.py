@@ -17,7 +17,7 @@ from app.services.skills import (
     ONBOARDING_EXTRACTION_CONTRACT,
     get_system_instruction,
 )
-from tests.fixtures import VALID_LESSON_CURRICULUM
+from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LESSON_CURRICULUM
 
 
 def test_onboarding_system_instruction_is_skills_then_contract_then_policy() -> None:
@@ -70,6 +70,7 @@ def test_curriculum_snippet_empty_and_populated_match_chat_strings() -> None:
     assert "  - warmup: Active recall — past tense timelines" in snippet
     assert "  - Produce 5 sentences with past simple + time marker" in snippet
     assert "Input task: listening — topic: A team retrospective meeting" in snippet
+    assert "url: https://www.youtube.com/watch?v=fUmNAGJBLSA" in snippet
     assert "Goal-specific task: Write a retro summary email (format: email)" in snippet
 
 
@@ -114,7 +115,43 @@ def test_build_generation_user_prompt_wraps_json_context() -> None:
         f"{json.dumps(context, default=str)}\n\n"
         "Pick one grammar focus and one vocab theme aligned to the current "
         "milestone; interleave due items from open_mistakes and prior_lessons "
-        "before adding new material."
+        "before adding new material.\n"
+        "input_assignment is chosen by the backend. If mode is listening, copy "
+        "input_assignment.resource onto input_task.resource exactly (same id and "
+        "url) and set input_task.type to listening. Do not invent a URL. If mode "
+        "is reading, set input_task.type to reading and omit resource; write a "
+        "150-300 word passage in chat later, not a fake listening task.\n"
+        "Do not emit a speaking slot. Map any speaking activity on the weekly "
+        "template to writing (email, message, summary, written dialogue). "
+        "goal_specific_task.format must be a written format, never oral roleplay."
     )
     assert '"native_language": "en"' in prompt
     assert '"target_language": "es"' in prompt
+
+
+def test_generation_prompt_includes_catalog_assignment() -> None:
+    from app.services.listening_catalog import (
+        assignment_from_generation_context,
+        enrich_generation_context,
+    )
+
+    context = {
+        "lesson_number": 1,
+        "active_plan": {"roadmap": VALID_COURSE_ROADMAP, "current_milestone_index": 0},
+        "learner_profile": {
+            "native_language": "en",
+            "target_language": "es",
+            "target_level": "A2",
+            "focus": {"topic_priorities": ["hotel", "viajes"]},
+        },
+        "prior_lessons": [],
+        "open_mistakes": [],
+    }
+    assignment = assignment_from_generation_context(context)
+    assert assignment.mode == "listening"
+    assert assignment.clip is not None
+    prompt = build_generation_user_prompt(enrich_generation_context(context))
+    assert '"mode": "listening"' in prompt
+    assert assignment.clip.url in prompt
+    assert assignment.clip.id in prompt
+    assert "synopsis" in prompt

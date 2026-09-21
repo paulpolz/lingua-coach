@@ -7,6 +7,7 @@ real network call."""
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from httpx import AsyncClient
 from app.models.enums import LearningGoalStatus, LearningPlanStatus
 from app.models.learning_goal import LearningGoal
 from app.models.learning_plan import LearningPlan
+from app.models.profile import Profile
 from app.models.user import User
 from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LESSON_CURRICULUM
 
@@ -177,3 +179,59 @@ async def test_active_lesson_is_null_when_none_exists(client: AsyncClient, as_pr
     resp = await client.get("/api/v1/lessons/active")
     assert resp.status_code == 200
     assert resp.json() is None
+
+
+async def test_listening_day_overwrites_invented_resource(
+    client: AsyncClient, as_principal, db_session, mock_generate_json
+) -> None:
+    user_id = await _sync_user(client, as_principal, "clerk_job_listening_overwrite")
+    await _seed_onboarded_user(db_session, user_id)
+    profile = Profile(
+        user_id=uuid.UUID(user_id),
+        target_language="es",
+        target_level="A2",
+        focus={"topic_priorities": ["hotel", "viajes"]},
+    )
+    db_session.add(profile)
+    await db_session.commit()
+
+    fake = copy.deepcopy(VALID_LESSON_CURRICULUM)
+    fake["input_task"]["resource"]["id"] = "invented"
+    fake["input_task"]["resource"]["url"] = "https://www.youtube.com/watch?v=dQw4w9wgGcQ"
+    mock_generate_json([json.dumps(fake)])
+
+    start_resp = await client.post("/api/v1/lessons/start")
+    ids = start_resp.json()
+    lesson_resp = await client.get(f"/api/v1/lessons/{ids['lesson_id']}")
+    resource = lesson_resp.json()["payload"]["curriculum"]["input_task"]["resource"]
+    assert resource["id"] != "invented"
+    assert "dQw4w9wgGcQ" not in resource["url"]
+    assert lesson_resp.json()["payload"]["curriculum"]["input_task"]["type"] == "listening"
+
+
+async def test_listening_day_fills_omitted_resource(
+    client: AsyncClient, as_principal, db_session, mock_generate_json
+) -> None:
+    user_id = await _sync_user(client, as_principal, "clerk_job_listening_omit")
+    await _seed_onboarded_user(db_session, user_id)
+    profile = Profile(
+        user_id=uuid.UUID(user_id),
+        target_language="es",
+        target_level="A2",
+        focus={"topic_priorities": ["hotel", "viajes"]},
+    )
+    db_session.add(profile)
+    await db_session.commit()
+
+    fake = copy.deepcopy(VALID_LESSON_CURRICULUM)
+    fake["input_task"].pop("resource")
+    mock_generate_json([json.dumps(fake)])
+
+    start_resp = await client.post("/api/v1/lessons/start")
+    ids = start_resp.json()
+    lesson_resp = await client.get(f"/api/v1/lessons/{ids['lesson_id']}")
+    input_task = lesson_resp.json()["payload"]["curriculum"]["input_task"]
+    assert input_task["type"] == "listening"
+    assert input_task["resource"]["id"]
+    assert input_task["resource"]["url"].startswith("http")
+

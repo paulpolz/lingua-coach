@@ -1,6 +1,6 @@
 {
   "completions": [
-    "{\"lesson_goal\": \"roto\", \"slots\": []}",
-    "{\"lesson_goal\": \"sigue roto\"}"
+    "{\n  \"lesson_goal\": \"roto\",\n  \"slots\": []\n}",
+    "{\n  \"lesson_goal\": \"sigue roto\"\n}"
   ]
 }

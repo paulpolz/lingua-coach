@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyChecklistMetadata, hasQuestionMark, isPlanStreamContent } from "./chat";
+import { applyChecklistMetadata, CHAT_EXTERNAL_LINK, hasQuestionMark, isPlanStreamContent } from "./chat";
 
 describe("isPlanStreamContent", () => {
   it("matches json:course_roadmap without English headings", () => {
@@ -60,5 +60,12 @@ describe("applyChecklistMetadata", () => {
     );
     expect(next.tasks).toEqual([{ id: "production", label: "Role play", minutes: 10 }]);
     expect(next.completedIds.size).toBe(0);
+  });
+});
+
+describe("CHAT_EXTERNAL_LINK", () => {
+  it("opens catalog and other assistant links in a new tab", () => {
+    expect(CHAT_EXTERNAL_LINK.target).toBe("_blank");
+    expect(CHAT_EXTERNAL_LINK.rel).toBe("noopener noreferrer");
   });
 });
