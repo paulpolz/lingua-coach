@@ -64,8 +64,8 @@ def seed_four_week_plan_markdown(roadmap: CourseRoadmap) -> str:
             f"| Grammar | {theme.grammar_focus} |\n"
             f"| Vocabulary | {theme.vocab_theme} |\n"
             f"| Listening / reading | {theme.input_type} |\n"
-            f"| Speaking | {theme.production_focus} |\n"
-            f"| Writing / interview-prep | {theme.goal_specific_focus} |"
+            f"| Writing | {theme.production_focus} |\n"
+            f"| Goal-specific | {theme.goal_specific_focus} |"
         )
     days_md = "\n\n".join(day_lines) or "_Day-by-day themes will appear here._"
     weekly = roadmap.weekly_template
@@ -91,9 +91,9 @@ def blank_progress_markdown() -> str:
         "| Grammar | — | — | — | — | — |\n"
         "| Vocabulary | — | — | — | — | — |\n"
         "| Listening | — | — | — | — | — |\n"
-        "| Speaking | — | — | — | — | — |\n"
+        "| Reading | — | — | — | — | — |\n"
         "| Writing | — | — | — | — | — |\n"
-        "| Interview readiness | — | — | — | — | — |"
+        "| Goal-specific | — | — | — | — | — |"
     )
     return "\n\n".join(
         [

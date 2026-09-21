@@ -38,6 +38,11 @@ from app.models.profile import Profile
 from app.schemas.lesson import LessonCurriculum
 from app.services import gemini
 from app.services.gemini import ChatTurn
+from app.services.listening_catalog import (
+    InputAssignment,
+    apply_input_assignment,
+    assignment_from_generation_context,
+)
 from app.services.prompt_assembly import (
     build_generation_user_prompt,
     lesson_generation_system_instruction,
@@ -75,13 +80,14 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
         await db.commit()
 
         try:
-            prompt, native, target = await _build_generation_prompt(
+            prompt, native, target, assignment = await _build_generation_prompt(
                 db, user_id=user_id, lesson_number=lesson.lesson_number
             )
             curriculum = await _generate_curriculum(
                 prompt,
                 native_language=native,
                 target_language=target,
+                assignment=assignment,
                 job_id=job_id,
                 lesson_id=lesson_id,
             )
@@ -117,7 +123,7 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
 
 async def _build_generation_prompt(
     db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int
-) -> tuple[str, str | None, str | None]:
+) -> tuple[str, str | None, str | None, InputAssignment]:
     """Gather generation context and render it as a single prompt turn.
 
     Gemini is stateless (ai-api.md "Request lifecycle") — every field the
@@ -175,10 +181,12 @@ async def _build_generation_prompt(
         ],
     }
 
+    assignment = assignment_from_generation_context(context)
+    context["input_assignment"] = assignment.prompt_dict()
     prompt = build_generation_user_prompt(context)
     native = profile.native_language if profile else None
     target = profile.target_language if profile else None
-    return prompt, native, target
+    return prompt, native, target, assignment
 
 
 def _profile_snapshot(profile: Profile | None) -> dict | None:
@@ -199,8 +207,12 @@ def _profile_snapshot(profile: Profile | None) -> dict | None:
     }
 
 
-def _parse_curriculum(raw: str) -> LessonCurriculum:
+def _parse_curriculum(
+    raw: str, assignment: InputAssignment | None = None
+) -> LessonCurriculum:
     data = json.loads(raw)
+    if assignment is not None and isinstance(data, dict):
+        data = apply_input_assignment(data, assignment)
     return LessonCurriculum.model_validate(data)
 
 
@@ -218,6 +230,7 @@ async def _generate_curriculum(
     *,
     native_language: str | None = None,
     target_language: str | None = None,
+    assignment: InputAssignment | None = None,
     job_id: uuid.UUID | None = None,
     lesson_id: uuid.UUID | None = None,
 ) -> LessonCurriculum:
@@ -243,7 +256,7 @@ async def _generate_curriculum(
         history=[ChatTurn(role="user", text=prompt)],
     )
     try:
-        return _parse_curriculum(raw)
+        return _parse_curriculum(raw, assignment)
     except (json.JSONDecodeError, ValidationError) as exc:
         # ai-api.md: exactly one repair retry on invalid JSON/schema, then fail.
         record_llm_retry(call_type="lesson_json", reason="schema_repair")
@@ -257,7 +270,7 @@ async def _generate_curriculum(
             history=[ChatTurn(role="user", text=repair_prompt)],
         )
         try:
-            return _parse_curriculum(raw_retry)
+            return _parse_curriculum(raw_retry, assignment)
         except (json.JSONDecodeError, ValidationError) as exc2:
             raise LessonGenerationError(
                 f"Lesson curriculum failed schema validation after one repair retry: {exc2}"

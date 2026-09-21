@@ -24,7 +24,7 @@ Do not draft a plan until `learner_profile.languages.native` and `languages.targ
 ```
 learner_profile
     → course_composer drafts roadmap (markdown in chat)
-    → user refines in same onboarding chat ("more speaking", "drop writing", etc.)
+    → user refines in same onboarding chat ("more writing", "drop reading", etc.)
     → user accepts plan (product action)
     → backend persists course_roadmap JSON → learning_plans
     → exercise_tutor reads accepted roadmap for lesson generation
@@ -43,7 +43,7 @@ Plan days ≈ accomplished lessons needed to reach the goal at the learner's pac
 | Level gap | ~1 full CEFR level ≈ 200–400 focused hours; scale to learner's weekly hours |
 | Goal complexity | Conversational fluency < exam prep < professional specialization |
 | Time budget | `plan_days ≈ total_hours_needed ÷ (minutes_per_session × sessions_per_week / 60 × weeks_per_plan_day)` |
-| Skill priorities | Speaking-heavy goals need more output days; reading-heavy need fewer |
+| Skill priorities | Writing-heavy goals need more output days; reading-heavy need fewer |
 
 Present as a range **in the learning language** (English below is meaning only): "At your pace (~X min/day, Y days/week), expect roughly **N–M plan days** (~W weeks if you finish one lesson per day on pace)."
 
@@ -95,23 +95,15 @@ Fixed **shape**, variable **content**. Rescale minutes if time budget differs; k
 | 2 | Grammar | ~14% | One point: explain → examples → common mistakes → mini production |
 | 3 | Vocabulary | ~11% | 6–10 items, full format (see `exercise_tutor`) |
 | 4 | Input (listening OR reading) | ~17% | Comprehensible input at i+1; alternate by day |
-| 5 | Speaking / production | ~14% | Main output — role play, explain, debate, narrate |
-| 6 | Writing | ~14% | Real-format task → correct → rewrite |
-| 7 | Goal-specific practice | ~8% | Domain task aligned to learner goal (not generic filler) |
-| 8 | Review & log | ~3% | Log errors, new words, one hard thing — feeds next session |
+| 5 | Writing | ~28% | Real-format task → correct → rewrite; includes written dialogue |
+| 6 | Goal-specific practice | ~8% | Domain writing aligned to learner goal (not a generic filler) |
+| 7 | Review & log | ~3% | Log errors, new words, one hard thing — feeds next session |
 
 **Scale example:** 60 min/day → proportionally shorter slots; 180 min/day → use reference minutes from a full block.
 
-### Optional partner session (if profile includes one)
+### Optional partner (out of app)
 
-| Phase | Time | Behavior |
-|-------|------|----------|
-| Warm-up | ~17% | Casual talk, no correction |
-| Main discussion | ~50% | Assigned topic, follow-ups required |
-| Correction | ~17% | 2–3 priority errors only; learner self-corrects first |
-| Reflection | ~16% | "What was hard?" → becomes tomorrow's target |
-
-Provide **facilitator instructions** when a practice partner exists.
+Lingua Coach has no speaking practice. If the profile names a practice partner, do **not** schedule a partner_session block. You may note that they can exchange written messages outside the app. `weekly_template.partner_session` is `null`.
 
 ### Weekends
 
@@ -123,7 +115,7 @@ Optional light review (spaced repetition only). Weekly test replaces a normal se
 
 Write the **first 1–4 weeks** in topic/grammar/skill focus — not a script for every word and article.
 
-| Day | Grammar focus | Vocab theme | Input | Production | Goal-specific |
+| Day | Grammar focus | Vocab theme | Input | Writing | Goal-specific |
 |-----|---------------|-------------|-------|------------|---------------|
 
 **Rules:**
@@ -143,7 +135,7 @@ Write the **first 1–4 weeks** in topic/grammar/skill focus — not a script fo
 - Comprehensible input (i+1 difficulty)
 - Output-first (produce before or alongside rule explanation)
 - Error correction logged and re-tested — never noted and dropped
-- Repetition in different contexts (grammar in writing, then speaking, then goal-specific task)
+- Repetition in different contexts (grammar in writing, then a new written format, then goal-specific task)
 
 ---
 
@@ -152,11 +144,10 @@ Write the **first 1–4 weeks** in topic/grammar/skill focus — not a script fo
 | Signal | Action |
 |--------|--------|
 | Failed weekly test | Repeat milestone content with new examples; do not advance topics |
-| Recurring error pattern (3+ times) | Inject retrieval drill in warm-up; fold into speaking/writing tasks |
+| Recurring error pattern (3+ times) | Inject retrieval drill in warm-up; fold into writing tasks |
 | Strong performance, ahead of schedule | Increase difficulty (follow-ups, faster input, harder prompts) — not shorter path to goal |
 | User feedback "too hard/easy/wrong topic" | Adjust next 1–2 weeks' focus; update topic priorities in profile |
 | Missed sessions | No guilt stack; resume from active lesson; schedule projection slips (`feedback_giver`) |
-| Partner sessions missed | Solo block carries full system; partner time is bonus |
 
 **Standing rule:** adapt pace and examples; **never lower the stated goal** unless the learner explicitly changes it.
 
@@ -238,7 +229,7 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
       "skill_developed": "Automatic self-description and daily-life talk",
       "why_now": "Every real conversation starts here",
       "connects_to": [0],
-      "success_criteria": "90s unscripted self-intro with follow-ups",
+      "success_criteria": "Write a short self-intro with follow-up answers in writing",
       "estimated_plan_days": 20
     }
   ],
@@ -249,20 +240,11 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
       { "id": "grammar", "label": "Grammar", "minutes": 8 },
       { "id": "vocabulary", "label": "Vocabulary", "minutes": 7 },
       { "id": "input", "label": "Listening or reading", "minutes": 10 },
-      { "id": "speaking", "label": "Speaking / production", "minutes": 8 },
-      { "id": "writing", "label": "Writing", "minutes": 8 },
+      { "id": "writing", "label": "Writing", "minutes": 16 },
       { "id": "goal_specific", "label": "Goal-specific practice", "minutes": 5 },
       { "id": "review", "label": "Review & log", "minutes": 2 }
     ],
-    "partner_session": {
-      "minutes": 30,
-      "phases": [
-        { "id": "warmup", "minutes": 5 },
-        { "id": "main", "minutes": 15 },
-        { "id": "correction", "minutes": 5 },
-        { "id": "reflection", "minutes": 5 }
-      ]
-    },
+    "partner_session": null,
     "weekends": "optional spaced-repetition review only; weekly test replaces one weekday session"
   },
   "current_block": {
@@ -275,7 +257,7 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
         "grammar_focus": "Present simple vs continuous",
         "vocab_theme": "Self-intro & role vocabulary",
         "input_type": "listening",
-        "production_focus": "Tell me about yourself",
+        "production_focus": "Write a short self-intro paragraph",
         "goal_specific_focus": "Opening technique for stated goal"
       }
     ]

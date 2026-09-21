@@ -60,9 +60,9 @@ Learner answers are accepted in any language throughout so beginners can finish.
 - **Goal-first, not curriculum-first** — the learner's outcome drives structure.
 - **Language of coaching** — start onboarding in English to collect native then learning language; then coach in the learning language. Lessons are full immersion; native is L1-interference context only.
 - **Adapt but never lower the goal** — pace adjusts; target outcome does not.
-- **Output-first** — speak/write before (or alongside) rule explanation.
+- **Output-first** — write before (or alongside) rule explanation.
 - **Structured learner memory** — profile, errors, and progress are data, not chat history.
-- **Text chat in MVP** — all learner–tutor interaction is typed text; speaking/listening are practiced in text until voice ships.
+- **Text chat plus catalog listening** — learner–tutor interaction is typed; listening uses a linked clip on listening days. There is no speaking practice.
 - **Fixed ritual, personalized content** — daily shape stays constant; topics adapt to performance.
 
 ## Related docs

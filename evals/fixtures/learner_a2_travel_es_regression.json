@@ -23,11 +23,26 @@
     "input_task": {
       "type": "listening",
       "topic": "Un cliente pide pan en una panadería",
-      "focus": "Notar el, la, un, una delante de lugares y productos"
+      "focus": "Notar el, la, un, una delante de lugares y productos",
+      "resource": {
+        "id": "es-notes-beginners-food-a2",
+        "kind": "audio",
+        "title": "Audio de comida y tapas para principiantes",
+        "url": "https://www.notesinspanish.com/beginners-spanish-audio/",
+        "duration_sec": 420,
+        "source": "Notes in Spanish",
+        "captions": "none",
+        "synopsis": "Un episodio de principiantes sobre comida, tapas o pedir en un café. Escucha platos, gustos y charla informal.",
+        "notice_points": [
+          "Me gusta / me encanta",
+          "Nombres de comida y artículos",
+          "Preguntas informales de tú"
+        ]
+      }
     },
     "goal_specific_task": {
       "label": "Pedir direcciones hasta la tienda",
-      "format": "roleplay"
+      "format": "message"
     },
     "exit_criteria": [
       "Producir cinco frases con artículo correcto ante un lugar",
@@ -238,7 +253,7 @@
       ],
       "level_weaknesses": [
         "articles",
-        "speaking under pressure"
+        "articles under time pressure"
       ],
       "time_budget": {
         "minutes_per_session": 30,
@@ -248,7 +263,7 @@
       },
       "focus": {
         "skill_priorities": [
-          "speaking",
+          "writing",
           "listening"
         ],
         "topic_priorities": [

@@ -11,7 +11,7 @@
   },
   "focus": {
     "skill_priorities": [
-      "speaking",
+      "writing",
       "listening"
     ],
     "topic_priorities": [
@@ -57,11 +57,26 @@
     "input_task": {
       "type": "listening",
       "topic": "Diálogo en recepción de hotel",
-      "focus": "Notar artículos delante de habitación, reserva y desayuno"
+      "focus": "Notar artículos delante de habitación, reserva y desayuno",
+      "resource": {
+        "id": "es-notes-beginners-hotel-a2",
+        "kind": "audio",
+        "title": "Audio de hotel y viaje para principiantes",
+        "url": "https://www.notesinspanish.com/beginners-spanish-audio/",
+        "duration_sec": 480,
+        "source": "Notes in Spanish",
+        "captions": "none",
+        "synopsis": "Ben y Marina hablan despacio sobre llegar a un hotel y pedir una habitación. Audio gratis en la página. Español de Madrid, turnos claros.",
+        "notice_points": [
+          "Artículos el / la / un / una delante de hotel, habitación, reserva",
+          "Quisiera / quiero para peticiones",
+          "Cómo reparan una palabra no entendida"
+        ]
+      }
     },
     "goal_specific_task": {
       "label": "Simular una reserva en recepción",
-      "format": "juego de roles"
+      "format": "message"
     },
     "exit_criteria": [
       "Producir cinco frases de reserva con artículo correcto",
@@ -148,8 +163,8 @@
           "minutes": 4
         },
         {
-          "id": "speaking",
-          "label": "Producción oral",
+          "id": "writing",
+          "label": "Escritura",
           "minutes": 4
         },
         {
@@ -218,7 +233,7 @@
       },
       "focus": {
         "skill_priorities": [
-          "speaking",
+          "writing",
           "listening"
         ],
         "topic_priorities": [
@@ -326,8 +341,8 @@
               "minutes": 4
             },
             {
-              "id": "speaking",
-              "label": "Producción oral",
+              "id": "writing",
+              "label": "Escritura",
               "minutes": 4
             },
             {
@@ -412,7 +427,7 @@
           },
           "goal_specific_task": {
             "label": "Pedir indicaciones hacia el hotel",
-            "format": "juego de roles"
+            "format": "message"
           },
           "exit_criteria": [
             "Saludar y pedir una dirección en cuatro frases"

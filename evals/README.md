@@ -144,6 +144,7 @@ Spanish-target immersion cases should not reuse English-target roadmaps.
 | `exit_criteria_nonempty_unique` | exit criteria non-empty, non-blank, unique |
 | `invented_milestone` | `milestone_index` exists on the fixture roadmap |
 | `one_question_rule` | at most one `?` in stripped prose |
+| `catalog_url_used` | assembled lesson prompt and completion contain the fixture `input_task.resource.url`, and no other YouTube video id |
 
 ## Judges (informational — not the CI gate)
 

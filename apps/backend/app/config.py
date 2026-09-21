@@ -11,6 +11,7 @@ try:
 except IndexError:
     _REPO_ROOT = _config_path.parents[2]
 _DEFAULT_SKILLS_DIR = str(_REPO_ROOT / "skills")
+_DEFAULT_CONTENT_DIR = str(_REPO_ROOT / "content")
 
 
 class Settings(BaseSettings):
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
     # #5 in the plan) regardless of the process's working directory; override
     # via env for non-standard layouts.
     skills_dir: str = _DEFAULT_SKILLS_DIR
+    # Repo-root `content/` (listening catalog). Docker mounts this at /content.
+    content_dir: str = _DEFAULT_CONTENT_DIR
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -46,7 +46,7 @@ input:
         ¿Qué habilidades importan más para tu meta?
     - role: user
       text: |
-        Speaking and listening. Topics: hotels and food. Skip exam prep.
+        Writing and listening. Topics: hotels and food. Skip exam prep.
     - role: user
       text: |
         A trip in four months. I quit before because I did not practice. No budget for tutors.

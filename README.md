@@ -17,7 +17,7 @@ The local MVP loop is implemented and runnable.
 | **Frontend** | Next.js App Router: `/` (sync + redirect), `/sign-in`, `/onboarding`, `/dashboard`, `/lesson/[id]`, `/reports/[slug]`. Chat-first UI. |
 | **Backend** | FastAPI under `/api/v1`. REST + SSE chat. In-process `BackgroundTasks` for lesson generation (single API replica). |
 | **LLM** | Gemini API. Streamed chat (`GEMINI_MODEL_CHAT`, flash-class) and validated lesson JSON (`GEMINI_MODEL_LESSON`, pro-class). |
-| **Pedagogy** | Runtime-loaded Markdown in [`skills/`](./skills/README.md): `onboarding_interviewer`, `course_composer`, `exercise_tutor`, `vocabulary_practice_formats`, `report_writer`. |
+| **Pedagogy** | Runtime-loaded Markdown in [`skills/`](./skills/README.md). Skills practiced: **reading**, **writing**, and **listening from a curated clip** (every other lesson). There is no speaking practice. |
 | **Memory** | Structured artifacts in Postgres: profile, draft/active goal, accepted roadmap, lesson payload, mistake SRS, living markdown reports. Chat rows are split on accept/finish. |
 | **Languages** | Onboarding starts in English to collect native then target language, then coaches in the target. |
 | **Pace** | Sequential integer lessons. At most one `generating` / `active` lesson. 24-hour on-pace window from `started_at`. |
@@ -25,7 +25,7 @@ The local MVP loop is implemented and runnable.
 | **Quality loop** | Offline eval harness with a CI replay gate; online thumbs/CSAT; batch LLM-as-judge; SQL failure miner. |
 | **CI** | GitHub Actions: backend pytest (Postgres 16), frontend lint/typecheck/vitest, `evals-replay` (no Gemini key). |
 
-**Not in this version:** voice / STT / TTS, billing, multi-replica job queue (Redis/Celery), plan-editor UI, `feedback_giver`, RAG / vector retrieval, LangChain, custom model fine-tuning.
+**Not in this version:** speaking / STT / TTS, billing, multi-replica job queue (Redis/Celery), plan-editor UI, `feedback_giver`, RAG / vector retrieval, LangChain, custom model fine-tuning.
 
 Production topology is designed (Vercel + Railway + Clerk + Gemini + Cloudflare) but the daily loop is validated locally. Lesson jobs are unsafe across many API replicas by design.
 
@@ -287,7 +287,7 @@ Commands, YAML contract, check catalog: [`evals/README.md`](./evals/README.md). 
 Immediate product/engine gaps (still post-MVP, not started):
 
 - `feedback_giver` — progress dashboard, weekly gates, automated replans. Session summaries and reports already exist; the closed analysis loop does not.
-- **Voice** — STT/TTS; text-only until then.
+- **Voice** — STT/TTS and real speaking practice; reading, writing, and linked-clip listening until then.
 - **Job queue** — Redis/Celery (or equivalent) before a second API replica. In-process `BackgroundTasks` is a single-instance constraint.
 - **Judge calibration** — independent double-label on the calibration set; promote a dimension to the ship gate only after agreement is documented.
 

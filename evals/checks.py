@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from app.schemas.lesson import LessonCurriculum
 from app.services import extraction
 from app.services.languages import normalize_language
+from app.services.prompt_assembly import lesson_curriculum_snippet_from_payload
 
 # Distinctive English explanation phrases — not a language-ID model.
 _ENGLISH_PHRASES = (
@@ -441,6 +442,41 @@ def check_one_question_rule(ctx: CheckContext) -> CheckResult:
     return CheckResult("one_question_rule", True, f"{count} question mark(s)")
 
 
+_YOUTUBE_ID = re.compile(r"(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{8,})")
+
+
+def check_catalog_url_used(ctx: CheckContext) -> CheckResult:
+    curriculum = ctx.fixture.get("curriculum") or {}
+    if not isinstance(curriculum, dict):
+        curriculum = {}
+    resource = (curriculum.get("input_task") or {}).get("resource") or {}
+    url = resource.get("url") if isinstance(resource, dict) else None
+    if not url:
+        return CheckResult(
+            "catalog_url_used",
+            False,
+            "fixture has no input_task.resource.url",
+        )
+    snippet = lesson_curriculum_snippet_from_payload(curriculum)
+    if str(url) not in snippet:
+        return CheckResult(
+            "catalog_url_used",
+            False,
+            "catalog url missing from assembled lesson prompt",
+        )
+    if str(url) not in ctx.raw_completion:
+        return CheckResult("catalog_url_used", False, "catalog url missing from completion")
+    expected_ids = set(_YOUTUBE_ID.findall(str(url)))
+    extra = set(_YOUTUBE_ID.findall(ctx.raw_completion)) - expected_ids
+    if extra:
+        return CheckResult(
+            "catalog_url_used",
+            False,
+            "invented youtube ids: " + ",".join(sorted(extra)[:4]),
+        )
+    return CheckResult("catalog_url_used", True, "catalog url used")
+
+
 CHECKS: dict[str, Any] = {
     "extract_lesson_turn": check_extract_lesson_turn,
     "completed_task_ids_present": check_completed_task_ids_present,
@@ -454,4 +490,5 @@ CHECKS: dict[str, Any] = {
     "exit_criteria_nonempty_unique": check_exit_criteria_nonempty_unique,
     "invented_milestone": check_invented_milestone,
     "one_question_rule": check_one_question_rule,
+    "catalog_url_used": check_catalog_url_used,
 }

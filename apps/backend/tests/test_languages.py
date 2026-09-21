@@ -297,7 +297,7 @@ async def test_lesson_generation_prompt_includes_language_pair(
     )
     await db_session.commit()
 
-    prompt, native, target = await _build_generation_prompt(
+    prompt, native, target, _assignment = await _build_generation_prompt(
         db_session, user_id=user.id, lesson_number=1
     )
     assert native == "en"

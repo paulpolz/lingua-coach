@@ -23,7 +23,7 @@ Maintain one row per skill category. **Adapt categories** to the learner's goal 
 | Category | Current | Target | Progress % | Weaknesses | Recommendations |
 |----------|---------|--------|------------|------------|-----------------|
 
-**Default categories:** Grammar, Vocabulary, Listening, Speaking, Reading, Writing, Goal-specific readiness (e.g. "Presentation readiness", "Travel confidence", "Interview readiness"), Confidence. Label rows in `target_language`.
+**Default categories:** Grammar, Vocabulary, Listening, Reading, Writing, Goal-specific readiness (e.g. "Presentation readiness", "Travel confidence"), Confidence. Label rows in `target_language`. Do not include Speaking.
 
 ### Scoring guidance
 
@@ -63,9 +63,9 @@ For **non-language goals**, define domain-specific patterns (e.g. "weak thesis s
 
 Each pattern re-tested at **+1, +3, +7, +14 days** from first log or last failure.
 
-When a pattern appears **3+ times in live production** (not just drills), flag as **priority** → `exercise_tutor` injects warm-up retrieval and elicits the pattern in speaking/writing.
+When a pattern appears **3+ times in live production** (not just drills), flag as **priority** → `exercise_tutor` injects warm-up retrieval and elicits the pattern in writing.
 
-When clean on structured drill **but fails in free speech**, tag as **speed/attention issue** — recommend contrast drill (careful vs fast round).
+When clean on structured drill **but fails in free writing**, tag as **speed/attention issue** — recommend contrast drill (careful vs timed round).
 
 ---
 
@@ -90,10 +90,9 @@ Run at end of each week (or every N plan days). Replaces a normal session.
 |------|----------|----------------|
 | Grammar | ~10 min | **Produce** week's points in new sentences — not recognition |
 | Vocabulary | ~10 min | Active recall in context |
-| Input | ~10 min | New clip/text at week's level + comprehension |
-| Speaking | ~10 min | Cold, unrehearsed prompt — recorded if possible |
-| Goal-specific | ~10–15 min | Simulation aligned to learner goal |
+| Input | ~10 min | New clip or text at week's level + comprehension |
 | Writing | ~10 min | Timed first draft, one real format |
+| Goal-specific | ~10–15 min | Written simulation aligned to learner goal |
 
 **Pass week →** advance topics in next block. **Fail →** repeat milestone content with new examples; invoke `course_composer` to extend current block — goal unchanged.
 
@@ -132,7 +131,7 @@ Tone: direct, specific, encouraging. No vague "keep practicing."
 - Inject retrieval for priority error patterns
 - Adjust difficulty (more follow-ups if strong; narrower task if struggling)
 - Clear open items before new content
-- Shift skill mix if user feedback repeats (e.g. third request for "more speaking" → +10 min speaking, trim input)
+- Shift skill mix if user feedback repeats (e.g. third request for "more writing" → +10 min writing, trim grammar slightly)
 
 ### Structural (invoke `course_composer`)
 

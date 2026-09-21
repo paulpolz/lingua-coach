@@ -217,7 +217,7 @@ Rules for this block:
  note not tied to a specific correction). Empty array if none.
 3. `plan_updates` — `null` unless the learner's feedback this turn implies\
  a concrete change to their plan (e.g. "this is too easy/hard", "I want\
- more speaking practice", an explicit new deadline or pace). When present,\
+ more writing practice", an explicit new deadline or pace). When present,\
  include only the fields that should change — any of `goal_summary`,\
  `level`, `time_budget`, `topics`, `vocab_priorities`, `target_plan_days`,\
  `grammar_mastery` — omitting fields that are not changing rather than\
@@ -316,13 +316,22 @@ Respond with a single JSON object only — no markdown, no prose, no code\
   "slots": [
     { "id": "warmup", "label": "string", "exercise_set": "Brief description of planned drills" }
   ],
-  "input_task": { "type": "listening|reading", "topic": "string", "focus": "what to notice" },
-  "goal_specific_task": { "label": "string", "format": "email|roleplay|..." },
+  "input_task": {
+    "type": "listening|reading",
+    "topic": "string",
+    "focus": "what to notice",
+    "resource": null
+  },
+  "goal_specific_task": { "label": "string", "format": "email|message|summary|..." },
   "exit_criteria": ["string"],
   "partner_session": null
 }
 
 Do not wrap this in a `version` / `curriculum` / `session_summary` envelope\
  — return only the curriculum object itself, with these exact field names.\
- `slots` and `exit_criteria` must each have at least one item.
+ `slots` and `exit_criteria` must each have at least one item.\
+ When `input_task.type` is listening, `resource` must copy\
+ `input_assignment.resource` from the user prompt (id, url, synopsis,\
+ notice_points). When type is reading, `resource` must be null / omitted.\
+ Never invent a URL. Never emit a speaking slot id.
 """

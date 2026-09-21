@@ -47,7 +47,7 @@ def test_valid_learner_profile_fixture_validates() -> None:
     profile = LearnerProfile.model_validate(VALID_LEARNER_PROFILE)
     assert profile.languages.native == "en"
     assert profile.languages.target == "en"
-    assert profile.goal.outcome.startswith("Speak confidently")
+    assert profile.goal.outcome.startswith("Write confidently")
     assert profile.focus.vocab_priorities == ["workplace phrasal verbs"]
 
 

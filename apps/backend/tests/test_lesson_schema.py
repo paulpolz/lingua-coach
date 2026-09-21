@@ -61,3 +61,21 @@ def test_curriculum_rejects_malformed_slot_entry() -> None:
     bad["slots"][0] = {"id": "warmup"}  # missing label/exercise_set
     with pytest.raises(ValidationError):
         LessonCurriculum.model_validate(bad)
+
+
+def test_curriculum_rejects_listening_without_resource() -> None:
+    bad = copy.deepcopy(VALID_LESSON_CURRICULUM)
+    bad["input_task"] = {
+        "type": "listening",
+        "topic": "A meeting",
+        "focus": "Tense contrast",
+    }
+    with pytest.raises(ValidationError):
+        LessonCurriculum.model_validate(bad)
+
+
+def test_curriculum_rejects_reading_with_resource() -> None:
+    bad = copy.deepcopy(VALID_LESSON_CURRICULUM)
+    bad["input_task"]["type"] = "reading"
+    with pytest.raises(ValidationError):
+        LessonCurriculum.model_validate(bad)

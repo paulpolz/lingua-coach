@@ -18,6 +18,12 @@ import { reportClientError } from "@/lib/reportError";
 
 export type ChatSessionType = "onboarding" | "lesson";
 
+/** Assistant markdown links open outside the app (catalog clips, etc.). */
+export const CHAT_EXTERNAL_LINK = {
+  target: "_blank",
+  rel: "noopener noreferrer",
+} as const;
+
 export interface ChatSession {
   id: string;
   type: ChatSessionType;

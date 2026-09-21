@@ -1,0 +1,3 @@
+{
+  "raw_completion": "Hoy vamos a reservar una habitación y a cuidar los artículos.\n\nTareas de hoy:\n- Recuerdo: el, la, un, una\n- Escucha: [audio de hotel](https://www.notesinspanish.com/beginners-spanish-audio/)\n- Escribir un mensaje de reserva\n\nEmpezamos por el recuerdo. Escribe tres frases sobre tu último viaje usando un artículo en cada una.\n\n```json:lesson_turn\n{\n  \"corrections\": [],\n  \"tips\": [],\n  \"plan_updates\": null,\n  \"suggest_finish\": false,\n  \"mistakes\": [],\n  \"completed_task_ids\": []\n}\n```"
+}

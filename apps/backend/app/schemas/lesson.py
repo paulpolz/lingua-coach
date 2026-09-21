@@ -13,9 +13,9 @@ docs/implementation-readiness.md §6.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class LessonSlot(BaseModel):
@@ -24,10 +24,33 @@ class LessonSlot(BaseModel):
     exercise_set: str
 
 
+class InputTaskResource(BaseModel):
+    """Catalog clip persisted when `input_task.type` is listening."""
+
+    id: str
+    kind: Literal["video", "audio"]
+    title: str
+    url: str
+    duration_sec: int = Field(gt=0)
+    source: str
+    captions: Literal["target", "dual", "none"]
+    synopsis: str
+    notice_points: list[str] = Field(min_length=1)
+
+
 class InputTask(BaseModel):
     type: Literal["listening", "reading"]
     topic: str
     focus: str
+    resource: InputTaskResource | None = None
+
+    @model_validator(mode="after")
+    def _resource_matches_type(self) -> Self:
+        if self.type == "reading" and self.resource is not None:
+            raise ValueError("reading input_task cannot include a resource")
+        if self.type == "listening" and self.resource is None:
+            raise ValueError("listening input_task requires a catalog resource")
+        return self
 
 
 class GoalSpecificTask(BaseModel):

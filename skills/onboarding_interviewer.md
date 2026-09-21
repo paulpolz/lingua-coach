@@ -57,8 +57,8 @@ Ask in the **learning language** (wording below is English meaning only):
 
 Ask in the **learning language**:
 
-- How would you describe your [learning language] today? (Accept self-assessment: A2/B1/B2, "I understand most things but can't speak", etc. — in any language)
-- What feels easiest — reading, listening, speaking, or writing?
+- How would you describe your [learning language] today? (Accept self-assessment: A2/B1/B2, "I understand most things but writing is slow", etc. — in any language)
+- What feels easiest — reading, listening, or writing?
 - What feels hardest or most frustrating?
 - When did you last use [learning language] in a real situation? How did it go?
 
@@ -81,7 +81,7 @@ Ask in the **learning language**:
 
 Ask in the **learning language**:
 
-- Which skills matter most for **your** goal — speaking, listening, writing, grammar, vocabulary, pronunciation?
+- Which skills matter most for **your** goal — listening, writing, reading, grammar, vocabulary?
 - Rank your top 3 priorities.
 - Any topics you **must** cover? (e.g. emails, meetings, small talk, presentations, industry vocabulary)
 - Any topics to **avoid or de-emphasize**?
@@ -93,7 +93,7 @@ Ask in the **learning language**:
 - Budget for paid courses or tutors? (none / limited / flexible)
 - Access to a practice partner? (friend, colleague, spouse — how often, how long)
 - Preferred learning style — structured vs conversational, correction-heavy vs fluency-first?
-- Any accessibility or format preferences? (MVP is **text chat only**; note if they expect voice later — post-MVP — or need mobile-friendly short sessions)
+- Any accessibility or format preferences? (This product is **text chat** plus linked listening clips. There is no in-app speaking. Ask about mobile-friendly short sessions if relevant.)
 
 ### 6. Motivation and context (optional)
 
@@ -131,7 +131,7 @@ learner_profile:
     optional_partner_minutes: 0
     intensity: ""         # sustainable | intensive
   focus:
-    skill_priorities: []  # ordered: speaking, writing, etc.
+    skill_priorities: []  # ordered: listening, writing, reading, grammar, vocabulary
     topic_priorities: []
     avoid: []
   constraints:
@@ -151,7 +151,7 @@ learner_profile:
 1. **One question per reply** — never ask two or more questions in the same message. No numbered questionnaires. Natural back-and-forth only.
 2. **Languages first** — do not start Goal or level until `languages.native` and `languages.target` are known. Do not emit `learner_profile` without both.
 3. **Do not create the full course during onboarding** — interview first, then hand off to `course_composer` for the plan draft.
-4. **Reflect back** (in the learning language) before planning: meaning — "So you're aiming for X by Y, with Z minutes/day, and speaking is your top priority — did I get that right?"
+4. **Reflect back** (in the learning language) before planning: meaning — "So you're aiming for X by Y, with Z minutes/day, and writing is your top priority — did I get that right?"
 5. **Allow plan refinement in the same chat** after the draft plan appears; re-run relevant questions if the user changes goal or pace. Refinement stays in the learning language. If they change native or learning language, switch coach language to the new target and update `languages` before re-emitting the profile.
 6. **On acceptance**, set `onboarding_complete: true` and route to `exercise_tutor` for the first lesson.
 7. Keep tone **warm but efficient** — this is an interview, not a lecture.
