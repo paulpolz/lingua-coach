@@ -585,7 +585,10 @@ async def _lesson_event_stream(
     suggest_finish: bool = turn.suggest_finish if turn else False
     mistakes: list[LessonMistakeItem] = turn.mistakes if turn else []
     lesson_plan = extraction.extract_lesson_plan(raw_text)
-    task_update = extraction.extract_task_update(raw_text)
+    task_update = extraction.merge_completed_task_ids(
+        extraction.extract_task_update(raw_text),
+        turn.completed_task_ids if turn else None,
+    )
 
     try:
         for item in mistakes:

@@ -9,11 +9,11 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.metrics import record_quality_event
+from app.core.metrics import record_quality_event, set_quality_event_stored
 from app.models.chat import ChatMessage, ChatSession
 from app.models.lesson import Lesson
 from app.models.profile import Profile
@@ -110,6 +110,44 @@ def add_quality_event(
     if metric_value is not None:
         record_quality_event(kind=kind, surface=surface, value=metric_value)
     return event
+
+
+async def hydrate_quality_event_gauges(db: AsyncSession | None = None) -> None:
+    """Set `quality_events_stored` from Postgres so Grafana survives API reload.
+
+    Uvicorn `--reload` resets in-process counters; thumbs/CSAT rows in
+    `quality_events` do not. Gauges are the dashboard source of truth.
+    """
+    from app.db.session import AsyncSessionLocal
+
+    if db is not None:
+        await _hydrate_quality_event_gauges(db)
+        return
+    async with AsyncSessionLocal() as session:
+        await _hydrate_quality_event_gauges(session)
+
+
+async def _hydrate_quality_event_gauges(db: AsyncSession) -> None:
+    thumb_val = func.jsonb_extract_path_text(QualityEvent.value, "thumb")
+    csat_val = func.jsonb_extract_path_text(QualityEvent.value, "csat")
+    metric_value = case(
+        (QualityEvent.kind == KIND_THUMBS, thumb_val),
+        (QualityEvent.kind == KIND_LESSON_CSAT, csat_val),
+    )
+    result = await db.execute(
+        select(
+            QualityEvent.kind,
+            QualityEvent.surface,
+            metric_value.label("metric_value"),
+            func.count().label("n"),
+        )
+        .where(QualityEvent.kind.in_((KIND_THUMBS, KIND_LESSON_CSAT)))
+        .group_by(QualityEvent.kind, QualityEvent.surface, metric_value)
+    )
+    for kind, surface, value, count in result.all():
+        if value is None:
+            continue
+        set_quality_event_stored(kind=kind, surface=surface, value=str(value), count=float(count))
 
 
 def add_lesson_csat(

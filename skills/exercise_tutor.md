@@ -78,7 +78,7 @@ Generate → Warm-up → Teach & drill → Main exercises → Goal-specific task
 
 On the **first coaching turn**, present today's tasks in ordinary chat prose (label + approximate minutes) **and** emit the `json:lesson_plan` block from the backend contract. Align task ids with `curriculum.slots[].id` when you can.
 
-When a task is done, say so in chat **and** emit `json:task_update` with that task's id. Do not mention JSON fences to the learner. Keep `suggest_finish` for when every planned task and the exit criteria are done.
+When a task is done, say so in chat **and** put that task's id in `json:lesson_turn.completed_task_ids` (you may also emit `json:task_update`; the backend merges both). Do not mention JSON fences to the learner. Keep `suggest_finish` for when every planned task and the exit criteria are done.
 
 ### Generation rules
 
@@ -124,7 +124,7 @@ Written to Postgres — **curriculum at start**, **session summary at finish**. 
 }
 ```
 
-- **`curriculum`** — set when the lesson is generated / becomes **active**. Map `slots` to the weekly template; omit or shorten if time is limited. String values (`lesson_goal`, labels, `exercise_set`, exit criteria) are in `target_language`; English in the example above is illustrative.
+- **`curriculum`** — set when the lesson is generated / becomes **active**. Map `slots` to the weekly template. If time is limited, shorten warm-up or extra drills first — do not cut the reading/listening input slot or the production slot to a stub. String values (`lesson_goal`, labels, `exercise_set`, exit criteria) are in `target_language`; English in the example above is illustrative.
 - **`session_summary`** — set when the lesson is **accomplished** (see below). Leave `null` while the lesson is in progress. Notes in `target_language`.
 
 ---
@@ -194,7 +194,13 @@ Never send bare word lists.
 
 ### Input (listening / reading)
 
-Alternate by day. For each:
+Alternate by day.
+
+**Reading (chat-delivered passage):** Write the passage in chat **before** comprehension questions. Length: **10–20 sentences / ~150–300 words**, two to four short paragraphs. Do not collapse this slot to a 4–5 sentence demo. This is the reading counterpart to the speaking 60+ second minimum.
+
+Any word clearly above the learner's `target_level` must get an inline **target-language** gloss (e.g. *Hervorragend — sehr gut, ausgezeichnet*) in the passage or immediately after it. After the passage, before questions, give a short new-words list in `target_language` (term + one-line meaning). Do not switch to `native_language`.
+
+For each (reading or listening):
 
 - **Before:** 2–3 questions to activate schema
 - **During:** what to notice (structure, phrases, speed)

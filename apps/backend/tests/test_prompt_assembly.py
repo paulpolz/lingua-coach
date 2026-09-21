@@ -69,6 +69,8 @@ def test_curriculum_snippet_empty_and_populated_match_chat_strings() -> None:
     assert f"Grammar focus: {VALID_LESSON_CURRICULUM['grammar_focus']}" in snippet
     assert "  - warmup: Active recall — past tense timelines" in snippet
     assert "  - Produce 5 sentences with past simple + time marker" in snippet
+    assert "Input task: listening — topic: A team retrospective meeting" in snippet
+    assert "Goal-specific task: Write a retro summary email (format: email)" in snippet
 
 
 def test_profile_block_from_snapshot_matches_chat_format() -> None:

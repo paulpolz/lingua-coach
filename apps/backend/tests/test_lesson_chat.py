@@ -613,6 +613,34 @@ async def test_lesson_message_exposes_lesson_plan_and_task_update_in_metadata(
     assert done_data["metadata"]["task_update"] == update
 
 
+async def test_lesson_message_completed_task_ids_on_lesson_turn_reach_metadata(
+    client: AsyncClient, as_principal, mock_gemini, db_session
+) -> None:
+    user_id = await _sync_user(client, as_principal, "clerk_lesson_msg_turn_ids")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = await _create_active_lesson(db_session, user_id)
+    session_id = (
+        await client.post(
+            "/api/v1/chat/sessions", json={"type": "lesson", "lesson_id": str(lesson.id)}
+        )
+    ).json()["id"]
+
+    mock_gemini(
+        [_lesson_turn_reply("Warm-up is done. Next: grammar.", completed_task_ids=["warmup"])]
+    )
+
+    async with client.stream(
+        "POST", f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "Listo"}
+    ) as resp:
+        raw = ""
+        async for chunk in resp.aiter_text():
+            raw += chunk
+
+    done_data = next(e[1] for e in _parse_sse(raw) if e[0] == "done")
+    assert done_data["metadata"]["task_update"] == {"completed_task_ids": ["warmup"]}
+    assert "json:lesson_turn" not in done_data["content"]
+
+
 async def test_lesson_message_includes_vocab_formats_for_review_slot(
     client: AsyncClient, as_principal, db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

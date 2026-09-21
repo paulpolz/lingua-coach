@@ -92,6 +92,26 @@ def extract_task_update(text: str) -> TaskUpdate | None:
     return None
 
 
+def merge_completed_task_ids(
+    fence: TaskUpdate | None, turn_ids: list[str] | None
+) -> TaskUpdate | None:
+    """Union `json:task_update` ids with `json:lesson_turn.completed_task_ids`.
+
+    Order is fence first, then turn ids; duplicates are dropped. Returns
+    `None` when neither source listed an id (so SSE metadata stays null
+    on ordinary turns).
+    """
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in (*(fence.completed_task_ids if fence else ()), *(turn_ids or ())):
+        if item and item not in seen:
+            seen.add(item)
+            merged.append(item)
+    if not merged:
+        return fence
+    return TaskUpdate(completed_task_ids=merged)
+
+
 def extract_report_ops_json(text: str) -> dict | None:
     """Return the last parseable `report_ops` JSON object, or the whole text
     if it is already a JSON object (JSON-mode completions)."""

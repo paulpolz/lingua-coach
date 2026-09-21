@@ -97,16 +97,19 @@ Local stack: `docker compose --profile monitoring up` (Grafana on port 3001;
 see [`infra/monitoring/README.md`](../../infra/monitoring/README.md)).
 
 Default view is the last 7 days. The JSON defines these panels — it does not
-commit any rates:
+commit sample traffic:
 
-1. Thumbs-down rate by `surface` (onboarding vs lesson)
-2. Lesson CSAT (1–5)
-3. Judge fail rate by dimension and rubric
-4. Existing infra: HTTP p95, `llm_retries_total`, lesson-generation LLM fail
+1. Thumbs up counts by `surface` (`increase` over the dashboard range)
+2. Thumbs down counts by `surface`
+3. Lesson CSAT counts by score 1–5
+4. Thumbs-down **rate** by surface (secondary; useful at higher volume)
+5. Judge fail rate by dimension and rubric
+6. Existing infra: HTTP p95, `llm_retries_total`, lesson-generation LLM fail
 
-**Those panels will be empty until `quality_events` (and judge fails) exist in
-the environment you are looking at.** This write-up does not invent weekly
-rates or paste a screenshot of fake traffic. When events exist, use the
+**Those panels will be empty until `quality_events_stored` has been scraped from
+the backend you are looking at** (Compose `--profile monitoring`, same process
+that handled the click). Count panels read Postgres-backed gauges (survive
+API reload); Grafana does not query SQL directly. When events exist, use the
 dashboard to decide what to mine next — not to page, and not to override the
 offline replay gate.
 

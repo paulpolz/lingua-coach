@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 llm_requests_total = Counter(
     "llm_requests_total",
@@ -41,6 +41,12 @@ quality_events_total = Counter(
     ["kind", "surface", "value"],
 )
 
+quality_events_stored = Gauge(
+    "quality_events_stored",
+    "quality_events rows (thumbs, lesson CSAT); hydrated from Postgres on startup",
+    ["kind", "surface", "value"],
+)
+
 quality_judge_fail_total = Counter(
     "quality_judge_fail_total",
     "Online batch-judge dimension failures",
@@ -74,11 +80,21 @@ def record_client_error(*, code: str, surface: str) -> None:
 
 
 def record_quality_event(*, kind: str, surface: str, value: str) -> None:
-    quality_events_total.labels(
+    labels = {
+        "kind": kind or "unknown",
+        "surface": surface or "unknown",
+        "value": str(value),
+    }
+    quality_events_total.labels(**labels).inc()
+    quality_events_stored.labels(**labels).inc()
+
+
+def set_quality_event_stored(*, kind: str, surface: str, value: str, count: float) -> None:
+    quality_events_stored.labels(
         kind=kind or "unknown",
         surface=surface or "unknown",
         value=str(value),
-    ).inc()
+    ).set(count)
 
 
 def record_quality_judge_fail(*, dimension: str, rubric: str) -> None:

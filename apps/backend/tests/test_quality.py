@@ -10,8 +10,10 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
+from prometheus_client import REGISTRY
 from sqlalchemy import select
 
+from app.core.metrics import set_quality_event_stored
 from app.models.chat import ChatMessage, ChatSession
 from app.models.enums import (
     ChatMessageRole,
@@ -26,7 +28,7 @@ from app.models.lesson import Lesson
 from app.models.profile import Profile
 from app.models.quality_event import QualityEvent
 from app.models.user import User
-from app.services.quality import should_sample_correction_turn
+from app.services.quality import hydrate_quality_event_gauges, should_sample_correction_turn
 from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LESSON_CURRICULUM
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -524,3 +526,76 @@ async def test_invalid_thumb_is_422(client: AsyncClient, as_principal) -> None:
         },
     )
     assert resp.status_code == 422
+
+
+def _quality_counter(kind: str, surface: str, value: str) -> float:
+    sample = REGISTRY.get_sample_value(
+        "quality_events_total",
+        {"kind": kind, "surface": surface, "value": value},
+    )
+    return float(sample or 0.0)
+
+
+def _quality_stored(kind: str, surface: str, value: str) -> float:
+    sample = REGISTRY.get_sample_value(
+        "quality_events_stored",
+        {"kind": kind, "surface": surface, "value": value},
+    )
+    return float(sample or 0.0)
+
+
+async def test_thumbs_and_csat_increment_quality_events_total(
+    client: AsyncClient, as_principal, db_session
+) -> None:
+    user_id = await _sync_user(client, as_principal, "clerk_quality_metrics")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = await _seed_active_lesson(db_session, user_id)
+    session, assistant = await _seed_lesson_chat(db_session, user_id, lesson)
+
+    thumbs_before = _quality_counter("thumbs", "lesson", "1")
+    csat_before = _quality_counter("lesson_csat", "lesson", "4")
+    stored_thumbs_before = _quality_stored("thumbs", "lesson", "1")
+    stored_csat_before = _quality_stored("lesson_csat", "lesson", "4")
+
+    thumbs = await client.post(
+        "/api/v1/quality/events",
+        json={
+            "kind": "thumbs",
+            "surface": "lesson",
+            "session_id": str(session.id),
+            "message_id": str(assistant.id),
+            "lesson_id": str(lesson.id),
+            "value": {"thumb": 1},
+        },
+    )
+    assert thumbs.status_code == 204
+    assert _quality_counter("thumbs", "lesson", "1") == thumbs_before + 1
+    assert _quality_stored("thumbs", "lesson", "1") == stored_thumbs_before + 1
+
+    finish = await client.post(
+        f"/api/v1/lessons/{lesson.id}/finish",
+        json={"csat": 4},
+    )
+    assert finish.status_code == 200
+    assert _quality_counter("lesson_csat", "lesson", "4") == csat_before + 1
+    assert _quality_stored("lesson_csat", "lesson", "4") == stored_csat_before + 1
+
+
+async def test_hydrate_quality_event_gauges_restores_csat_from_postgres(
+    client: AsyncClient, as_principal, db_session
+) -> None:
+    user_id = await _sync_user(client, as_principal, "clerk_quality_hydrate")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = await _seed_active_lesson(db_session, user_id)
+
+    finish = await client.post(f"/api/v1/lessons/{lesson.id}/finish", json={"csat": 3})
+    assert finish.status_code == 200
+
+    set_quality_event_stored(kind="lesson_csat", surface="lesson", value="3", count=0)
+    assert _quality_stored("lesson_csat", "lesson", "3") == 0
+
+    await hydrate_quality_event_gauges(db_session)
+    assert _quality_stored("lesson_csat", "lesson", "3") == 1
+
+    metrics = (await client.get("/metrics")).text
+    assert 'quality_events_stored{kind="lesson_csat",surface="lesson",value="3"}' in metrics

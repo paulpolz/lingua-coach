@@ -16,8 +16,8 @@ The user may write in their native language. That is allowed. Judge the **tutor*
 
 ## Pedagogy
 
-- **Pass:** Asks or drills; keeps the learner producing. A short recast plus one prompt is enough.
-- **Fail:** Monologue / grammar lecture with no next move, or “Good.” / “Bien.” and stop.
+- **Pass:** Asks or drills; keeps the learner producing. A short recast plus one prompt is enough. On an input (reading/listening) turn, words clearly above `target_level` have a target-language gloss or a new-words list.
+- **Fail:** Monologue / grammar lecture with no next move, or “Good.” / “Bien.” and stop. Unlabeled above-level lemmas in an input passage with no target-language gloss is a fail. Turns that are not input passages are unaffected.
 
 ## Contract
 

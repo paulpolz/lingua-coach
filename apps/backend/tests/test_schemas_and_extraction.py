@@ -124,6 +124,36 @@ def test_extract_lesson_plan_and_task_update() -> None:
     assert "Today we will:" in cleaned
 
 
+def test_extract_lesson_turn_completed_task_ids_defaults_empty() -> None:
+    text = _fenced(
+        "lesson_turn",
+        {
+            "corrections": [],
+            "tips": [],
+            "plan_updates": None,
+            "suggest_finish": False,
+            "mistakes": [],
+        },
+    )
+    turn = extraction.extract_lesson_turn(text)
+    assert turn is not None
+    assert turn.completed_task_ids == []
+
+
+def test_merge_completed_task_ids_from_turn_and_fence() -> None:
+    fence = extraction.extract_task_update(
+        _fenced("task_update", {"completed_task_ids": ["warmup"]})
+    )
+    merged = extraction.merge_completed_task_ids(fence, ["warmup", "grammar"])
+    assert merged is not None
+    assert merged.completed_task_ids == ["warmup", "grammar"]
+    only_turn = extraction.merge_completed_task_ids(None, ["production"])
+    assert only_turn is not None
+    assert only_turn.completed_task_ids == ["production"]
+    assert extraction.merge_completed_task_ids(None, []) is None
+    assert extraction.merge_completed_task_ids(None, None) is None
+
+
 def test_extract_report_ops_json_from_raw_object() -> None:
     raw = (
         '{"ops": [{"report_type": "progress", "op": "append_entry",'

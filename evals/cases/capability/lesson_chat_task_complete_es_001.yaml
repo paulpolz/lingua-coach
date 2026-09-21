@@ -1,0 +1,26 @@
+id: lesson_chat_task_complete_es_001
+suite: capability
+mode: lesson
+skill: exercise_tutor
+locale:
+  native: en
+  target: es
+input:
+  system_from_skills: true
+  context_fixture: fixtures/learner_a2_travel_es.json
+  user_message: |
+    Ayer fui al hotel. Comí una paella. Vi el mar.
+  history:
+    - role: model
+      text: |
+        Empezamos por el recuerdo. Di tres frases sobre tu último viaje usando un artículo en cada una.
+checks:
+  deterministic:
+    - extract_lesson_turn
+    - completed_task_ids_present
+    - no_english_learner_facing
+  judge:
+    rubric: lesson_turn_v1
+notes: |
+  Later lesson turn: learner finished the warm-up; tutor confirms in Spanish and
+  marks warmup complete via json:lesson_turn.completed_task_ids.
