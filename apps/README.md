@@ -47,7 +47,7 @@ docker compose --profile monitoring up --build
 | Prometheus | http://localhost:9090 |
 | Loki | http://localhost:3100 |
 
-Pre-provisioned dashboards: **API Overview**, **LLM & Token Burn**, **Errors & Correlation**. To debug a request, copy `X-Request-ID` from the browser Network tab and filter logs with:
+Pre-provisioned dashboards: **API Overview**, **LLM & Token Burn**, **Errors & Correlation**, **AI Quality**. Quality count panels read `quality_events_stored` (hydrated from Postgres on API start, so reload does not wipe thumbs/CSAT). To debug a request, copy `X-Request-ID` from the browser Network tab and filter logs with:
 
 ```
 {service="backend"} | json | request_id="<uuid>"

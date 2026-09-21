@@ -118,6 +118,7 @@ class LessonTurnExtraction(BaseModel):
     plan_updates: PlanUpdates | None = None
     suggest_finish: bool = False
     mistakes: list[LessonMistakeItem] = Field(default_factory=list)
+    completed_task_ids: list[str] = Field(default_factory=list)
 
 
 class ChatDoneEvent(BaseModel):

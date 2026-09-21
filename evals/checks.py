@@ -117,6 +117,25 @@ def check_extract_lesson_turn(ctx: CheckContext) -> CheckResult:
     return CheckResult("extract_lesson_turn", True, "parsed")
 
 
+def check_completed_task_ids_present(ctx: CheckContext) -> CheckResult:
+    turn = extraction.extract_lesson_turn(ctx.raw_completion)
+    if turn is None:
+        return CheckResult(
+            "completed_task_ids_present", False, "no valid json:lesson_turn block"
+        )
+    if not turn.completed_task_ids:
+        return CheckResult(
+            "completed_task_ids_present",
+            False,
+            "json:lesson_turn.completed_task_ids is empty",
+        )
+    return CheckResult(
+        "completed_task_ids_present",
+        True,
+        f"completed {turn.completed_task_ids}",
+    )
+
+
 def check_extract_learner_profile(ctx: CheckContext) -> CheckResult:
     profile = extraction.extract_learner_profile(ctx.raw_completion)
     if profile is None:
@@ -424,6 +443,7 @@ def check_one_question_rule(ctx: CheckContext) -> CheckResult:
 
 CHECKS: dict[str, Any] = {
     "extract_lesson_turn": check_extract_lesson_turn,
+    "completed_task_ids_present": check_completed_task_ids_present,
     "extract_learner_profile": check_extract_learner_profile,
     "extract_course_roadmap": check_extract_course_roadmap,
     "no_english_learner_facing": check_no_english_learner_facing,

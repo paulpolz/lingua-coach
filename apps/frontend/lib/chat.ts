@@ -193,6 +193,32 @@ export interface ChatMessageMetadata {
   task_update?: TaskUpdate | null;
 }
 
+/** Accumulate pinned-checklist tasks and completions from SSE `done.metadata`. */
+export function applyChecklistMetadata(
+  metadata: ChatMessageMetadata | null | undefined,
+  tasks: LessonPlanTask[],
+  completedIds: Set<string>
+): { tasks: LessonPlanTask[]; completedIds: Set<string> } {
+  let nextTasks = tasks;
+  const nextCompleted = new Set(completedIds);
+  if (metadata?.lesson_plan?.tasks?.length) {
+    nextTasks = metadata.lesson_plan.tasks;
+    const ids = new Set(nextTasks.map((task) => task.id));
+    for (const id of [...nextCompleted]) {
+      if (!ids.has(id)) nextCompleted.delete(id);
+    }
+  }
+  for (const id of metadata?.task_update?.completed_task_ids ?? []) {
+    nextCompleted.add(id);
+  }
+  if (metadata?.suggest_finish) {
+    for (const task of nextTasks) {
+      nextCompleted.add(task.id);
+    }
+  }
+  return { tasks: nextTasks, completedIds: nextCompleted };
+}
+
 // ---------------------------------------------------------------------------
 // SSE contract (readiness §7)
 // ---------------------------------------------------------------------------

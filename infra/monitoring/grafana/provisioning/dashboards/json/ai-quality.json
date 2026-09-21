@@ -20,9 +20,60 @@
   "panels": [
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "decimals": 0, "min": 0 }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
       "id": 1,
+      "options": { "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Thumbs up",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum by (surface) (quality_events_stored{kind=\"thumbs\",value=\"1\"})",
+          "instant": true,
+          "legendFormat": "{{surface}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 0, "min": 0 }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "id": 7,
+      "options": { "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Thumbs down",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum by (surface) (quality_events_stored{kind=\"thumbs\",value=\"-1\"})",
+          "instant": true,
+          "legendFormat": "{{surface}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 0, "min": 0 }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "id": 2,
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Lesson CSAT counts (1–5)",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "sum by (value) (quality_events_stored{kind=\"lesson_csat\"})",
+          "instant": true,
+          "legendFormat": "{{value}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 8,
       "title": "Thumbs-down rate by surface",
       "type": "timeseries",
       "targets": [
@@ -36,22 +87,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "id": 2,
-      "title": "Lesson CSAT (1–5)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum by (value) (rate(quality_events_total{kind=\"lesson_csat\"}[1d]))",
-          "legendFormat": "csat {{value}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "id": 3,
       "title": "Judge fail by dimension",
       "type": "timeseries",
@@ -66,7 +102,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
       "id": 4,
       "title": "HTTP latency P95",
       "type": "timeseries",
@@ -81,7 +117,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
       "id": 5,
       "title": "LLM retries",
       "type": "timeseries",
@@ -96,7 +132,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
       "id": 6,
       "title": "Lesson generation LLM fail",
       "type": "timeseries",

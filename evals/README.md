@@ -133,6 +133,7 @@ Spanish-target immersion cases should not reuse English-target roadmaps.
 | Name | Pass when |
 | --- | --- |
 | `extract_lesson_turn` | last valid `json:lesson_turn` parses |
+| `completed_task_ids_present` | `json:lesson_turn.completed_task_ids` is a non-empty list |
 | `extract_learner_profile` | last valid `json:learner_profile` parses |
 | `extract_course_roadmap` | last valid `json:course_roadmap` parses |
 | `no_english_learner_facing` | stripped learner-facing prose has no English explanation markers (`locale.target` ≠ `en`; JSON **keys** ignored) |

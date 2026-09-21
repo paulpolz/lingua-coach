@@ -63,12 +63,33 @@ def lesson_curriculum_snippet_from_payload(curriculum: dict | None) -> str:
     exit_criteria = curriculum.get("exit_criteria") or []
     exit_text = "\n".join(f"  - {c}" for c in exit_criteria) or "  (none)"
 
+    input_task = curriculum.get("input_task") or {}
+    if input_task:
+        input_text = (
+            f"Input task: {input_task.get('type', '')} — "
+            f"topic: {input_task.get('topic', '')}; "
+            f"focus: {input_task.get('focus', '')}"
+        )
+    else:
+        input_text = "Input task: (none)"
+
+    goal_task = curriculum.get("goal_specific_task") or {}
+    if goal_task:
+        goal_task_text = (
+            f"Goal-specific task: {goal_task.get('label', '')} "
+            f"(format: {goal_task.get('format', '')})"
+        )
+    else:
+        goal_task_text = "Goal-specific task: (none)"
+
     return (
         "Current lesson curriculum (lessons.payload.curriculum):\n"
         f"Lesson goal: {curriculum.get('lesson_goal', '')}\n"
         f"Grammar focus: {curriculum.get('grammar_focus', '')}\n"
         f"Vocab theme: {curriculum.get('vocab_theme', '')}\n"
         f"Slots:\n{slots_text}\n"
+        f"{input_text}\n"
+        f"{goal_task_text}\n"
         f"Exit criteria:\n{exit_text}"
     )
 

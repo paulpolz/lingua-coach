@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -5,12 +7,25 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.api.v1.router import api_router
 from app.config import settings
 from app.core.errors import APIError, api_error_handler, unhandled_exception_handler
-from app.core.logging import setup_logging
+from app.core.logging import get_logger, setup_logging
 from app.core.middleware import RequestContextMiddleware
 
 setup_logging()
+logger = get_logger(__name__)
 
-app = FastAPI(title="Lingua Coach API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        from app.services.quality import hydrate_quality_event_gauges
+
+        await hydrate_quality_event_gauges()
+    except Exception:
+        logger.exception("quality_gauge_hydrate_failed")
+    yield
+
+
+app = FastAPI(title="Lingua Coach API", version="0.1.0", lifespan=lifespan)
 
 app.add_exception_handler(APIError, api_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)

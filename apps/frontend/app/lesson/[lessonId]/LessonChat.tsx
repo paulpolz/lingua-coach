@@ -4,7 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createChatSession, getChatMessages, streamChatMessage, type ChatMessage, type ChatMessageMetadata, type LessonPlanTask } from "@/lib/chat";
+import { applyChecklistMetadata, createChatSession, getChatMessages, streamChatMessage, type ChatMessage, type LessonPlanTask } from "@/lib/chat";
 import { reportClientError } from "@/lib/reportError";
 import {
   describeFinishResult,
@@ -50,26 +50,6 @@ function readStoredSessionId(lessonId: string): string | null {
   } catch {
     return null;
   }
-}
-
-function applyChecklistMetadata(
-  metadata: ChatMessageMetadata | null | undefined,
-  tasks: LessonPlanTask[],
-  completedIds: Set<string>
-): { tasks: LessonPlanTask[]; completedIds: Set<string> } {
-  let nextTasks = tasks;
-  const nextCompleted = new Set(completedIds);
-  if (metadata?.lesson_plan?.tasks?.length) {
-    nextTasks = metadata.lesson_plan.tasks;
-    const ids = new Set(nextTasks.map((task) => task.id));
-    for (const id of [...nextCompleted]) {
-      if (!ids.has(id)) nextCompleted.delete(id);
-    }
-  }
-  for (const id of metadata?.task_update?.completed_task_ids ?? []) {
-    nextCompleted.add(id);
-  }
-  return { tasks: nextTasks, completedIds: nextCompleted };
 }
 
 function writeStoredSessionId(lessonId: string, id: string): void {

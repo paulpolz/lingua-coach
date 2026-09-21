@@ -264,7 +264,7 @@ PYTHONPATH=apps/backend:. python -m evals.judge_online [--limit 25]
 
 Reads unjudged `judge_candidate` rows (10% of lesson turns with corrections, plus all thumbs-down that still had a snapshot) and writes `kind=judge` (rubric version, scores, model id). If `GEMINI_API_KEY` is unset, the script prints a skip and exits 0.
 
-Grafana dashboard **AI Quality** (`infra/monitoring/grafana/provisioning/dashboards/json/ai-quality.json`): thumbs-down rate by surface, lesson CSAT, judge fail rate by dimension, plus existing infra (HTTP p95, `llm_retries_total`). Empty until events exist. Use it to decide what to mine — not to page, and not to override the replay gate. `llm_retries_total` is format fragility, not quality. Do not rewrite a skill because thumbs dropped on N < 30. Do not switch models because one judge run moved 3 points.
+Grafana dashboard **AI Quality** (`infra/monitoring/grafana/provisioning/dashboards/json/ai-quality.json`): thumbs up/down **counts** by surface, lesson CSAT counts by score (Postgres-backed `quality_events_stored` gauges), thumbs-down rate, judge fail rate by dimension, plus existing infra (HTTP p95, `llm_retries_total`). Empty until events exist on the scraped backend. Use it to decide what to mine — not to page, and not to override the replay gate. `llm_retries_total` is format fragility, not quality. Do not rewrite a skill because thumbs dropped on N < 30. Do not switch models because one judge run moved 3 points.
 
 ### Failure mining (closed loop)
 
