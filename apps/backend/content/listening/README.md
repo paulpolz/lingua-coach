@@ -1,6 +1,6 @@
 # Listening catalog
 
-Episode-level clips for listening days in lesson chat. Pedagogy stays in `skills/`; this tree is content.
+Episode-level clips for listening days in lesson chat. Pedagogy stays in `apps/backend/skills/`; this tree is content data for the API.
 
 The backend picks **one** clip, persists it on `input_task.resource`, and the tutor links it in Markdown. We **link** to the publisher. We do not download, rehost, or embed.
 

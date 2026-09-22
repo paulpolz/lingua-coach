@@ -27,6 +27,7 @@ except ImportError as exc:  # pragma: no cover - dependency hint
 
 EVALS_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = EVALS_ROOT.parent
+SKILLS_GIT_TREE = "apps/backend/skills"
 
 if str(REPO_ROOT / "apps" / "backend") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "apps" / "backend"))
@@ -177,12 +178,12 @@ def _git_sha() -> str | None:
 
 
 def _skill_sha() -> tuple[str | None, str]:
-    """Git tree SHA of `skills/` at HEAD (`git rev-parse HEAD:skills`).
+    """Git tree SHA of backend skills at HEAD (`git rev-parse HEAD:apps/backend/skills`).
 
     Falls back to repo HEAD if the skills tree is unavailable. See
     evals/docs/methodology.md — `skill_sha` is the skills tree when present.
     """
-    tree = _git_rev_parse("HEAD:skills")
+    tree = _git_rev_parse(f"HEAD:{SKILLS_GIT_TREE}")
     if tree:
         return tree, "skills_tree"
     return _git_sha(), "repo_head"

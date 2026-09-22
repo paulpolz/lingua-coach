@@ -1,6 +1,6 @@
 # Lingua Coach — Agent Skills
 
-Generic, goal-agnostic skills for the learning engine. Prompt modules and system instructions that define **what the agent does** — separate from how the platform persists and renders it ([database.md](../docs/tech_requirements/database.md), [frontend.md](../docs/tech_requirements/frontend.md)).
+Generic, goal-agnostic skills for the learning engine. Prompt modules and system instructions that define **what the agent does** — separate from how the platform persists and renders it ([database.md](../../../docs/mvp/init/tech_requirements/database.md), [frontend.md](../../../docs/mvp/init/tech_requirements/frontend.md)).
 
 ## MVP vs post-MVP
 
@@ -69,10 +69,10 @@ Learner answers are accepted in any language throughout so beginners can finish.
 
 | Doc | Role |
 |-----|------|
-| [database.md](../docs/tech_requirements/database.md) | What each skill persists |
-| [backend.md](../docs/tech_requirements/backend.md) | Orchestration and API lifecycle |
-| [ai-api.md](../docs/tech_requirements/ai-api.md) | Gemini call types per skill |
-| [frontend.md](../docs/tech_requirements/frontend.md) | UI surfaces for MVP skill use cases |
-| [cjm.md](../docs/functional_requirements/cjm.md) | User journeys |
+| [database.md](../../../docs/mvp/init/tech_requirements/database.md) | What each skill persists |
+| [backend.md](../../../docs/mvp/init/tech_requirements/backend.md) | Orchestration and API lifecycle |
+| [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md) | Gemini call types per skill |
+| [frontend.md](../../../docs/mvp/init/tech_requirements/frontend.md) | UI surfaces for MVP skill use cases |
+| [cjm.md](../../../docs/mvp/init/functional_requirements/cjm.md) | User journeys |
 
-Backend loads skill files at runtime as `system_instruction` per call type; dynamic context (profile, history, lesson snippet) is assembled in code — see [ai-api.md](../docs/tech_requirements/ai-api.md).
+Backend loads skill files at runtime as `system_instruction` per call type; dynamic context (profile, history, lesson snippet) is assembled in code — see [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md).

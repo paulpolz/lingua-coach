@@ -19,7 +19,7 @@ Replay fixtures freeze one completion per case so CI is deterministic. Live
 Gemini is manual / nightly. Result JSON is tagged with:
 
 - `model` — judge / lesson JSON model (`GEMINI_MODEL_LESSON`; chat uses `model_chat`)
-- `skill_sha` — **git tree SHA of `skills/` at HEAD** (`git rev-parse HEAD:skills`).
+- `skill_sha` — **git tree SHA of `apps/backend/skills/` at HEAD** (`git rev-parse HEAD:apps/backend/skills`).
   If that ref is missing, we store repo `HEAD` and set `skill_sha_source` to
   `repo_head` instead of `skills_tree`.
 - `git_sha` — repo HEAD commit

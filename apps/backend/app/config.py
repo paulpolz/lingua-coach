@@ -2,16 +2,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# apps/backend/app/config.py -> apps/backend -> apps -> repo root.
-# In Docker dev the backend is mounted at /app, so parents[3] does not exist;
-# skills are mounted at /skills (parents[2] == / -> /skills).
-_config_path = Path(__file__).resolve()
-try:
-    _REPO_ROOT = _config_path.parents[3]
-except IndexError:
-    _REPO_ROOT = _config_path.parents[2]
-_DEFAULT_SKILLS_DIR = str(_REPO_ROOT / "skills")
-_DEFAULT_CONTENT_DIR = str(_REPO_ROOT / "content")
+# apps/backend/app/config.py → backend root is always parents[1] (local or /app in Docker).
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
@@ -38,12 +30,8 @@ class Settings(BaseSettings):
     max_message_chars: int = 4000
     chat_context_messages: int = 10
     pace_window_hours: int = 24
-    # Resolves to the repo-root `skills/` dir by default (coordination rule
-    # #5 in the plan) regardless of the process's working directory; override
-    # via env for non-standard layouts.
-    skills_dir: str = _DEFAULT_SKILLS_DIR
-    # Repo-root `content/` (listening catalog). Docker mounts this at /content.
-    content_dir: str = _DEFAULT_CONTENT_DIR
+    skills_dir: str = str(_BACKEND_ROOT / "skills")
+    content_dir: str = str(_BACKEND_ROOT / "content")
 
     @property
     def cors_origin_list(self) -> list[str]:

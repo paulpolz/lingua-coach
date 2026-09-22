@@ -1,4 +1,4 @@
-"""Skill loader reads the real repo-root skills/*.md files without error."""
+"""Skill loader reads the real apps/backend/skills/*.md files without error."""
 
 from __future__ import annotations
 

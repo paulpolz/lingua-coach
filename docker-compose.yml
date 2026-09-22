@@ -32,14 +32,10 @@ services:
       - ./apps/backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://lingua:lingua@postgres:5432/lingua_coach
-      SKILLS_DIR: /skills
-      CONTENT_DIR: /content
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     volumes:
       - ./apps/backend:/app
       - backend_venv:/app/.venv
-      - ./skills:/skills:ro
-      - ./content:/content:ro
     depends_on:
       postgres:
         condition: service_healthy

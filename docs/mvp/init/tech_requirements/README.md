@@ -4,7 +4,7 @@ Tech requirements split from the product [README](../../README.md). All areas be
 
 Functional journeys: [cjm.md](../functional_requirements/cjm.md).
 
-**Agent skills (pedagogy IP):** [skills/](../../skills/README.md) at repo root — source of truth for agent behavior. Tech docs below define persistence, API, and UI contracts for those skills.
+**Agent skills (pedagogy IP):** [skills/](../../../../apps/backend/skills/README.md) under `apps/backend/skills/` — source of truth for agent behavior. Tech docs below define persistence, API, and UI contracts for those skills.
 
 **Local MVP gate:** [implementation-readiness.md](../implementation-readiness.md) — local setup, env vars, API/SSE contracts, build order, smoke tests. Production deploy deferred to [deployment.md](./deployment.md) / [hosting.md](./hosting.md).
 
@@ -20,7 +20,7 @@ Functional journeys: [cjm.md](../functional_requirements/cjm.md).
 ## Agent architecture (summary)
 
 ```
-skills/ (repo root)  →  backend learning engine  →  Gemini
+apps/backend/skills/  →  backend learning engine  →  Gemini
                               ↓
                          PostgreSQL (artifacts)
                               ↓
@@ -35,4 +35,4 @@ skills/ (repo root)  →  backend learning engine  →  Gemini
 | `vocabulary_practice_formats` | Yes | (within lesson artifacts) | Delivered in lesson chat |
 | `feedback_giver` | **No** | dashboard, weekly gates, replans (future) | Analysis / progress UI (future) |
 
-See [skills/README.md](../../skills/README.md) for full skill definitions.
+See [skills/README.md](../../../../apps/backend/skills/README.md) for full skill definitions.

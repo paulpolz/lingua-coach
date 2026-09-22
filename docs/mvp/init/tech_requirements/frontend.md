@@ -6,7 +6,7 @@ Status: **locked** (interview)
 
 Chat-first web UI for all **MVP agent skill** use cases: onboarding interview, plan composition and acceptance, lesson coaching, and pace tracking. Talks only to the FastAPI backend (plus Clerk hosted auth). Does not call LLM providers directly.
 
-**Agent skills** ([skills/](../../skills/README.md)) define product behavior; this doc defines the UI surfaces that support them. Post-MVP skill `feedback_giver` (progress dashboard, weekly gates) is out of scope — see [Out of scope](#out-of-scope-mvp).
+**Agent skills** ([skills/](../../../../apps/backend/skills/README.md)) define product behavior; this doc defines the UI surfaces that support them. Post-MVP skill `feedback_giver` (progress dashboard, weekly gates) is out of scope — see [Out of scope](#out-of-scope-mvp).
 
 ## Stack
 
@@ -119,7 +119,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 ## Out of scope (MVP)
 
 - Marketing landing page (Clerk sign-in is entry)
-- **`feedback_giver` UI** — progress dashboard rows, weekly assessment gates, structured progress-update template ([feedback_giver.md](../../skills/feedback_giver.md))
+- **`feedback_giver` UI** — progress dashboard rows, weekly assessment gates, structured progress-update template ([feedback_giver.md](../../../../apps/backend/skills/feedback_giver.md))
 - Analysis / profile statistics journey (see [cjm.md](../functional_requirements/cjm.md))
 - Dedicated plan editor (settings or profile)
 - Native mobile apps
@@ -137,7 +137,7 @@ Clerk sign-in → Onboarding chat → Accept plan → Dashboard
 
 ## Dependencies
 
-- Agent skills: [skills/README.md](../../skills/README.md)
+- Agent skills: [skills/README.md](../../../../apps/backend/skills/README.md)
 - Contracts from [backend.md](./backend.md) and [ai-api.md](./ai-api.md) (lesson JSON + chat SSE + plan updates)
 - Plan/progress fields from [database.md](./database.md)
 - Journeys from [cjm.md](../functional_requirements/cjm.md)

@@ -6,7 +6,7 @@ Status: **locked** (interview)
 
 PostgreSQL is the system of record for users, learner knowledge, lessons, jobs, progress, mistakes, and chat. Store **structured knowledge about the learner**, not only conversation transcripts.
 
-**Agent skills** ([skills/](../../skills/README.md)) define what artifacts each phase produces; this schema is the persistence contract for those outputs.
+**Agent skills** ([skills/](../../../../apps/backend/skills/README.md)) define what artifacts each phase produces; this schema is the persistence contract for those outputs.
 
 ## Stack
 
@@ -25,7 +25,7 @@ PostgreSQL is the system of record for users, learner knowledge, lessons, jobs, 
 4. Lesson jobs are durable enough for polling (`pending` → `running` → `done`/`failed`) even with in-process workers
 5. Lessons are **sequential integers** per user — not calendar-dated; **at most one in-flight lesson** (`generating` or `active`) enforced in app (partial unique index optional)
 6. **Plan schedule** is stored as structured fields (target plan days, projection, slip) — not as calendar lesson slots
-7. **Accepted course roadmap** is stored as JSONB on `learning_plans` — chat draft until accept; see [course_composer.md](../../skills/course_composer.md)
+7. **Accepted course roadmap** is stored as JSONB on `learning_plans` — chat draft until accept; see [course_composer.md](../../../../apps/backend/skills/course_composer.md)
 8. **Lesson chat produces artifacts, not a second curriculum store** — persist distilled JSON to `lessons.payload` and `mistakes`; `chat_messages` holds the live transcript until accept/finish, then is deleted
 9. **Skills are the source of truth for artifact shapes** — MVP skills: `onboarding_interviewer`, `course_composer`, `exercise_tutor`; `feedback_giver` is post-MVP
 
@@ -42,7 +42,7 @@ PostgreSQL is the system of record for users, learner knowledge, lessons, jobs, 
 
 ### `profiles` (1:1 with user)
 
-Canonical store for **onboarding interviewer output** ([onboarding_interviewer.md](../../skills/onboarding_interviewer.md)). Written when the interview phase completes (before plan acceptance); schedule fields are filled on plan accept.
+Canonical store for **onboarding interviewer output** ([onboarding_interviewer.md](../../../../apps/backend/skills/onboarding_interviewer.md)). Written when the interview phase completes (before plan acceptance); schedule fields are filled on plan accept.
 
 | Column | Type | Source (`learner_profile`) |
 |--------|------|----------------------------|
@@ -105,7 +105,7 @@ Languages are first-class columns (`native_language`, `target_language`), not ne
 | Onboarding interview complete | All interview columns above → `profiles`; draft row → `learning_goals` |
 | Plan accepted (`POST /onboarding/accept`) | `learning_plans` row (`roadmap` JSONB, `status = accepted`); `profiles.active_learning_plan_id`, `target_plan_days`, initial `projected_completion_at`; `users.onboarding_complete`, `users.plan_accepted_at`; `learning_goals.status = active` |
 | Lesson / chat feedback | `mistakes`, `lessons.payload.session_summary`, `progress_events`; optional light patch to profile progress JSON maps; `plan_updates` may patch `learning_plans.roadmap` and schedule fields |
-| Lesson becomes **active** | `lessons.payload.curriculum` — structure, themes, exercise-set descriptions ([exercise_tutor.md](../../skills/exercise_tutor.md)) |
+| Lesson becomes **active** | `lessons.payload.curriculum` — structure, themes, exercise-set descriptions ([exercise_tutor.md](../../../../apps/backend/skills/exercise_tutor.md)) |
 | Mid-lesson (pattern logged) | Upsert **`mistakes`** — `pattern_type` + short `example_text` |
 | Lesson **accomplished** | `lessons.payload.session_summary`; `lesson_completed` → `progress_events`; pace fields on `lessons` / `profiles` |
 
@@ -132,7 +132,7 @@ Draft created when onboarding interview persists; activated on plan accept.
 
 ### `learning_plans`
 
-Canonical store for **accepted course roadmap** ([course_composer.md](../../skills/course_composer.md)). Draft roadmap exists only in onboarding chat until accept — not persisted as a separate row in MVP.
+Canonical store for **accepted course roadmap** ([course_composer.md](../../../../apps/backend/skills/course_composer.md)). Draft roadmap exists only in onboarding chat until accept — not persisted as a separate row in MVP.
 
 | Column | Type | Source / notes |
 |--------|------|----------------|
@@ -220,7 +220,7 @@ Validate against Pydantic before insert/update. `exercise_tutor` and lesson gene
 
 ### `lessons`
 
-Canonical store for **lesson curriculum + session outcome** ([exercise_tutor.md](../../skills/exercise_tutor.md)). Chat delivers exercises and coaching; **`payload` JSONB** is what the next lesson reads — not `chat_messages`.
+Canonical store for **lesson curriculum + session outcome** ([exercise_tutor.md](../../../../apps/backend/skills/exercise_tutor.md)). Chat delivers exercises and coaching; **`payload` JSONB** is what the next lesson reads — not `chat_messages`.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -296,7 +296,7 @@ Canonical store for **lesson curriculum + session outcome** ([exercise_tutor.md]
 
 ### `mistakes`
 
-Canonical store for **recurring error patterns** extracted during lesson chat ([exercise_tutor.md](../../skills/exercise_tutor.md)). One row per named pattern occurrence log — not every chat correction.
+Canonical store for **recurring error patterns** extracted during lesson chat ([exercise_tutor.md](../../../../apps/backend/skills/exercise_tutor.md)). One row per named pattern occurrence log — not every chat correction.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -453,10 +453,10 @@ next POST /lessons/start
 
 - Written by [backend.md](./backend.md)
 - Profile shape consumed by [ai-api.md](./ai-api.md)
-- Agent skills: [skills/README.md](../../skills/README.md)
-- Onboarding output schema: [onboarding_interviewer.md](../../skills/onboarding_interviewer.md)
-- Course roadmap schema: [course_composer.md](../../skills/course_composer.md)
-- Lesson artifacts: [exercise_tutor.md](../../skills/exercise_tutor.md)
-- Post-MVP progress: [feedback_giver.md](../../skills/feedback_giver.md)
+- Agent skills: [skills/README.md](../../../../apps/backend/skills/README.md)
+- Onboarding output schema: [onboarding_interviewer.md](../../../../apps/backend/skills/onboarding_interviewer.md)
+- Course roadmap schema: [course_composer.md](../../../../apps/backend/skills/course_composer.md)
+- Lesson artifacts: [exercise_tutor.md](../../../../apps/backend/skills/exercise_tutor.md)
+- Post-MVP progress: [feedback_giver.md](../../../../apps/backend/skills/feedback_giver.md)
 - Journeys in [cjm.md](../functional_requirements/cjm.md)
 - Hosted per [hosting.md](./hosting.md)

@@ -1,6 +1,6 @@
 """Curated listening clips for lesson input days.
 
-Catalog YAML lives in repo `content/listening/`. The generation job picks
+Catalog YAML lives in `apps/backend/content/listening/`. The generation job picks
 one clip (or downgrades to reading). Gemini never invents URLs.
 """
 

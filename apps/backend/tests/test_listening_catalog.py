@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.services.listening_catalog import (
     InputAssignment,
     apply_input_assignment,
@@ -14,11 +12,8 @@ from app.services.listening_catalog import (
 )
 from tests.fixtures import VALID_COURSE_ROADMAP, VALID_LESSON_CURRICULUM
 
-_CONTENT = str(Path(__file__).resolve().parents[3] / "content")
-
-
 def test_catalog_loads_five_languages() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     langs = {clip.language for clip in clips}
     assert langs == {"en", "de", "fr", "es", "it"}
     assert len(clips) >= 30
@@ -45,7 +40,7 @@ def test_decide_input_mode_uses_theme_then_odd_even() -> None:
 
 
 def test_select_clip_filters_language_and_prefers_topic() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     hotel = select_clip(
         language="es",
         level="A2",
@@ -58,7 +53,7 @@ def test_select_clip_filters_language_and_prefers_topic() -> None:
 
 
 def test_no_match_language_returns_none() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     assert (
         select_clip(language="ja", level="A2", haystack="travel", clips=clips) is None
     )
@@ -71,14 +66,14 @@ def test_assign_input_downgrades_when_no_clip() -> None:
         lesson_number=1,
         roadmap={"current_block": {"themes": [{"block_day": 1, "input_type": "listening"}]}},
         extra_haystack="travel",
-        clips=load_clips(_CONTENT),
+        clips=load_clips(),
     )
     assert assignment.mode == "reading"
     assert assignment.clip is None
 
 
 def test_de_dupe_skips_used_ids() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     first = select_clip(language="es", level="A2", haystack="hotel", clips=clips)
     assert first is not None
     second = select_clip(
@@ -93,7 +88,7 @@ def test_de_dupe_skips_used_ids() -> None:
 
 
 def test_select_clip_no_band_match_returns_none() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     sample = next(clip for clip in clips if clip.language == "es")
     only_c1 = sample.model_copy(update={"cefr": ["C1"]})
     assert (
@@ -103,7 +98,7 @@ def test_select_clip_no_band_match_returns_none() -> None:
 
 
 def test_assign_input_downgrades_when_band_empty() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     sample = next(clip for clip in clips if clip.language == "es")
     only_c1 = sample.model_copy(update={"cefr": ["C1"]})
     assignment = assign_input(
@@ -141,7 +136,7 @@ def test_prior_resource_ids() -> None:
 
 
 def test_apply_input_assignment_overwrites_fake_url_and_speaking_slot() -> None:
-    clips = load_clips(_CONTENT)
+    clips = load_clips()
     clip = select_clip(language="en", level="B1", haystack="work meeting", clips=clips)
     assert clip is not None
 

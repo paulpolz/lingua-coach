@@ -56,11 +56,11 @@ Complete before feature work beyond scaffold.
 | 1   | **Docker** installed      | `docker compose version` works                                                                  |
 | 2   | **Clerk Development** app | Email + magic link enabled; Google OAuth off; allowed origin `http://localhost:3000`            |
 | 3   | **Gemini API key**        | Key from [Google AI Studio](https://aistudio.google.com/); model IDs chosen                     |
-| 4   | **Repo layout**           | `apps/frontend`, `apps/backend`, `skills/`, `docker-compose.yml` (§9) |
+| 4   | **Repo layout**           | `apps/frontend`, `apps/backend` (incl. `skills/`, `content/`), `docker-compose.yml` (§9) |
 | 5   | **Env files**             | `apps/frontend/.env.local` + `apps/backend/.env` from §4 (gitignored); `.env.example` committed |
 | 6   | **Postgres up**           | `docker compose up -d` → API connects via `DATABASE_URL` |
 | 7   | **Migrations**            | `alembic upgrade head` creates schema (§12) |
-| 8   | **Skill pack v0**         | MVP skills in `skills/` (§10) |
+| 8   | **Skill pack v0**         | MVP skills in `apps/backend/skills/` (§10) |
 
 
 ### Vendor accounts required locally
@@ -108,7 +108,7 @@ flowchart LR
 | User JWT / session    | Clerk-managed; sent per API request              | Postgres                |
 | `GEMINI_API_KEY`      | `apps/backend/.env` only                         | Frontend, Git, DB       |
 | `DATABASE_URL`        | `apps/backend/.env` only                         | Frontend, Git           |
-| Pedagogy / skills     | Git repo (`skills/`)                             | Verbose production logs |
+| Pedagogy / skills     | Git repo (`apps/backend/skills/`)                | Verbose production logs |
 
 
 Clerk JWT verification: JWKS or Clerk SDK with `CLERK_SECRET_KEY`. Do **not** persist JWTs in Postgres.
@@ -259,7 +259,7 @@ Ensure Postgres user exists. Idempotent.
 
 #### `POST /api/v1/onboarding/accept`
 
-Explicit product action when the user clicks **Accept plan** in onboarding chat. The client sends the **accepted roadmap JSON** (as composed/refined in chat — see [course_composer.md](../../skills/course_composer.md)) plus the onboarding `session_id`. The backend persists `learning_plans`, sets schedule fields, marks `onboarding_complete`, and **deletes the onboarding chat transcript** (artifacts only).
+Explicit product action when the user clicks **Accept plan** in onboarding chat. The client sends the **accepted roadmap JSON** (as composed/refined in chat — see [course_composer.md](../../../apps/backend/skills/course_composer.md)) plus the onboarding `session_id`. The backend persists `learning_plans`, sets schedule fields, marks `onboarding_complete`, and **deletes the onboarding chat transcript** (artifacts only).
 
 **Request:**
 
@@ -486,7 +486,8 @@ lingua-coach/
   apps/
     frontend/            # Next.js
     backend/             # FastAPI + alembic/
-  skills/                # agent pedagogy IP (source of truth; loaded at runtime)
+      skills/            # agent pedagogy IP (source of truth; loaded at runtime)
+      content/           # listening catalog YAML
   docker-compose.yml
   docs/
 ```
@@ -497,7 +498,7 @@ lingua-coach/
 
 ## 10. Pedagogy / skills
 
-**Source of truth:** [skills/](../skills/README.md) at repo root.
+**Source of truth:** [skills/](../../../apps/backend/skills/README.md) under `apps/backend/skills/`.
 
 Minimum before meaningful local dogfooding:
 
@@ -585,7 +586,7 @@ Manual checklist — the definition of done for local MVP:
 - [ ] `.env.example` committed (no secrets)
 - [ ] `docker compose up` → Postgres reachable
 - [ ] API paths use `/api/v1/...`
-- [ ] Skill pack v0 in `skills/` (phase 0–1)
+- [ ] Skill pack v0 in `apps/backend/skills/` (phase 0–1)
 
 ---
 
@@ -612,7 +613,7 @@ When local smoke tests pass and you want external users, use [deployment.md](./t
 | Doc                                                          | Role                   |
 | ------------------------------------------------------------ | ---------------------- |
 | [cjm.md](./functional_requirements/cjm.md)                   | User journeys          |
-| [skills/README.md](../skills/README.md)                      | Agent pedagogy IP      |
+| [skills/README.md](../../../apps/backend/skills/README.md)   | Agent pedagogy IP      |
 | [tech_requirements/README.md](./tech_requirements/README.md) | Locked stack index     |
 | [backend.md](./tech_requirements/backend.md)                 | Service behavior       |
 | [database.md](./tech_requirements/database.md)               | Entity design          |
