@@ -4,7 +4,7 @@ Status: **draft**
 
 This document describes the primary user journeys in Lingua Coach — from first visit through chat-guided learning. Each journey is goal-oriented: what the user wants, what they do, and what outcome they reach.
 
-**Agent skills** ([skills/README.md](../../skills/README.md)) implement journey steps; artifacts persist per [database.md](../tech_requirements/database.md).
+**Agent skills** ([skills/README.md](../../../apps/backend/skills/README.md)) implement journey steps; artifacts persist per [database.md](../tech_requirements/database.md).
 
 **MVP scope:** Journeys 1 (New user) and 2 (Student) are in scope. Journey 3 (Analysis) and skill `feedback_giver` are **post-MVP** — captured here for product direction, not first-ship UX.
 
@@ -126,7 +126,7 @@ Main section → Start lesson → Chat-guided practice → Accomplished task (pl
 
 ## 3. Analysis journey (post-MVP)
 
-> **Out of MVP scope.** Retained as the target experience for a later release, implemented by skill [`feedback_giver`](../../skills/feedback_giver.md). MVP shows **minimal pace hints** on the dashboard (plan days done, on pace / behind, projected completion) — not the full analysis UI.
+> **Out of MVP scope.** Retained as the target experience for a later release, implemented by skill [`feedback_giver`](../../../apps/backend/skills/feedback_giver.md). MVP shows **minimal pace hints** on the dashboard (plan days done, on pace / behind, projected completion) — not the full analysis UI.
 
 **Goal:** Understand how learning is going, where strengths and gaps are, and how far the user is from their goal.
 

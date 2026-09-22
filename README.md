@@ -17,7 +17,7 @@ The local MVP loop is implemented and runnable.
 | **Frontend** | Next.js App Router: `/` (sync + redirect), `/sign-in`, `/onboarding`, `/dashboard`, `/lesson/[id]`, `/reports/[slug]`. Chat-first UI. |
 | **Backend** | FastAPI under `/api/v1`. REST + SSE chat. In-process `BackgroundTasks` for lesson generation (single API replica). |
 | **LLM** | Gemini API. Streamed chat (`GEMINI_MODEL_CHAT`, flash-class) and validated lesson JSON (`GEMINI_MODEL_LESSON`, pro-class). |
-| **Pedagogy** | Runtime-loaded Markdown in [`skills/`](./skills/README.md). Skills practiced: **reading**, **writing**, and **listening from a curated clip** (every other lesson). There is no speaking practice. |
+| **Pedagogy** | Runtime-loaded Markdown in [`apps/backend/skills/`](./apps/backend/skills/README.md). Skills practiced: **reading**, **writing**, and **listening from a curated clip** (every other lesson). There is no speaking practice. |
 | **Memory** | Structured artifacts in Postgres: profile, draft/active goal, accepted roadmap, lesson payload, mistake SRS, living markdown reports. Chat rows are split on accept/finish. |
 | **Languages** | Onboarding starts in English to collect native then target language, then coaches in the target. |
 | **Pace** | Sequential integer lessons. At most one `generating` / `active` lesson. 24-hour on-pace window from `started_at`. |
@@ -46,10 +46,10 @@ Learner (browser)
     → FastAPI (Railway · :8000) — rules, persistence, prompt assembly, SSE
          ├→ PostgreSQL          — system of record
          ├→ Gemini              — LLM
-         └→ skills/*.md         — pedagogy IP (system instructions)
+         └→ apps/backend/skills/*.md — pedagogy IP (system instructions)
 ```
 
-Local: Docker Compose (Postgres 16, API `:8000`, Next `:3000`, `skills/` volume-mounted). Optional monitoring: Grafana `:3001`, Prometheus `:9090`, Loki `:3100`.
+Local: Docker Compose (Postgres 16, API `:8000`, Next `:3000`, backend bind-mount includes skills/content). Optional monitoring: Grafana `:3001`, Prometheus `:9090`, Loki `:3100`.
 
 Authenticated request: page `getToken()` → `apiFetch` (Bearer + `X-Request-ID`) → CORS → request-id middleware → route → Clerk JWT → `users` row → handler → SQLAlchemy. Exceptions: `GET /health` and `POST /telemetry/client-errors` skip JWT. `POST /auth/sync` verifies JWT but creates the user if missing. Lesson / progress / report routes also require `users.onboarding_complete`.
 
@@ -145,7 +145,8 @@ Prompt assembly is shared (`app/services/prompt_assembly.py`). Production loads 
 apps/
   frontend/          # Next.js — pages, ClerkProvider, lib/* REST+SSE clients
   backend/           # FastAPI — /api/v1, deps, ORM, services, Alembic
-skills/              # Markdown loaded at runtime as system_instruction
+    skills/          # Markdown loaded at runtime as system_instruction
+    content/         # Listening catalog YAML
 evals/               # Offline suites, judges, miner, replay fixtures
 docs/mvp/            # Locked contracts + dated improvement notes
 infra/monitoring/    # Prometheus / Grafana / Loki provisioning
@@ -159,11 +160,11 @@ docker-compose.yml
 | Auth deps | `apps/backend/app/api/deps.py` | JWT → Clerk principal → `User` → onboarding gate |
 | ORM | `apps/backend/app/models` | SQLAlchemy 2; Alembic migrations |
 | Services | `apps/backend/app/services` | Gemini, skills, extraction, prompt assembly, jobs, pace, reports, quality |
-| Pedagogy | `skills/` | System instructions |
+| Pedagogy | `apps/backend/skills/` | System instructions |
 | Evals | `evals/` | Replay gate, live judges, miner |
 | Contracts | `docs/mvp/init/tech_requirements/` | Locked API / DB / UI / AI / hosting docs |
 
-Run locally: [`apps/README.md`](./apps/README.md). Locked contracts: [`docs/mvp/init/tech_requirements/README.md`](./docs/mvp/init/tech_requirements/README.md). Skills: [`skills/README.md`](./skills/README.md).
+Run locally: [`apps/README.md`](./apps/README.md). Locked contracts: [`docs/mvp/init/tech_requirements/README.md`](./docs/mvp/init/tech_requirements/README.md). Skills: [`apps/backend/skills/README.md`](./apps/backend/skills/README.md).
 
 ---
 
@@ -213,7 +214,7 @@ PYTHONPATH=apps/backend:. python -m evals.run --suite calibration --agreement --
 
 **Replay** loads `evals/fixtures/replay/<id>.json` (`raw_completion`, or `completions[]` for schema-repair — checks run on the last string). CI has no `GEMINI_API_KEY`. Optional canned scores: `evals/fixtures/replay/<id>.judge.json`. **Live** calls the real tutor path, then (if configured) one Gemini `generate_json` judge with a fixed rubric markdown — repair-once, same pattern as lesson generation.
 
-Each run is tagged with `model`, `skill_sha` (git tree of `skills/` at HEAD), `git_sha`, and `rubric_version` (`v1`). Results: `evals/results/<run_id>.json` (gitignored) plus a markdown summary on stdout.
+Each run is tagged with `model`, `skill_sha` (git tree of `apps/backend/skills/` at HEAD), `git_sha`, and `rubric_version` (`v1`). Results: `evals/results/<run_id>.json` (gitignored) plus a markdown summary on stdout.
 
 `expect_fail: true` is for known-bad replay completions: the case **passes** only if a listed check fails. If those checks unexpectedly pass, the case fails. That keeps the detector honest. After an intentional skill / prompt / contract change: run live, confirm behavior (not only JSON parse), copy new completions into replay files, refresh `evals/fixtures/baseline.json` `failed_ids` if the known-fail set changed, land replay + baseline **in the same PR** as the skill change.
 
@@ -328,7 +329,7 @@ Practical order if we proceed: (1) keep the replay gate as the ship decision, (2
 
 | Doc | Role |
 | --- | --- |
-| [skills/README.md](./skills/README.md) | Pedagogy IP — skill files and pipeline |
+| [apps/backend/skills/README.md](./apps/backend/skills/README.md) | Pedagogy IP — skill files and pipeline |
 | [apps/README.md](./apps/README.md) | Local Docker / host run, monitoring profile |
 | [evals/README.md](./evals/README.md) | How to run, add a case, update replay |
 | [evals/docs/shareable.md](./evals/docs/shareable.md) | Ship-gate decisions, L1-leakage loop, Grafana |

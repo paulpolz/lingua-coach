@@ -6,7 +6,7 @@ Status: **locked** (interview)
 
 Gemini-backed LLM layer used by the backend learning engine. The product is orchestration and pedagogy — not model training. No custom GPUs, self-hosted inference, or multi-provider routing in MVP.
 
-**Pedagogy source of truth:** [skills/](../../skills/README.md) — loaded into system prompts per mode. Do not duplicate skill logic in code; map modes to skill files.
+**Pedagogy source of truth:** [skills/](../../../../apps/backend/skills/README.md) — loaded into system prompts per mode. Do not duplicate skill logic in code; map modes to skill files.
 
 ## Principles
 
@@ -104,7 +104,7 @@ Gemini is **stateless** — no session memory on Google's side. Each call: FastA
 
 **Prompt assembly:** `system_instruction` ← skill file(s) for the call type (concatenate in orchestration-table order); `contents` ← optional profile/plan block + message history + new user turn.
 
-- Pedagogy lives in **[skills/](../../skills/README.md)** — loaded at runtime (IP); do not log full prompts in production
+- Pedagogy lives in **[skills/](../../../../apps/backend/skills/README.md)** — loaded at runtime (IP); do not log full prompts in production
 - **No RAG in MVP** — structured SQL fetch + injection, not vector retrieval over document corpora
 
 ## Streaming
@@ -138,7 +138,7 @@ Gemini is **stateless** — no session memory on Google's side. Each call: FastA
 
 ## Dependencies
 
-- Agent skills: [skills/README.md](../../skills/README.md)
+- Agent skills: [skills/README.md](../../../../apps/backend/skills/README.md)
 - Consumed by [backend.md](./backend.md) lesson jobs and chat SSE
 - Profile fields defined with [database.md](./database.md)
 - Lesson JSON contract consumed by [frontend.md](./frontend.md)

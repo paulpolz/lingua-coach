@@ -40,7 +40,7 @@ Calibration and inbox are **not** ship gates. `--suite all` does not load them.
 pending independent double-label — see `evals/docs/methodology.md`.
 
 Results: `evals/results/<run_id>.json` (gitignored) plus a markdown summary on stdout.
-Each run is tagged with `model`, `skill_sha` (git tree of `skills/` at HEAD, else
+Each run is tagged with `model`, `skill_sha` (git tree of `apps/backend/skills/` at HEAD, else
 repo HEAD), and `rubric_version` (`v1`; per-case judge uses `lesson_turn_v1` etc.).
 Exit 1 if any **gated** case fails (capability / regression, after `expect_fail`).
 Judge scores never change that exit code.

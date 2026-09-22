@@ -425,7 +425,7 @@ No new LLM provider. Judge uses the existing Gemini client.
 | [deployment.md](../init/tech_requirements/deployment.md) | CI on PRs; branch protection on `main`; eval replay extends the MVP lint/test gate |
 | [ai-api.md](../init/tech_requirements/ai-api.md) | Same call types and context assembly; evals replay them |
 | [database.md](../init/tech_requirements/database.md) | Artifacts stay source of truth; `quality_events` is additive |
-| [skills/README.md](../../../skills/README.md) | Skills are the system under test |
+| [skills/README.md](../../../../apps/backend/skills/README.md) | Skills are the system under test |
 
 ---
 

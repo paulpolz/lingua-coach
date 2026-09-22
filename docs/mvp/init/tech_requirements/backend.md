@@ -6,7 +6,7 @@ Status: **locked** (interview)
 
 FastAPI service that authenticates learners, owns learner state, orchestrates onboarding and sequential lessons, and exposes REST + SSE APIs to the frontend. LLM calls go through the AI API layer; durable state lives in Postgres.
 
-The **learning engine** loads agent skills from [skills/](../../skills/README.md) and maps them to chat modes and lesson jobs. All skill artifacts are persisted per [database.md](./database.md).
+The **learning engine** loads agent skills from [skills/](../../../../apps/backend/skills/README.md) and maps them to chat modes and lesson jobs. All skill artifacts are persisted per [database.md](./database.md).
 
 ## Stack
 
@@ -37,7 +37,7 @@ The **learning engine** loads agent skills from [skills/](../../skills/README.md
 
 ### Out of scope (MVP)
 
-- **`feedback_giver`** — progress dashboard, weekly assessment gates, automated replans, structured progress updates ([feedback_giver.md](../../skills/feedback_giver.md))
+- **`feedback_giver`** — progress dashboard, weekly assessment gates, automated replans, structured progress updates ([feedback_giver.md](../../../../apps/backend/skills/feedback_giver.md))
 - Billing / subscriptions
 - Free vs premium labels or SKUs
 - Admin panel / product analytics
@@ -180,7 +180,7 @@ Exact paths may be versioned (`/api/v1/...`) at implementation time.
 
 ## Dependencies on other docs
 
-- [skills/README.md](../../skills/README.md) — agent behavior source of truth
+- [skills/README.md](../../../../apps/backend/skills/README.md) — agent behavior source of truth
 - [ai-api.md](./ai-api.md) — onboarding chat, lesson generation, plan updates, streaming
 - [database.md](./database.md) — schema for users, lessons, jobs, progress, chat
 - [frontend.md](./frontend.md) — Clerk SDK, REST client, SSE consumer, job polling

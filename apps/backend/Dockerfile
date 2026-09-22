@@ -15,6 +15,8 @@ RUN uv sync --frozen
 COPY alembic.ini ./
 COPY alembic ./alembic/
 COPY app ./app/
+COPY skills ./skills/
+COPY content ./content/
 
 EXPOSE 8000
 
