@@ -149,10 +149,8 @@ async def test_start_lesson_enforces_daily_rate_limit(
     client: AsyncClient, as_principal, db_session, mock_generate_json, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.config import settings
-    from app.services import rate_limit
 
     monkeypatch.setattr(settings, "lesson_start_rate_limit_per_day", 1)
-    rate_limit.reset()
 
     user_id = await _sync_user(client, as_principal, "clerk_lesson_rate_limited")
     await _seed_onboarded_user(db_session, user_id)
@@ -171,4 +169,5 @@ async def test_start_lesson_enforces_daily_rate_limit(
     second = await client.post("/api/v1/lessons/start")
     assert second.status_code == 429
     assert second.json()["code"] == "RATE_LIMIT_EXCEEDED"
-    rate_limit.reset()
+    retry_after = int(second.headers["Retry-After"])
+    assert 1 <= retry_after <= 86400

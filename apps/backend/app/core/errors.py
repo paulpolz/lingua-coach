@@ -3,6 +3,8 @@
 `{ "detail": "Human-readable message", "code": "MACHINE_READABLE_CODE" }`
 """
 
+from collections.abc import Mapping
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -13,10 +15,19 @@ logger = get_logger(__name__)
 
 
 class APIError(Exception):
-    def __init__(self, status_code: int, detail: str, code: str, **extra: object) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        code: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        **extra: object,
+    ) -> None:
         self.status_code = status_code
         self.detail = detail
         self.code = code
+        self.headers = dict(headers) if headers else {}
         # Extra body fields for endpoints that need more than detail/code —
         # e.g. `409 ACTIVE_LESSON_EXISTS`'s `active_lesson_id` (readiness §6).
         self.extra = extra
@@ -44,7 +55,9 @@ async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
                 "code": exc.code,
             },
         )
-    response = JSONResponse(status_code=exc.status_code, content=content)
+    response = JSONResponse(
+        status_code=exc.status_code, content=content, headers=exc.headers or None
+    )
     return _with_request_id(request, response)
 
 

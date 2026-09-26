@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.metrics import record_llm_retry
 from app.db.session import AsyncSessionLocal
 from app.models.enums import JobStatus, LearningPlanStatus, LessonStatus
@@ -37,7 +38,8 @@ from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.schemas.lesson import LessonCurriculum
 from app.services import gemini
-from app.services.gemini import ChatTurn
+from app.services.gemini import ChatTurn, GeminiError
+from app.services.llm_usage import complete, estimate_input_tokens, reserve_gemini_call
 from app.services.listening_catalog import (
     InputAssignment,
     apply_input_assignment,
@@ -84,7 +86,9 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
                 db, user_id=user_id, lesson_number=lesson.lesson_number
             )
             curriculum = await _generate_curriculum(
+                db,
                 prompt,
+                user_id=user_id,
                 native_language=native,
                 target_language=target,
                 assignment=assignment,
@@ -225,9 +229,51 @@ def _build_repair_prompt(original_prompt: str, invalid_raw: str, error: Exceptio
     )
 
 
+async def _call_lesson_model(
+    db: AsyncSession, user_id: uuid.UUID, *, system_instruction: str, prompt: str
+) -> str:
+    event = await reserve_gemini_call(
+        db,
+        user_id,
+        "lesson_json",
+        estimated_input_tokens=estimate_input_tokens(system_instruction, prompt),
+    )
+    tokens = event.input_tokens
+
+    async def on_usage(prompt_token_count: int) -> None:
+        nonlocal tokens
+        tokens = prompt_token_count
+
+    try:
+        raw = await gemini.generate_json(
+            system_instruction=system_instruction,
+            history=[ChatTurn(role="user", text=prompt)],
+            on_usage=on_usage,
+        )
+    except GeminiError:
+        await complete(
+            db,
+            event,
+            input_tokens=event.input_tokens,
+            status="error",
+            model=settings.gemini_model_lesson,
+        )
+        raise
+    await complete(
+        db,
+        event,
+        input_tokens=tokens,
+        status="ok",
+        model=settings.gemini_model_lesson,
+    )
+    return raw
+
+
 async def _generate_curriculum(
+    db: AsyncSession,
     prompt: str,
     *,
+    user_id: uuid.UUID,
     native_language: str | None = None,
     target_language: str | None = None,
     assignment: InputAssignment | None = None,
@@ -251,9 +297,8 @@ async def _generate_curriculum(
     # to `response_mime_type="application/json"` JSON mode only, plus our
     # own Pydantic validation + one repair retry below, which is the actual
     # documented contract (ai-api.md "Structured lesson output").
-    raw = await gemini.generate_json(
-        system_instruction=system_instruction,
-        history=[ChatTurn(role="user", text=prompt)],
+    raw = await _call_lesson_model(
+        db, user_id, system_instruction=system_instruction, prompt=prompt
     )
     try:
         return _parse_curriculum(raw, assignment)
@@ -265,9 +310,8 @@ async def _generate_curriculum(
             extra={"event": "llm_retry", "reason": "schema_repair", **correlation},
         )
         repair_prompt = _build_repair_prompt(prompt, raw, exc)
-        raw_retry = await gemini.generate_json(
-            system_instruction=system_instruction,
-            history=[ChatTurn(role="user", text=repair_prompt)],
+        raw_retry = await _call_lesson_model(
+            db, user_id, system_instruction=system_instruction, prompt=repair_prompt
         )
         try:
             return _parse_curriculum(raw_retry, assignment)

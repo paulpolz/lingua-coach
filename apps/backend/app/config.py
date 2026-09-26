@@ -19,14 +19,17 @@ class Settings(BaseSettings):
     # is accepted — see app/core/clerk_auth.py.
     clerk_jwt_issuer: str = ""
     gemini_api_key: str = ""
-    gemini_model_chat: str = "gemini-2.0-flash"
-    gemini_model_lesson: str = "gemini-2.0-pro"
+    gemini_model_chat: str = "gemini-3.5-flash-lite"
+    gemini_model_lesson: str = "gemini-3.5-flash-lite"
     gemini_timeout_seconds: int = 120
     cors_origins: str = "http://localhost:3000"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     chat_rate_limit_per_hour: int = 60
-    lesson_start_rate_limit_per_day: int = 10
+    lesson_start_rate_limit_per_day: int = 2
+    llm_rpm_limit: int = 15
+    llm_input_tpm_limit: int = 250_000
+    llm_rpd_limit: int = 500
     max_message_chars: int = 4000
     chat_context_messages: int = 10
     pace_window_hours: int = 24

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -27,6 +27,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.models.enums import ChatMessageRole, ChatSessionType, LearningGoalStatus, LessonStatus
 from app.models.learning_goal import LearningGoal
 from app.models.lesson import Lesson
+from app.models.llm_usage import LlmUsageEvent
 from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.models.progress_event import ProgressEvent
@@ -52,8 +53,13 @@ from app.services.prompt_assembly import (
     lesson_system_instruction,
     onboarding_system_instruction,
 )
+from app.services.llm_usage import (
+    check_and_record_user_limit,
+    complete,
+    estimate_input_tokens,
+    reserve_gemini_call,
+)
 from app.services.quality import maybe_write_lesson_turn_candidate
-from app.services.rate_limit import check_and_record
 from app.services.skills import should_include_vocab_formats
 
 logger = get_logger(__name__)
@@ -465,21 +471,68 @@ async def _load_context_history(db: AsyncSession, session: ChatSession) -> list[
     ]
 
 
-async def _onboarding_event_stream(
-    *, db: AsyncSession, user: User, session: ChatSession, history: list[ChatTurn]
-) -> AsyncGenerator[str, None]:
-    profile = await _fetch_profile(db, user)
-    system_instruction = onboarding_system_instruction(
-        profile.native_language if profile else None,
-        profile.target_language if profile else None,
+async def _mark_chat_usage_error(db: AsyncSession, event: LlmUsageEvent) -> None:
+    await complete(
+        db,
+        event,
+        input_tokens=event.input_tokens,
+        status="error",
+        model=settings.gemini_model_chat,
     )
 
+
+async def _assemble_chat_prompt(
+    db: AsyncSession,
+    *,
+    user: User,
+    session: ChatSession,
+    lesson: Lesson | None,
+    history: list[ChatTurn],
+) -> tuple[str, list[ChatTurn]]:
+    profile = await _fetch_profile(db, user)
+    if session.type == ChatSessionType.onboarding:
+        return (
+            onboarding_system_instruction(
+                profile.native_language if profile else None,
+                profile.target_language if profile else None,
+            ),
+            history,
+        )
+
+    assert lesson is not None
+    curriculum = (lesson.payload or {}).get("curriculum") or {}
+    include_vocab = should_include_vocab_formats(curriculum)
+    system_instruction = lesson_system_instruction(
+        profile.native_language if profile else None,
+        profile.target_language if profile else None,
+        include_vocab,
+    )
+    context_block = (
+        f"{_lesson_curriculum_snippet(lesson)}\n\n"
+        f"{await _lesson_profile_block(db, user, profile=profile)}"
+    )
+    return system_instruction, [ChatTurn(role="user", text=context_block), *history]
+
+
+async def _onboarding_event_stream(
+    *,
+    db: AsyncSession,
+    user: User,
+    session: ChatSession,
+    history: list[ChatTurn],
+    system_instruction: str,
+    on_usage: Callable[[int], Awaitable[None]],
+    usage_event: LlmUsageEvent,
+) -> AsyncGenerator[str, None]:
     full_text_parts: list[str] = []
     try:
-        async for chunk in stream_chat(system_instruction=system_instruction, history=history):
+        async for chunk in stream_chat(
+            system_instruction=system_instruction, history=history, on_usage=on_usage
+        ):
             full_text_parts.append(chunk)
             yield _sse("token", {"text": chunk})
     except GeminiError as exc:
+        await _mark_chat_usage_error(db, usage_event)
         yield _sse("error", {"code": exc.code, "message": str(exc)})
         return
 
@@ -546,32 +599,27 @@ async def _onboarding_event_stream(
 
 
 async def _lesson_event_stream(
-    *, db: AsyncSession, user: User, session: ChatSession, lesson: Lesson, history: list[ChatTurn]
+    *,
+    db: AsyncSession,
+    user: User,
+    session: ChatSession,
+    lesson: Lesson,
+    history: list[ChatTurn],
+    system_instruction: str,
+    on_usage: Callable[[int], Awaitable[None]],
+    usage_event: LlmUsageEvent,
 ) -> AsyncGenerator[str, None]:
     profile = await _fetch_profile(db, user)
-    curriculum = (lesson.payload or {}).get("curriculum") or {}
-    include_vocab = should_include_vocab_formats(curriculum)
-    system_instruction = lesson_system_instruction(
-        profile.native_language if profile else None,
-        profile.target_language if profile else None,
-        include_vocab,
-    )
-
-    # ai-api.md "Prompt assembly": contents <- profile/plan block + message
-    # history + new turn. `history` already ends with the new user turn, so
-    # the curriculum/profile context block is prepended as a leading turn.
-    context_block = (
-        f"{_lesson_curriculum_snippet(lesson)}\n\n"
-        f"{await _lesson_profile_block(db, user, profile=profile)}"
-    )
-    contents = [ChatTurn(role="user", text=context_block), *history]
 
     full_text_parts: list[str] = []
     try:
-        async for chunk in stream_chat(system_instruction=system_instruction, history=contents):
+        async for chunk in stream_chat(
+            system_instruction=system_instruction, history=history, on_usage=on_usage
+        ):
             full_text_parts.append(chunk)
             yield _sse("token", {"text": chunk})
     except GeminiError as exc:
+        await _mark_chat_usage_error(db, usage_event)
         yield _sse("error", {"code": exc.code, "message": str(exc)})
         return
 
@@ -671,8 +719,7 @@ async def post_chat_message(
         raise APIError(
             422, f"Message exceeds {settings.max_message_chars} characters", "MESSAGE_TOO_LONG"
         )
-    if not check_and_record(f"chat:{user.id}", settings.chat_rate_limit_per_hour):
-        raise APIError(429, "Chat rate limit exceeded", "RATE_LIMIT_EXCEEDED")
+    await check_and_record_user_limit(db, user.id, kind="chat")
 
     lesson: Lesson | None = None
     if session.type == ChatSessionType.lesson:
@@ -680,18 +727,59 @@ async def post_chat_message(
             raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
         lesson = await _get_lesson_for_session(db, session, user)
 
+    prior = await _load_context_history(db, session)
+    keep = settings.chat_context_messages - 1
+    if keep > 0:
+        prior = prior[-keep:]
+    else:
+        prior = []
+    history = [*prior, ChatTurn(role="user", text=content)]
+    system_instruction, contents = await _assemble_chat_prompt(
+        db, user=user, session=session, lesson=lesson, history=history
+    )
+    usage_event = await reserve_gemini_call(
+        db,
+        user.id,
+        "chat",
+        estimated_input_tokens=estimate_input_tokens(
+            system_instruction, *(turn.text for turn in contents)
+        ),
+    )
+
     user_message = ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content)
     db.add(user_message)
     await db.commit()
 
-    history = await _load_context_history(db, session)
+    async def on_usage(prompt_token_count: int) -> None:
+        await complete(
+            db,
+            usage_event,
+            input_tokens=prompt_token_count,
+            status="ok",
+            model=settings.gemini_model_chat,
+        )
 
     if session.type == ChatSessionType.onboarding:
-        event_stream = _onboarding_event_stream(db=db, user=user, session=session, history=history)
+        event_stream = _onboarding_event_stream(
+            db=db,
+            user=user,
+            session=session,
+            history=contents,
+            system_instruction=system_instruction,
+            on_usage=on_usage,
+            usage_event=usage_event,
+        )
     else:
         assert lesson is not None
         event_stream = _lesson_event_stream(
-            db=db, user=user, session=session, lesson=lesson, history=history
+            db=db,
+            user=user,
+            session=session,
+            lesson=lesson,
+            history=contents,
+            system_instruction=system_instruction,
+            on_usage=on_usage,
+            usage_event=usage_event,
         )
 
     return StreamingResponse(

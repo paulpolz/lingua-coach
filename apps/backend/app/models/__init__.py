@@ -4,6 +4,7 @@ from app.db.base import Base
 from app.models.chat import ChatMessage, ChatSession
 from app.models.job import Job
 from app.models.learning_goal import LearningGoal
+from app.models.llm_usage import LlmUsageEvent
 from app.models.learning_plan import LearningPlan
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
@@ -20,6 +21,7 @@ __all__ = [
     "LearningGoal",
     "LearningPlan",
     "Job",
+    "LlmUsageEvent",
     "Lesson",
     "ProgressEvent",
     "Mistake",

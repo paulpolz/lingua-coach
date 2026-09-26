@@ -107,6 +107,23 @@ async def test_invalid_json_is_repaired_on_retry_and_job_succeeds(
     lesson_resp = await client.get(f"/api/v1/lessons/{ids['lesson_id']}")
     assert lesson_resp.json()["status"] == "active"
 
+    from sqlalchemy import func, select
+
+    from app.models.llm_usage import LlmUsageEvent
+
+    counts = {
+        call_type: count
+        for call_type, count in (
+            await db_session.execute(
+                select(LlmUsageEvent.call_type, func.count())
+                .where(LlmUsageEvent.user_id == uuid.UUID(user_id))
+                .group_by(LlmUsageEvent.call_type)
+            )
+        ).all()
+    }
+    assert counts["lesson_json"] == 2
+    assert counts["lesson_start"] == 1
+
 
 async def test_invalid_json_twice_fails_job_and_lesson(
     client: AsyncClient, as_principal, db_session, mock_generate_json

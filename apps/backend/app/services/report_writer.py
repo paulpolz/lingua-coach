@@ -9,6 +9,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.core.errors import APIError
 from app.models.enums import UserReportType
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
@@ -17,9 +19,10 @@ from app.models.user import User
 from app.models.user_report import UserReport
 from app.schemas.lesson import SessionSummary
 from app.schemas.report import ReportOp, ReportOpsPayload
-from app.services.gemini import ChatTurn
+from app.services.gemini import ChatTurn, GeminiError
 from app.services.extraction import extract_report_ops_json
 from app.services import gemini as gemini_service
+from app.services.llm_usage import complete, estimate_input_tokens, reserve_gemini_call
 from app.services.languages import language_policy_block
 from app.services.report_ops import apply_report_ops
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
@@ -146,10 +149,55 @@ async def _update_reports_after_lesson(
     )
     policy = language_policy_block(surface="report", native=native, target=target)
     system_instruction = f"{load_skill('report_writer')}\n\n{REPORT_PATCH_CONTRACT}\n\n{policy}"
-    raw = await gemini_service.generate_json(
-        system_instruction=system_instruction,
-        history=[ChatTurn(role="user", text=prompt)],
-        response_schema=ReportOpsPayload,
+    try:
+        event = await reserve_gemini_call(
+            db,
+            user.id,
+            "report",
+            estimated_input_tokens=estimate_input_tokens(system_instruction, prompt),
+        )
+    except APIError as exc:
+        if exc.code != "LLM_RATE_LIMIT_EXCEEDED":
+            raise
+        logger.warning(
+            "report_llm_skipped",
+            extra={
+                "event": "report_llm_skipped",
+                "user_id": str(user.id),
+                "lesson_id": str(lesson.id),
+                "code": exc.code,
+            },
+        )
+        return
+
+    tokens = event.input_tokens
+
+    async def on_usage(prompt_token_count: int) -> None:
+        nonlocal tokens
+        tokens = prompt_token_count
+
+    try:
+        raw = await gemini_service.generate_json(
+            system_instruction=system_instruction,
+            history=[ChatTurn(role="user", text=prompt)],
+            response_schema=ReportOpsPayload,
+            on_usage=on_usage,
+        )
+    except GeminiError:
+        await complete(
+            db,
+            event,
+            input_tokens=event.input_tokens,
+            status="error",
+            model=settings.gemini_model_lesson,
+        )
+        raise
+    await complete(
+        db,
+        event,
+        input_tokens=tokens,
+        status="ok",
+        model=settings.gemini_model_lesson,
     )
     parsed = extract_report_ops_json(raw) or {}
     payload = ReportOpsPayload.model_validate(parsed)
