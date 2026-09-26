@@ -50,15 +50,14 @@ from app.schemas.lesson import (
     SessionSummary,
 )
 from app.services.lesson_generation import run_lesson_generation_job
+from app.services.llm_usage import check_and_record_user_limit
 from app.services.pace import compute_lesson_pace_status, compute_projected_completion
 from app.services.quality import add_lesson_csat
-from app.services.rate_limit import check_and_record
 from app.services.report_writer import update_reports_after_lesson
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
 _ACTIVE_LESSON_STATUSES = (LessonStatus.generating, LessonStatus.active)
-_LESSON_START_WINDOW_SECONDS = 86400.0
 
 
 async def _get_active_lesson(db: AsyncSession, user_id: uuid.UUID) -> Lesson | None:
@@ -108,12 +107,7 @@ async def start_lesson(
             active_lesson_id=str(existing.id),
         )
 
-    if not check_and_record(
-        f"lesson_start:{user.id}",
-        settings.lesson_start_rate_limit_per_day,
-        window_seconds=_LESSON_START_WINDOW_SECONDS,
-    ):
-        raise APIError(429, "Lesson start rate limit exceeded", "RATE_LIMIT_EXCEEDED")
+    await check_and_record_user_limit(db, user.id, kind="lesson_start")
 
     lesson_number = (
         await db.scalar(

@@ -304,10 +304,8 @@ async def test_post_message_enforces_rate_limit(
     client: AsyncClient, as_principal, mock_gemini, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.config import settings
-    from app.services import rate_limit
 
     monkeypatch.setattr(settings, "chat_rate_limit_per_hour", 1)
-    rate_limit.reset()
 
     await _sync_user(client, as_principal, "clerk_rate_limited")
     session_id = (await client.post("/api/v1/chat/sessions", json={"type": "onboarding"})).json()["id"]
@@ -323,4 +321,84 @@ async def test_post_message_enforces_rate_limit(
     )
     assert second.status_code == 429
     assert second.json()["code"] == "RATE_LIMIT_EXCEEDED"
-    rate_limit.reset()
+    retry_after = int(second.headers["Retry-After"])
+    assert 1 <= retry_after <= 3600
+
+
+async def _onboarding_session(client: AsyncClient, as_principal, clerk_user_id: str) -> str:
+    await _sync_user(client, as_principal, clerk_user_id)
+    return (await client.post("/api/v1/chat/sessions", json={"type": "onboarding"})).json()["id"]
+
+
+async def test_global_rpm_blocks_chat_under_personal_cap(
+    client: AsyncClient, as_principal, mock_gemini, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_rpm_limit", 1)
+    session_id = await _onboarding_session(client, as_principal, "clerk_llm_rpm")
+    mock_gemini(["ok"])
+
+    first = await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "one"}
+    )
+    assert first.status_code == 200
+
+    second = await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "two"}
+    )
+    assert second.status_code == 429
+    assert second.json()["code"] == "LLM_RATE_LIMIT_EXCEEDED"
+    assert second.headers["Retry-After"] == "60"
+
+
+async def test_global_input_tpm_blocks_next_chat(
+    client: AsyncClient, as_principal, db_session, mock_gemini, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import settings
+    from app.models.llm_usage import LlmUsageEvent
+    from app.models.user import User
+
+    monkeypatch.setattr(settings, "llm_input_tpm_limit", 100)
+    user_id = await _sync_user(client, as_principal, "clerk_llm_tpm")
+    user = await db_session.get(User, uuid.UUID(user_id))
+    db_session.add(
+        LlmUsageEvent(
+            user_id=user.id,
+            call_type="lesson_json",
+            input_tokens=100,
+            status="ok",
+        )
+    )
+    await db_session.commit()
+    session_id = (await client.post("/api/v1/chat/sessions", json={"type": "onboarding"})).json()["id"]
+    mock_gemini(["ok"])
+
+    resp = await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "hello"}
+    )
+    assert resp.status_code == 429
+    assert resp.json()["code"] == "LLM_RATE_LIMIT_EXCEEDED"
+    assert resp.headers["Retry-After"] == "60"
+
+
+async def test_global_rpd_blocks_chat(
+    client: AsyncClient, as_principal, mock_gemini, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_rpd_limit", 1)
+    session_id = await _onboarding_session(client, as_principal, "clerk_llm_rpd")
+    mock_gemini(["ok"])
+
+    first = await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "one"}
+    )
+    assert first.status_code == 200
+
+    second = await client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "two"}
+    )
+    assert second.status_code == 429
+    assert second.json()["code"] == "LLM_RATE_LIMIT_EXCEEDED"
+    assert int(second.headers["Retry-After"]) > 60

@@ -146,7 +146,10 @@ API_HOST=0.0.0.0
 API_PORT=8000
 
 CHAT_RATE_LIMIT_PER_HOUR=60
-LESSON_START_RATE_LIMIT_PER_DAY=10
+LESSON_START_RATE_LIMIT_PER_DAY=2
+LLM_RPM_LIMIT=15
+LLM_INPUT_TPM_LIMIT=250000
+LLM_RPD_LIMIT=500
 MAX_MESSAGE_CHARS=4000
 CHAT_CONTEXT_MESSAGES=10
 PACE_WINDOW_HOURS=24
@@ -208,7 +211,7 @@ Base path: `/api/v1`. All authenticated routes require `Authorization: Bearer <c
 | `404` | Resource not found or not owned by user                  |
 | `409` | Active/generating lesson exists on `POST /lessons/start` |
 | `422` | Validation error                                         |
-| `429` | Rate limit exceeded                                      |
+| `429` | Rate limit exceeded (`RATE_LIMIT_EXCEEDED` per user, `LLM_RATE_LIMIT_EXCEEDED` global Gemini cap) |
 | `502` | Upstream Gemini failure after retries                    |
 
 
@@ -529,7 +532,10 @@ Prior-lesson context: last **N=5** accomplished lessons (`lessons.payload` summa
 | `MAX_MESSAGE_CHARS`               | 4000    |
 | `GEMINI_TIMEOUT_SECONDS`          | 120     |
 | `CHAT_RATE_LIMIT_PER_HOUR`        | 60      |
-| `LESSON_START_RATE_LIMIT_PER_DAY` | 10      |
+| `LESSON_START_RATE_LIMIT_PER_DAY` | 2       |
+| `LLM_RPM_LIMIT`                   | 15      |
+| `LLM_INPUT_TPM_LIMIT`             | 250000  |
+| `LLM_RPD_LIMIT`                   | 500     |
 | Lesson JSON repair retries        | 1       |
 
 

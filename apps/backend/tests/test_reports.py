@@ -4,6 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -130,3 +131,38 @@ async def test_finish_lesson_applies_report_ops(
         )
     ).scalar_one()
     assert "<!-- section:update_log -->" in row.body
+
+
+async def test_finish_lesson_skips_report_llm_when_global_limit_exceeded(
+    client: AsyncClient, as_principal, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_rpm_limit", 0)
+    calls = {"n": 0}
+
+    async def _fake_generate_json(*, system_instruction: str, history: list, **_kw) -> str:
+        calls["n"] += 1
+        return json.dumps({"ops": []})
+
+    monkeypatch.setattr("app.services.gemini.generate_json", _fake_generate_json)
+
+    user_id = await _sync_user(client, as_principal, "clerk_report_skipped")
+    await _seed_onboarded_user(db_session, user_id)
+    lesson = Lesson(
+        user_id=uuid.UUID(user_id),
+        lesson_number=1,
+        payload={"version": 1, "curriculum": VALID_LESSON_CURRICULUM, "session_summary": None},
+        status=LessonStatus.active,
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(lesson)
+    await db_session.commit()
+
+    resp = await client.post(f"/api/v1/lessons/{lesson.id}/finish")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "accomplished"
+    assert calls["n"] == 0
+
+    await db_session.refresh(lesson)
+    assert lesson.status == LessonStatus.accomplished

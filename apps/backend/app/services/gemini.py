@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -64,7 +64,6 @@ _CONTEXT_LIMIT_MARKERS = (
     "token limit",
     "too many tokens",
     "context_length",
-    "RESOURCE_EXHAUSTED",
 )
 
 
@@ -90,6 +89,9 @@ def _to_contents(history: list[ChatTurn]) -> list[types.Content]:
 
 def _classify_genai_error(exc: GenAIAPIError) -> tuple[str, str]:
     message = str(exc)
+    status = getattr(exc, "status", None) or ""
+    if status == "RESOURCE_EXHAUSTED" or "RESOURCE_EXHAUSTED" in message:
+        return "LLM_QUOTA_EXCEEDED", "quota"
     lowered = message.lower()
     if any(marker.lower() in lowered or marker in message for marker in _CONTEXT_LIMIT_MARKERS):
         return "LLM_CONTEXT_LIMIT", "context_limit"
@@ -148,6 +150,7 @@ async def stream_chat(
     history: list[ChatTurn],
     model: str | None = None,
     timeout_seconds: float | None = None,
+    on_usage: Callable[[int], Awaitable[None]] | None = None,
 ) -> AsyncIterator[str]:
     """Stream a chat completion, yielding text chunks as they arrive.
 
@@ -174,6 +177,8 @@ async def stream_chat(
                 usage = getattr(chunk, "usage_metadata", None)
                 if usage is not None:
                     input_tokens, output_tokens = _usage_tokens(usage)
+                    if on_usage is not None:
+                        await on_usage(input_tokens)
                 text = getattr(chunk, "text", None)
                 if text:
                     yield text
@@ -236,6 +241,7 @@ async def generate_json(
     model: str | None = None,
     timeout_seconds: float | None = None,
     response_schema: type | None = None,
+    on_usage: Callable[[int], Awaitable[None]] | None = None,
 ) -> str:
     """Non-streaming JSON-mode completion for lesson generation
     (ai-api.md "Structured lesson output"): one `generateContent` call,
@@ -312,6 +318,8 @@ async def generate_json(
         raise GeminiError(f"Gemini request failed: {exc}", code="LLM_ERROR", error_type="error") from exc
 
     input_tokens, output_tokens = _usage_tokens(getattr(response, "usage_metadata", None))
+    if on_usage is not None:
+        await on_usage(input_tokens)
     text = getattr(response, "text", None)
     if not text:
         _emit_llm_observability(
