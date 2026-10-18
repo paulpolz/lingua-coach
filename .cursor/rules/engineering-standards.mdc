@@ -1,0 +1,17 @@
+---
+description: Project-wide engineering standards
+alwaysApply: true
+---
+
+# Engineering standards
+
+- Prefer the simplest design that satisfies the requirements.
+- Preserve existing architecture unless there is a demonstrated reason to change it.
+- Follow SOLID where it improves cohesion and reduces coupling; do not add abstractions speculatively.
+- Avoid duplicated business logic, giant functions, giant components, and unrelated responsibilities.
+- Do not introduce a dependency when existing code or platform features solve the problem adequately.
+- Make the smallest coherent change; do not perform unrelated refactors.
+- Document non-obvious decisions and important trade-offs, not self-explanatory code.
+- Never claim tests or performance checks passed unless they were actually run.
+- Report assumptions, unverified checks, and remaining risks.
+  

@@ -1,0 +1,16 @@
+---
+description: Testing and verification requirements
+alwaysApply: true
+---
+
+# Verification
+
+- Inspect the existing test setup and project scripts before choosing commands.
+- For behavior changes, add or update tests for the expected behavior and relevant failure cases.
+- Prefer deterministic tests; mock external Gemini API calls in ordinary unit tests.
+- Run the narrowest relevant tests first, then broader checks when appropriate.
+- Run applicable lint, type-check, test, and build commands.
+- Never weaken assertions, remove tests, or silently skip checks just to obtain a green result.
+- Report exact commands run and their outcomes.
+- If a check cannot run, explain why.
+  
