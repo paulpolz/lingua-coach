@@ -1,0 +1,21 @@
+---
+description: Architecture and documentation conventions
+alwaysApply: true
+---
+
+# Architecture
+
+- React components should focus on presentation and user interaction.
+- Keep API access and reusable business logic in appropriate existing modules.
+- Keep FastAPI endpoints thin where business logic can be separated cleanly.
+- Validate data at trust boundaries and handle external service failures explicitly.
+- Isolate Gemini and LangChain integration details behind clear interfaces when useful.
+- Avoid circular dependencies and unnecessary layers.
+
+# Documentation
+
+- Update documentation when setup, behavior, configuration, API contracts, or architecture changes.
+- Keep examples and commands consistent with the actual repository.
+- Explain why a non-obvious architectural decision exists.
+- Do not add comments that merely paraphrase the next line of code.
+  
