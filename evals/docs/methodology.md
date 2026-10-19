@@ -16,15 +16,20 @@ Offline cases are **hand-authored**, not a random draw of production traffic.
 | Inbox | `evals.mine` stubs (`suite: inbox`) | No until a human promotes them. `--suite regression` does not load this folder |
 
 Replay fixtures freeze one completion per case so CI is deterministic. Live
-Gemini is manual / nightly. Result JSON is tagged with:
+Gemini is manual / nightly.
 
-- `model` — judge / lesson JSON model (`GEMINI_MODEL_LESSON`; chat uses `model_chat`)
-- `skill_sha` — **git tree SHA of `apps/backend/skills/` at HEAD** (`git rev-parse HEAD:apps/backend/skills`).
-  If that ref is missing, we store repo `HEAD` and set `skill_sha_source` to
-  `repo_head` instead of `skills_tree`.
-- `git_sha` — repo HEAD commit
-- `rubric_version` — generation tag (`v1`). Per-case judge blobs also store the
-  concrete file (`lesson_turn_v1`, …)
+The orchestrator is LangSmith `Client.aevaluate` (the same loop as `evaluate`).
+Cases stay the YAML files under `evals/cases/`. They are not copied into a
+LangSmith cloud dataset. `upload_results=False` is the default, so
+
+```bash
+python -m evals.run --suite regression --replay
+```
+
+needs no `LANGSMITH_API_KEY` and no Gemini key. `--upload` is optional. It
+requires `LANGSMITH_API_KEY`, sends synthetic fixture text only, and does not
+upload inbox stubs. The process exit code comes from gated check scores.
+Judge scores stay informational. The runner does not write `evals/results/*.json`.
 
 Inbox stubs from mining are not gated until a human promotes them to
 `cases/regression/` after stripping PII.

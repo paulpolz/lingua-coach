@@ -317,10 +317,9 @@ Respond with a single JSON object only — no markdown, no prose, no code\
     { "id": "warmup", "label": "string", "exercise_set": "Brief description of planned drills" }
   ],
   "input_task": {
-    "type": "listening|reading",
+    "type": "reading",
     "topic": "string",
-    "focus": "what to notice",
-    "resource": null
+    "focus": "what to notice"
   },
   "goal_specific_task": { "label": "string", "format": "email|message|summary|..." },
   "exit_criteria": ["string"],
@@ -330,8 +329,6 @@ Respond with a single JSON object only — no markdown, no prose, no code\
 Do not wrap this in a `version` / `curriculum` / `session_summary` envelope\
  — return only the curriculum object itself, with these exact field names.\
  `slots` and `exit_criteria` must each have at least one item.\
- When `input_task.type` is listening, `resource` must copy\
- `input_assignment.resource` from the user prompt (id, url, synopsis,\
- notice_points). When type is reading, `resource` must be null / omitted.\
- Never invent a URL. Never emit a speaking slot id.
+ `input_task.type` must be reading. Omit `resource`. Never invent a URL.\
+ Never emit a speaking slot id.
 """

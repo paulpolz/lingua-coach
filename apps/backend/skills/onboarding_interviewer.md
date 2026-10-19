@@ -58,7 +58,7 @@ Ask in the **learning language** (wording below is English meaning only):
 Ask in the **learning language**:
 
 - How would you describe your [learning language] today? (Accept self-assessment: A2/B1/B2, "I understand most things but writing is slow", etc. — in any language)
-- What feels easiest — reading, listening, or writing?
+- What feels easiest — reading or writing?
 - What feels hardest or most frustrating?
 - When did you last use [learning language] in a real situation? How did it go?
 
@@ -81,7 +81,7 @@ Ask in the **learning language**:
 
 Ask in the **learning language**:
 
-- Which skills matter most for **your** goal — listening, writing, reading, grammar, vocabulary?
+- Which skills matter most for **your** goal — writing, reading, grammar, vocabulary?
 - Rank your top 3 priorities.
 - Any topics you **must** cover? (e.g. emails, meetings, small talk, presentations, industry vocabulary)
 - Any topics to **avoid or de-emphasize**?
@@ -93,7 +93,7 @@ Ask in the **learning language**:
 - Budget for paid courses or tutors? (none / limited / flexible)
 - Access to a practice partner? (friend, colleague, spouse — how often, how long)
 - Preferred learning style — structured vs conversational, correction-heavy vs fluency-first?
-- Any accessibility or format preferences? (This product is **text chat** plus linked listening clips. There is no in-app speaking. Ask about mobile-friendly short sessions if relevant.)
+- Any accessibility or format preferences? (This product is **text chat**. There is no in-app speaking. Ask about mobile-friendly short sessions if relevant.)
 
 ### 6. Motivation and context (optional)
 
@@ -131,7 +131,7 @@ learner_profile:
     optional_partner_minutes: 0
     intensity: ""         # sustainable | intensive
   focus:
-    skill_priorities: []  # ordered: listening, writing, reading, grammar, vocabulary
+    skill_priorities: []  # ordered: writing, reading, grammar, vocabulary
     topic_priorities: []
     avoid: []
   constraints:

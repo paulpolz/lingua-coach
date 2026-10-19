@@ -460,15 +460,9 @@ function LessonTopBar({
   onRetryFinish: () => void;
 }) {
   const title = curriculum?.lesson_goal ? curriculum.lesson_goal : `Lesson ${lessonNumber}`;
-  const resource = curriculum?.input_task?.resource;
-  const listeningLine =
-    resource?.url && resource.title
-      ? `Today's listening: ${resource.title} · ${Math.max(1, Math.round((resource.duration_sec || 0) / 60))} min`
-      : null;
   const focusParts = [
     curriculum?.grammar_focus ? `Grammar: ${curriculum.grammar_focus}` : null,
     curriculum?.vocab_theme ? `Vocab: ${curriculum.vocab_theme}` : null,
-    listeningLine,
   ].filter(Boolean);
 
   return (
@@ -496,17 +490,6 @@ function LessonTopBar({
             />
           </svg>
         </button>
-
-        {resource?.url && resource.title ? (
-          <a
-            href={resource.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 text-[12px] font-[550] text-accent underline-offset-2 hover:underline"
-          >
-            Listening · {Math.max(1, Math.round((resource.duration_sec || 0) / 60))} min
-          </a>
-        ) : null}
 
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onStop} disabled={isStopping}>
@@ -538,18 +521,6 @@ function LessonTopBar({
               ? focusParts.join(" · ")
               : "Curriculum details aren't available for this lesson yet."}
           </p>
-          {resource?.url && resource.title ? (
-            <p>
-              <a
-                href={resource.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent underline-offset-2 hover:underline"
-              >
-                Open clip
-              </a>
-            </p>
-          ) : null}
         </div>
       ) : null}
 

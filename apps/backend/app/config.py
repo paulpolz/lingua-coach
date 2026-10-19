@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     chat_context_messages: int = 10
     pace_window_hours: int = 24
     skills_dir: str = str(_BACKEND_ROOT / "skills")
-    content_dir: str = str(_BACKEND_ROOT / "content")
 
     @property
     def cors_origin_list(self) -> list[str]:

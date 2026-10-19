@@ -17,7 +17,7 @@ The local MVP loop is implemented and runnable.
 | **Frontend** | Next.js App Router: `/` (sync + redirect), `/sign-in`, `/onboarding`, `/dashboard`, `/lesson/[id]`, `/reports/[slug]`. Chat-first UI. |
 | **Backend** | FastAPI under `/api/v1`. REST + SSE chat. In-process `BackgroundTasks` for lesson generation (single API replica). |
 | **LLM** | Gemini API. Streamed chat (`GEMINI_MODEL_CHAT`, flash-class) and validated lesson JSON (`GEMINI_MODEL_LESSON`, pro-class). |
-| **Pedagogy** | Runtime-loaded Markdown in [`apps/backend/skills/`](./apps/backend/skills/README.md). Skills practiced: **reading**, **writing**, and **listening from a curated clip** (every other lesson). There is no speaking practice. |
+| **Pedagogy** | Runtime-loaded Markdown in [`apps/backend/skills/`](./apps/backend/skills/README.md). Skills practiced: **reading** and **writing**. There is no speaking practice. |
 | **Memory** | Structured artifacts in Postgres: profile, draft/active goal, accepted roadmap, lesson payload, mistake SRS, living markdown reports. Chat rows are split on accept/finish. |
 | **Languages** | Onboarding starts in English to collect native then target language, then coaches in the target. |
 | **Pace** | Sequential integer lessons. At most one `generating` / `active` lesson. 24-hour on-pace window from `started_at`. |
@@ -25,7 +25,7 @@ The local MVP loop is implemented and runnable.
 | **Quality loop** | Offline eval harness with a CI replay gate; online thumbs/CSAT; batch LLM-as-judge; SQL failure miner. |
 | **CI** | GitHub Actions: backend pytest (Postgres 16), frontend lint/typecheck/vitest, `evals-replay` (no Gemini key). |
 
-**Not in this version:** speaking / STT / TTS, billing, multi-replica job queue (Redis/Celery), plan-editor UI, `feedback_giver`, RAG / vector retrieval, LangChain, custom model fine-tuning.
+**Not in this version:** speaking / STT / TTS, billing, multi-replica job queue (Redis/Celery), plan-editor UI, `feedback_giver`, RAG / vector retrieval, custom model fine-tuning.
 
 Production topology is designed (Vercel + Railway + Clerk + Gemini + Cloudflare) but the daily loop is validated locally. Lesson jobs are unsafe across many API replicas by design.
 
@@ -146,7 +146,6 @@ apps/
   frontend/          # Next.js — pages, ClerkProvider, lib/* REST+SSE clients
   backend/           # FastAPI — /api/v1, deps, ORM, services, Alembic
     skills/          # Markdown loaded at runtime as system_instruction
-    content/         # Listening catalog YAML
 evals/               # Offline suites, judges, miner, replay fixtures
 docs/mvp/            # Locked contracts + dated improvement notes
 infra/monitoring/    # Prometheus / Grafana / Loki provisioning
@@ -212,9 +211,9 @@ PYTHONPATH=apps/backend:. python -m evals.run --suite calibration --replay --agr
 PYTHONPATH=apps/backend:. python -m evals.run --suite calibration --agreement --self-consistency 3
 ```
 
-**Replay** loads `evals/fixtures/replay/<id>.json` (`raw_completion`, or `completions[]` for schema-repair — checks run on the last string). CI has no `GEMINI_API_KEY`. Optional canned scores: `evals/fixtures/replay/<id>.judge.json`. **Live** calls the real tutor path, then (if configured) one Gemini `generate_json` judge with a fixed rubric markdown — repair-once, same pattern as lesson generation.
+**Replay** loads `evals/fixtures/replay/<id>.json` (`raw_completion`, or `completions[]` for schema-repair — checks run on the last string). CI has no `GEMINI_API_KEY`. Optional canned scores: `evals/fixtures/replay/<id>.judge.json`. **Live** lesson-generation cases call the lesson graph (one repair, same as the job). Live chat cases still call `stream_chat`. A judge, when configured, is one more evaluator and does not change the exit code.
 
-Each run is tagged with `model`, `skill_sha` (git tree of `apps/backend/skills/` at HEAD), `git_sha`, and `rubric_version` (`v1`). Results: `evals/results/<run_id>.json` (gitignored) plus a markdown summary on stdout.
+LangSmith `aevaluate` is the loop. Cases stay in the YAML files (`upload_results=False` unless `--upload`). Stdout prints gated pass/fail. The runner does not write `evals/results/*.json`.
 
 `expect_fail: true` is for known-bad replay completions: the case **passes** only if a listed check fails. If those checks unexpectedly pass, the case fails. That keeps the detector honest. After an intentional skill / prompt / contract change: run live, confirm behavior (not only JSON parse), copy new completions into replay files, refresh `evals/fixtures/baseline.json` `failed_ids` if the known-fail set changed, land replay + baseline **in the same PR** as the skill change.
 
@@ -288,40 +287,17 @@ Commands, YAML contract, check catalog: [`evals/README.md`](./evals/README.md). 
 Immediate product/engine gaps (still post-MVP, not started):
 
 - `feedback_giver` — progress dashboard, weekly gates, automated replans. Session summaries and reports already exist; the closed analysis loop does not.
-- **Voice** — STT/TTS and real speaking practice; reading, writing, and linked-clip listening until then.
+- **Voice** — STT/TTS and real speaking practice; reading and writing until then.
 - **Job queue** — Redis/Celery (or equivalent) before a second API replica. In-process `BackgroundTasks` is a single-instance constraint.
 - **Judge calibration** — independent double-label on the calibration set; promote a dimension to the ship gate only after agreement is documented.
 
-The next architecture bet under consideration is **RAG over teaching knowledge**, with **LangChain / LangGraph** for orchestration and **LangSmith or DeepEval** for traces/eval — see [`docs/mvp/llm_improvement_20260823/rag_langchain.md`](./docs/mvp/llm_improvement_20260823/rag_langchain.md). That is a design note, not an implementation.
+Shipped agent pieces:
 
-### What we would change (if we go this way)
+- **Gemini client** — `ChatGoogleGenerativeAI` inside [`apps/backend/app/services/gemini.py`](./apps/backend/app/services/gemini.py). Chat and lesson JSON still go through `stream_chat` and `generate_json`.
+- **Lesson graph** — one in-process LangGraph `StateGraph` (generate, validate, one repair). The lesson job invokes it.
+- **Evals** — LangSmith `aevaluate` runs the YAML cases. `upload_results=False` unless `--upload`. Checks stay in `evals/checks.py`.
 
-Today every Gemini call gets the **same** skill Markdown plus a **SQL-assembled** compact context (profile, roadmap slice, last 5 lessons, due mistakes). That already works; the pain is scale: static instructions do not vary by the learner’s current weakness, and stuffing more history into the prompt is the wrong long-term memory model.
-
-```
-PostgreSQL  = what we know about this learner (profile, mastery, errors)
-pgvector    = which teaching knowledge is relevant (grammar, templates, error patterns)
-LangChain   = how we connect models, prompts, retrieval, tools
-LangGraph   = how we control a branching multi-step tutor workflow (only if we need it)
-```
-
-Learner facts stay SQL. Teaching material (curriculum snippets, grammar notes, exercise templates, L1 error patterns) would be chunked, embedded, and retrieved with metadata filters (language, CEFR, skill, topic). Hybrid: SQL decides “today’s objective = past tense / travel / A2”; vectors fetch the few relevant chunks; the LLM generates from that, not from the whole skill pack. **Do not embed the user profile.**
-
-| Option | Pros | Cons |
-| --- | --- | --- |
-| **RAG + pgvector** | Pull only the grammar, templates, and error notes needed for this turn. Postgres stays source of truth. Prompts stay smaller as history grows. | Chunking and embeddings add ops work. Bad retrieval can surface the wrong note or a fake citation. Helps when the knowledge base is large — less so when the skill file is only ~4 KB. Still need retrieval evals. |
-| **LangChain** | One toolkit for prompts, retrieval, structured output, streaming, and tools. Fits “student + memory + chunks → lesson.” | We already have Gemini, SSE, Pydantic, and `prompt_assembly`. Adds another layer on a thin SDK, with API churn and little gain if we rewrite working code. |
-| **LangGraph** | Clear state machine for “review vs teach vs practice,” retries, human-in-the-loop, and later multi-step agents. | Too much for our two call types today. Onboarding → lesson → chat → finish already lives in FastAPI and the DB. Add it only when a flow truly branches in-process. |
-
-The eval loop in `evals/` is custom and already the ship gate. A library is optional — adopt only if it reduces rubric drift or tracing cost. The evals design note said a 100-line judge module is enough ([§6.2](./docs/mvp/evals_improvement_20260830/evals_improvement_20260830.md)).
-
-| Option | Pros | Cons |
-| --- | --- | --- |
-| **Keep `evals/`** | Runs in CI with no API key. Custom checks fit this product (no English leakage, invented milestones). Same prompts as production. Miner → inbox → regression is already built. | We maintain rubrics, agreement math, and the runner. No hosted trace UI. The live judge is a Gemini call we own. |
-| **LangSmith** | Traces every LLM call, prompt versions, datasets, and comparison runs. Pairs well with LangChain. Hosted evals and annotation queues. | SaaS cost. Learner chat in traces is PII. Overlaps the replay gate we already use to block PRs. Another dashboard beside Grafana. Vendor lock-in on the quality loop. |
-| **DeepEval** | Local-first, pytest-style LLM judges. RAG metrics (faithfulness, relevancy) if we add retrieval. | Another framework around judges we already run. Moving v1 rubrics risks silent score drift. Custom immersion and milestone checks stay ours. Does not replace CI replay fixtures. |
-
-Practical order if we proceed: (1) keep the replay gate as the ship decision, (2) split skill Markdown into instructions vs teachable knowledge and add `pgvector` retrieval behind the existing call types, (3) add retrieval-quality cases to `evals/` (deterministic first), (4) consider DeepEval **only** for RAG metrics or LangSmith **only** if we want traces — not as a replacement for `--replay`.
+RAG / vector retrieval is not implemented. That separate change is [`docs/mvp/llm_improvement_20260823/rag_langchain.md`](./docs/mvp/llm_improvement_20260823/rag_langchain.md).
 
 ---
 

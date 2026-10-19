@@ -216,13 +216,13 @@ def test_canned_invalid_scores_do_not_raise() -> None:
 
 @pytest.mark.asyncio
 async def test_maybe_judge_swallows_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
-    from evals.run import _maybe_judge
+    from evals.run import judge_case
 
     def boom(_name: str):
         raise RuntimeError("rubric lookup exploded")
 
     monkeypatch.setattr("evals.run.resolve_rubric", boom)
-    record = await _maybe_judge(
+    record = await judge_case(
         case={"checks": {"judge": {"rubric": "lesson_turn_v1"}}},
         case_id="gated_case",
         suite="regression",

@@ -11,7 +11,7 @@ Gemini-backed LLM layer used by the backend learning engine. The product is orch
 ## Principles
 
 1. **Public API only** — Google Gemini (AI Studio / Gemini API); do not train models for MVP
-2. **Single provider** — one Gemini client implementation; no multi-provider abstraction in MVP
+2. **Single provider** — Gemini only. The client is LangChain's `ChatGoogleGenerativeAI` inside `app/services/gemini.py`. No second vendor and no multi-provider abstraction in MVP.
 3. **Structured outputs for lessons** — UI-stable JSON, not free-form markdown as the contract
 4. **Two model IDs in config** — faster/cheaper model for chat; stronger model for lesson JSON
 5. **Transport independence** — browser SSE/REST does not dictate the provider; backend maps Gemini streams into SSE
@@ -23,8 +23,8 @@ Gemini-backed LLM layer used by the backend learning engine. The product is orch
 | Role | Choice |
 |------|------|
 | Provider | **Gemini** only |
-| Client | Single Gemini SDK/HTTP client |
-| API surface | **`generateContent`** (stream for chat) — not Interactions API / managed agents |
+| Client | LangChain `ChatGoogleGenerativeAI`, only inside `gemini.py` |
+| API surface | Gemini `generateContent` via that chat model (stream for chat). An in-process LangGraph `StateGraph` may run lesson generation. Not the Interactions API, LangGraph Platform, or a managed agent server. |
 | Chat / onboarding / corrections | Config key e.g. `GEMINI_MODEL_CHAT` (flash-class) |
 | Lesson generation | Config key e.g. `GEMINI_MODEL_LESSON` (stronger / pro-class) |
 | Fallbacks / other vendors | **Out of MVP** |
@@ -128,7 +128,7 @@ Gemini is **stateless** — no session memory on Google's side. Each call: FastA
 ## Out of scope (MVP)
 
 - **`feedback_giver`** call type (post-lesson progress analysis, weekly gates)
-- RAG / vector retrieval; Gemini managed agents (Interactions API)
+- RAG / vector retrieval; Gemini managed agents (Interactions API); LangGraph Platform or any hosted agent server
 - Multi-provider clients or automatic failover
 - Full multi-step learning pipeline / weekly report generator
 - Analysis journey skill breakdowns and time-to-goal estimation

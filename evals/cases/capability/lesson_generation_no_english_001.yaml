@@ -18,4 +18,4 @@ checks:
   judge:
     rubric: lesson_generation_v1
 notes: |
-  Learner-facing curriculum strings (goals, labels, exercise_set, exit_criteria) are Spanish. JSON keys stay English. input_task.type remains the schema enum listening.
+  Learner-facing curriculum strings (goals, labels, exercise_set, exit_criteria) are Spanish. JSON keys stay English. input_task.type remains the schema enum reading.

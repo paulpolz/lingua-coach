@@ -198,10 +198,10 @@ async def test_active_lesson_is_null_when_none_exists(client: AsyncClient, as_pr
     assert resp.json() is None
 
 
-async def test_listening_day_overwrites_invented_resource(
+async def test_invented_clip_url_is_not_persisted(
     client: AsyncClient, as_principal, db_session, mock_generate_json
 ) -> None:
-    user_id = await _sync_user(client, as_principal, "clerk_job_listening_overwrite")
+    user_id = await _sync_user(client, as_principal, "clerk_job_clip_stripped")
     await _seed_onboarded_user(db_session, user_id)
     profile = Profile(
         user_id=uuid.UUID(user_id),
@@ -213,42 +213,29 @@ async def test_listening_day_overwrites_invented_resource(
     await db_session.commit()
 
     fake = copy.deepcopy(VALID_LESSON_CURRICULUM)
-    fake["input_task"]["resource"]["id"] = "invented"
-    fake["input_task"]["resource"]["url"] = "https://www.youtube.com/watch?v=dQw4w9wgGcQ"
-    mock_generate_json([json.dumps(fake)])
-
-    start_resp = await client.post("/api/v1/lessons/start")
-    ids = start_resp.json()
-    lesson_resp = await client.get(f"/api/v1/lessons/{ids['lesson_id']}")
-    resource = lesson_resp.json()["payload"]["curriculum"]["input_task"]["resource"]
-    assert resource["id"] != "invented"
-    assert "dQw4w9wgGcQ" not in resource["url"]
-    assert lesson_resp.json()["payload"]["curriculum"]["input_task"]["type"] == "listening"
-
-
-async def test_listening_day_fills_omitted_resource(
-    client: AsyncClient, as_principal, db_session, mock_generate_json
-) -> None:
-    user_id = await _sync_user(client, as_principal, "clerk_job_listening_omit")
-    await _seed_onboarded_user(db_session, user_id)
-    profile = Profile(
-        user_id=uuid.UUID(user_id),
-        target_language="es",
-        target_level="A2",
-        focus={"topic_priorities": ["hotel", "viajes"]},
-    )
-    db_session.add(profile)
-    await db_session.commit()
-
-    fake = copy.deepcopy(VALID_LESSON_CURRICULUM)
-    fake["input_task"].pop("resource")
+    fake["input_task"] = {
+        "type": "listening",
+        "topic": "A team retrospective meeting",
+        "focus": "Notice past simple vs present perfect usage",
+        "resource": {
+            "id": "invented",
+            "kind": "video",
+            "title": "Fake clip",
+            "url": "https://www.youtube.com/watch?v=dQw4w9wgGcQ",
+            "duration_sec": 60,
+            "source": "invented",
+            "captions": "none",
+            "synopsis": "fake",
+            "notice_points": ["articles"],
+        },
+    }
     mock_generate_json([json.dumps(fake)])
 
     start_resp = await client.post("/api/v1/lessons/start")
     ids = start_resp.json()
     lesson_resp = await client.get(f"/api/v1/lessons/{ids['lesson_id']}")
     input_task = lesson_resp.json()["payload"]["curriculum"]["input_task"]
-    assert input_task["type"] == "listening"
-    assert input_task["resource"]["id"]
-    assert input_task["resource"]["url"].startswith("http")
+    assert input_task["type"] == "reading"
+    assert "resource" not in input_task
+    assert "dQw4w9wgGcQ" not in json.dumps(input_task)
 

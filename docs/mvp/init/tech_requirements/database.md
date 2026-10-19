@@ -258,7 +258,7 @@ Canonical store for **lesson curriculum + session outcome** ([exercise_tutor.md]
         "exercise_set": "Brief description of planned drills — not full chat scripts"
       }
     ],
-    "input_task": { "type": "listening | reading", "topic": "string", "focus": "string" },
+    "input_task": { "type": "reading", "topic": "string", "focus": "string" },
     "goal_specific_task": { "label": "string", "format": "string" },
     "exit_criteria": ["string"],
     "partner_session": null

@@ -17,7 +17,7 @@ def test_valid_curriculum_fixture_validates() -> None:
     curriculum = LessonCurriculum.model_validate(VALID_LESSON_CURRICULUM)
     assert curriculum.lesson_goal == VALID_LESSON_CURRICULUM["lesson_goal"]
     assert len(curriculum.slots) == 2
-    assert curriculum.input_task.type == "listening"
+    assert curriculum.input_task.type == "reading"
     assert curriculum.partner_session is None
 
 
@@ -44,7 +44,7 @@ def test_curriculum_rejects_missing_required_field() -> None:
 
 def test_curriculum_rejects_invalid_input_task_type() -> None:
     bad = copy.deepcopy(VALID_LESSON_CURRICULUM)
-    bad["input_task"]["type"] = "watching"  # only listening|reading are valid
+    bad["input_task"]["type"] = "watching"  # only reading is valid
     with pytest.raises(ValidationError):
         LessonCurriculum.model_validate(bad)
 
@@ -63,19 +63,24 @@ def test_curriculum_rejects_malformed_slot_entry() -> None:
         LessonCurriculum.model_validate(bad)
 
 
-def test_curriculum_rejects_listening_without_resource() -> None:
-    bad = copy.deepcopy(VALID_LESSON_CURRICULUM)
-    bad["input_task"] = {
+def test_curriculum_coerces_listening_to_reading_and_drops_resource() -> None:
+    payload = copy.deepcopy(VALID_LESSON_CURRICULUM)
+    payload["input_task"] = {
         "type": "listening",
         "topic": "A meeting",
         "focus": "Tense contrast",
+        "resource": {
+            "id": "invented",
+            "kind": "audio",
+            "title": "Fake clip",
+            "url": "https://example.com/clip",
+            "duration_sec": 60,
+            "source": "invented",
+            "captions": "none",
+            "synopsis": "fake",
+            "notice_points": ["articles"],
+        },
     }
-    with pytest.raises(ValidationError):
-        LessonCurriculum.model_validate(bad)
-
-
-def test_curriculum_rejects_reading_with_resource() -> None:
-    bad = copy.deepcopy(VALID_LESSON_CURRICULUM)
-    bad["input_task"]["type"] = "reading"
-    with pytest.raises(ValidationError):
-        LessonCurriculum.model_validate(bad)
+    curriculum = LessonCurriculum.model_validate(payload)
+    assert curriculum.input_task.type == "reading"
+    assert "resource" not in curriculum.input_task.model_dump()

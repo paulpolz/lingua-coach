@@ -11,7 +11,7 @@ Keep four learner-facing markdown files current without regenerating accumulated
 - **progress** — category table (level, target, %, weaknesses, recommendations); latest session findings at the top; running update log
 - **errors_log** — live pattern tracker (active/closed) at the top; day-by-day mistakes + fixes; word-family / sound-alike list
 - **roadmap** — milestones from diagnostic toward the learner's stated goal, success criteria, scope notes
-- **four_week_plan** — day-by-day grammar / vocabulary / listening / reading / writing / goal-specific focus for the current block
+- **four_week_plan** — day-by-day grammar / vocabulary / reading / writing / goal-specific focus for the current block
 
 ## Language
 

@@ -19,6 +19,10 @@ dependencies = [
     "prometheus-client>=0.26.0",
     "prometheus-fastapi-instrumentator>=8.1.0",
     "python-json-logger>=4.1.0",
+    "langchain-core>=1.2,<2",
+    "langchain-google-genai>=4.2.3,<4.4",
+    "langgraph>=1.0,<2",
+    "langsmith>=0.3,<1",
 ]
 
 [project.optional-dependencies]

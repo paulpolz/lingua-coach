@@ -1,4 +1,6 @@
-# Eval harness — how to run, add a case, and read the numbers.
+# Evals — how to run, add a case, and read the numbers.
+
+LangSmith `aevaluate` runs the cases. The YAML files are still the suite.
 
 Stranger-facing slice (problem, metrics, Grafana, L1-leakage loop):
 [`docs/shareable.md`](docs/shareable.md).
@@ -32,18 +34,18 @@ PYTHONPATH=apps/backend:. uv run --project apps/backend python -m evals.run --su
 Other flags: `--mode onboarding|lesson|lesson_generation`, `--id <case_id>`,
 `--baseline evals/fixtures/baseline.json` (skipped if the file is missing),
 `--judge` (default when `checks.judge` is set), `--no-judge`,
-`--self-consistency [N]` (default N=3; live only), `--agreement`.
+`--self-consistency [N]` (default N=3; live only), `--agreement`,
+`--upload` (optional LangSmith upload; needs `LANGSMITH_API_KEY`; inbox stubs
+are not uploaded). Default is local only (`upload_results=False`).
 
 Calibration and inbox are **not** ship gates. `--suite all` does not load them.
 `--suite inbox` / `--suite calibration` run those folders but a check failure does not exit 1
 (harness errors still do). First calibration `labels:` are **author-proposed**
 pending independent double-label — see `evals/docs/methodology.md`.
 
-Results: `evals/results/<run_id>.json` (gitignored) plus a markdown summary on stdout.
-Each run is tagged with `model`, `skill_sha` (git tree of `apps/backend/skills/` at HEAD, else
-repo HEAD), and `rubric_version` (`v1`; per-case judge uses `lesson_turn_v1` etc.).
-Exit 1 if any **gated** case fails (capability / regression, after `expect_fail`).
-Judge scores never change that exit code.
+Stdout prints gated pass/fail. Exit 1 if any **gated** case fails (capability /
+regression, after `expect_fail`, plus harness errors). Judge scores never change
+that exit code. Results are not written to `evals/results/`.
 
 ## Enable the required GitHub check
 
@@ -124,7 +126,7 @@ Spanish-target immersion cases should not reuse English-target roadmaps.
 
 1. Run live: `PYTHONPATH=apps/backend python -m evals.run --suite regression` (API key required).
 2. Confirm behavior is correct (not just that JSON parsed).
-3. Copy new completions from `evals/results/<run_id>.json` → `evals/fixtures/replay/<id>.json`.
+3. Save the live completion into `evals/fixtures/replay/<id>.json` (`raw_completion`, or `completions` when repair ran). The runner does not write `evals/results/`.
 4. Refresh `evals/fixtures/baseline.json` `failed_ids` if the known-fail set changed.
 5. Land replay + baseline **in the same PR** as the skill change. CI replay then locks the new outputs.
 
@@ -144,7 +146,6 @@ Spanish-target immersion cases should not reuse English-target roadmaps.
 | `exit_criteria_nonempty_unique` | exit criteria non-empty, non-blank, unique |
 | `invented_milestone` | `milestone_index` exists on the fixture roadmap |
 | `one_question_rule` | at most one `?` in stripped prose |
-| `catalog_url_used` | assembled lesson prompt and completion contain the fixture `input_task.resource.url`, and no other YouTube video id |
 
 ## Judges (informational — not the CI gate)
 

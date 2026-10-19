@@ -1,8 +1,10 @@
-"""Offline eval runner — assemble production prompts, replay or call Gemini, run checks.
+"""Offline eval entry point. Loads YAML cases and calls LangSmith `aevaluate`.
 
 From repo root:
 
-    PYTHONPATH=apps/backend python -m evals.run --suite regression --replay
+    PYTHONPATH=apps/backend:. python -m evals.run --suite regression --replay
+
+`upload_results=False` unless `--upload` is set. Cases stay in the YAML files.
 """
 
 from __future__ import annotations
@@ -10,12 +12,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import subprocess
+import os
 import sys
-import traceback
-from datetime import datetime, timezone
+import uuid
+import warnings
 from pathlib import Path
 from typing import Any, Literal
+
+import requests
+from langsmith import Client
+from langsmith.schemas import Example, LangSmithInfo
 
 try:
     import yaml
@@ -27,21 +33,13 @@ except ImportError as exc:  # pragma: no cover - dependency hint
 
 EVALS_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = EVALS_ROOT.parent
-SKILLS_GIT_TREE = "apps/backend/skills"
 
 if str(REPO_ROOT / "apps" / "backend") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "apps" / "backend"))
 
 try:
-    from pydantic import ValidationError
-
-    from app.config import settings
     from app.services.gemini import ChatTurn, GeminiError, generate_json, stream_chat
-    from app.services.lesson_generation import _build_repair_prompt, _parse_curriculum
-    from app.services.listening_catalog import (
-        assignment_from_generation_context,
-        enrich_generation_context,
-    )
+    from app.services.lesson_graph import LessonGenerationError, invoke_lesson_graph
     from app.services.prompt_assembly import (
         build_generation_user_prompt,
         lesson_curriculum_snippet_from_payload,
@@ -61,7 +59,7 @@ from evals.checks import CheckContext, run_checks
 from evals.judges.agreement import summarize_agreement
 from evals.judges.runner import (
     RUBRIC_GENERATION,
-    RUBRICS,
+    canned_to_result,
     judge_with_optional_repeats,
     load_canned_judge,
     resolve_rubric,
@@ -132,6 +130,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Compare judge scores (live or canned) to labels: ; print %% agree and Cohen's κ.",
     )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help=(
+            "Upload the experiment to LangSmith (needs LANGSMITH_API_KEY). "
+            "Default is local only. Inbox stubs are not uploaded."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -157,36 +163,6 @@ def _suites_to_load(suite_arg: str) -> list[str]:
     if suite_arg == "all":
         return ["capability", "regression"]
     return [suite_arg]
-
-
-def _git_rev_parse(ref: str) -> str | None:
-    try:
-        out = subprocess.check_output(
-            ["git", "rev-parse", ref],
-            cwd=REPO_ROOT,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        return out.strip() or None
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
-def _git_sha() -> str | None:
-    """Repo HEAD commit SHA."""
-    return _git_rev_parse("HEAD")
-
-
-def _skill_sha() -> tuple[str | None, str]:
-    """Git tree SHA of backend skills at HEAD (`git rev-parse HEAD:apps/backend/skills`).
-
-    Falls back to repo HEAD if the skills tree is unavailable. See
-    evals/docs/methodology.md — `skill_sha` is the skills tree when present.
-    """
-    tree = _git_rev_parse(f"HEAD:{SKILLS_GIT_TREE}")
-    if tree:
-        return tree, "skills_tree"
-    return _git_sha(), "repo_head"
 
 
 def _load_fixture(case: dict[str, Any]) -> dict[str, Any]:
@@ -431,42 +407,10 @@ def assemble_case(
     if mode == "lesson_generation":
         system = lesson_generation_system_instruction(native, target)
         context = _generation_context(fixture)
-        prompt = build_generation_user_prompt(enrich_generation_context(context))
+        prompt = build_generation_user_prompt(context)
         return system, None, prompt
 
     raise CaseError(f"unknown mode: {mode!r}")
-
-
-async def _stream_once(system_instruction: str, history: list[ChatTurn]) -> str:
-    parts: list[str] = []
-    async for chunk in stream_chat(system_instruction=system_instruction, history=history):
-        parts.append(chunk)
-    return "".join(parts)
-
-
-async def _generate_with_optional_repair(
-    system_instruction: str,
-    prompt: str,
-    assignment: Any | None = None,
-) -> list[str]:
-    """Match production: one generate_json, then at most one schema repair."""
-    completions: list[str] = []
-    raw = await generate_json(
-        system_instruction=system_instruction,
-        history=[ChatTurn(role="user", text=prompt)],
-    )
-    completions.append(raw)
-    try:
-        _parse_curriculum(raw, assignment)
-        return completions
-    except (json.JSONDecodeError, ValidationError) as exc:
-        repair_prompt = _build_repair_prompt(prompt, raw, exc)
-        raw_retry = await generate_json(
-            system_instruction=system_instruction,
-            history=[ChatTurn(role="user", text=repair_prompt)],
-        )
-        completions.append(raw_retry)
-        return completions
 
 
 def _deterministic_names(case: dict[str, Any]) -> list[str]:
@@ -506,22 +450,70 @@ def _case_labels(case: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _load_baseline(path: Path | None) -> dict[str, Any] | None:
-    if path is None:
-        path = DEFAULT_BASELINE if DEFAULT_BASELINE.is_file() else None
-    if path is None:
-        return None
-    path = Path(path)
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
+def score_case(
+    *,
+    case: dict[str, Any],
+    fixture: dict[str, Any],
+    completion: str,
+    harness_error: str | None,
+    suite: str,
+) -> dict[str, Any]:
+    """Score deterministic checks. `gate` is 0 only when the process should exit 1.
+
+    `expect_fail` inverts a real check result. A harness error or an unknown
+    check name is a gate failure either way.
+    """
+    if harness_error:
+        return {
+            "checks": 0,
+            "gate": 0,
+            "comment": harness_error,
+            "checks_ok": False,
+            "ran": False,
+        }
+    native, target = _locale(case, fixture)
+    results = run_checks(
+        _deterministic_names(case),
+        CheckContext(
+            raw_completion=completion,
+            locale_native=native,
+            locale_target=target,
+            fixture=fixture,
+            mode=str(case.get("mode") or ""),
+            case=case,
+        ),
+    )
+    unknown = [item for item in results if item.unknown]
+    if unknown:
+        return {
+            "checks": 0,
+            "gate": 0,
+            "comment": unknown[0].detail,
+            "checks_ok": False,
+            "ran": True,
+        }
+    checks_ok = all(item.passed for item in results) if results else True
+    if _expect_fail(case):
+        passed = not checks_ok
+        comment = "expect_fail: checks unexpectedly passed" if checks_ok else ""
+    else:
+        passed = checks_ok
+        if checks_ok:
+            comment = ""
+        else:
+            failed = [item.name for item in results if not item.passed]
+            comment = "checks failed: " + ", ".join(failed)
+    gate = 0 if suite in GATED_SUITES and not passed else 1
+    return {
+        "checks": 1 if passed else 0,
+        "gate": gate,
+        "comment": comment,
+        "checks_ok": checks_ok,
+        "ran": True,
+    }
 
 
-async def _maybe_judge(
+async def judge_case(
     *,
     case: dict[str, Any],
     case_id: str,
@@ -533,7 +525,7 @@ async def _maybe_judge(
     enable_judge: bool,
     self_consistency: int | None,
 ) -> dict[str, Any] | None:
-    """Informational only — never used as a ship-gate signal. Never raises."""
+    """Informational judge. Never raises, and its score is not a ship gate."""
     if not enable_judge:
         return None
     spec_raw = _judge_spec(case)
@@ -550,11 +542,8 @@ async def _maybe_judge(
                     source="skipped",
                     skip_reason="replay: no canned fixtures/replay/<id>.judge.json (Gemini not called)",
                 ).as_record()
-            from evals.judges.runner import canned_to_result
-
             return canned_to_result(canned, spec).as_record()
 
-        # Live: skip unusable output on gated suites; calibration still scores fail labels.
         if not checks_ok and suite in GATED_SUITES:
             return JudgeCallResult(
                 rubric_version=spec.version,
@@ -571,7 +560,6 @@ async def _maybe_judge(
         repeats = 1
         if self_consistency is not None and self_consistency > 1:
             repeats = self_consistency
-
         result = await judge_with_optional_repeats(
             spec,
             case=case,
@@ -597,219 +585,132 @@ async def _maybe_judge(
         ).as_record()
 
 
-async def _run_case(
-    *,
-    case: dict[str, Any],
-    source: Path,
-    replay: bool,
-    enable_judge: bool,
-    self_consistency: int | None,
-) -> dict[str, Any]:
-    case_id = str(case.get("id") or source.stem)
-    suite = str(case.get("suite") or source.parent.name)
+class _NoNetworkSession(requests.Session):
+    """Answers LangSmith client calls without sending fixture text anywhere."""
+
+    def request(self, method, url, **kwargs):  # type: ignore[override]
+        response = requests.Response()
+        response.status_code = 200
+        response.url = url
+        response._content = b"{}"
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+
+def _langsmith_client(*, upload: bool) -> Client:
+    if upload:
+        return Client()
+    # Local runs still construct trace objects. Skip zstd so the client does not
+    # warn, and the session below drops the bytes instead of posting them.
+    os.environ["LANGSMITH_DISABLE_RUN_COMPRESSION"] = "true"
+    return Client(
+        api_url="http://127.0.0.1:9",
+        api_key="local-only",
+        info=LangSmithInfo(version="local"),
+        session=_NoNetworkSession(),
+    )
+
+
+async def _target(inputs: dict[str, Any]) -> dict[str, Any]:
+    """One example. Replay returns the frozen completion. Live lesson cases run the graph."""
+    load_error = inputs.get("load_error")
+    if load_error:
+        return {"completion": "", "completions": [], "harness_error": str(load_error)}
+    case = inputs["case"]
+    case_id = str(inputs["case_id"])
+    fixture = inputs.get("fixture") or {}
     mode = case.get("mode")
-    labels = _case_labels(case)
-    record: dict[str, Any] = {
-        "id": case_id,
-        "suite": suite,
-        "mode": mode,
-        "path": str(source.relative_to(EVALS_ROOT)),
-        "expect_fail": _expect_fail(case),
-        "gated": suite in GATED_SUITES,
-        "passed": False,
-        "error": None,
-        "checks": [],
-        "completions": [],
-        "judge": None,
-        "labels": labels,
-    }
     try:
         if mode not in MODES:
             raise CaseError(f"mode must be one of {MODES}, got {mode!r}")
-        fixture = _load_fixture(case)
-        native, target = _locale(case, fixture)
-        system, history, gen_prompt = assemble_case(case, fixture)
-
-        if replay:
+        system, history, prompt = assemble_case(case, fixture)
+        if inputs.get("replay"):
             completions = _load_replay(case_id, case)
-        elif mode == "lesson_generation":
-            assert gen_prompt is not None
-            assignment = assignment_from_generation_context(_generation_context(fixture))
-            completions = await _generate_with_optional_repair(
-                system, gen_prompt, assignment
-            )
-        else:
-            assert history is not None
-            completions = [await _stream_once(system, history)]
-
-        record["completions"] = completions
-        raw = completions[-1]
-        check_names = _deterministic_names(case)
-        ctx = CheckContext(
-            raw_completion=raw,
-            locale_native=native,
-            locale_target=target,
-            fixture=fixture,
-            mode=str(mode),
-            case=case,
-        )
-        results = run_checks(check_names, ctx)
-        record["checks"] = [
-            {"name": r.name, "passed": r.passed, "detail": r.detail, "unknown": r.unknown}
-            for r in results
-        ]
-        unknown = [r for r in results if r.unknown]
-        if unknown:
-            record["error"] = unknown[0].detail
-            record["passed"] = False
-            record["gated"] = True
-            record["judge"] = await _maybe_judge(
-                case=case,
-                case_id=case_id,
-                suite=suite,
-                fixture=fixture,
-                completion=raw,
-                checks_ok=False,
-                replay=replay,
-                enable_judge=enable_judge,
-                self_consistency=self_consistency,
-            )
-            return record
-
-        checks_ok = all(r.passed for r in results) if results else True
-        if record["expect_fail"]:
-            record["passed"] = not checks_ok
-            if checks_ok:
-                record["error"] = "expect_fail: checks unexpectedly passed"
-        else:
-            record["passed"] = checks_ok
-            if not checks_ok:
-                failed = [r.name for r in results if not r.passed]
-                record["error"] = "checks failed: " + ", ".join(failed)
-
-        record["judge"] = await _maybe_judge(
-            case=case,
-            case_id=case_id,
-            suite=suite,
-            fixture=fixture,
-            completion=raw,
-            checks_ok=checks_ok,
-            replay=replay,
-            enable_judge=enable_judge,
-            self_consistency=self_consistency,
-        )
+            if mode == "lesson_generation":
+                state = await invoke_lesson_graph(
+                    prompt=prompt or "",
+                    system_instruction=system,
+                    replay_completions=completions,
+                )
+                completions = list(state.get("completions") or completions)
+            return {
+                "completion": completions[-1],
+                "completions": completions,
+                "harness_error": None,
+            }
+        if mode == "lesson_generation":
+            try:
+                state = await invoke_lesson_graph(
+                    prompt=prompt or "",
+                    system_instruction=system,
+                )
+                completions = list(state.get("completions") or [])
+            except LessonGenerationError as exc:
+                completions = list(exc.completions)
+            if not completions:
+                raise CaseError("lesson graph returned no completion")
+            return {
+                "completion": completions[-1],
+                "completions": completions,
+                "harness_error": None,
+            }
+        if history is None:
+            raise CaseError(f"{mode} case produced no chat history")
+        parts: list[str] = []
+        async for chunk in stream_chat(system_instruction=system, history=history):
+            parts.append(chunk)
+        text = "".join(parts)
+        return {"completion": text, "completions": [text], "harness_error": None}
     except CaseError as exc:
-        record["error"] = str(exc)
-        record["passed"] = False
-        record["gated"] = True
+        return {"completion": "", "completions": [], "harness_error": str(exc)}
     except GeminiError as exc:
-        record["error"] = f"GeminiError {exc.code}: {exc}"
-        record["passed"] = False
-        record["gated"] = True
-    except Exception as exc:  # noqa: BLE001
-        record["error"] = f"{type(exc).__name__}: {exc}"
-        record["traceback"] = traceback.format_exc()
-        record["passed"] = False
-        record["gated"] = True
-    return record
+        return {
+            "completion": "",
+            "completions": [],
+            "harness_error": f"GeminiError {exc.code}: {exc}",
+        }
+    except Exception as exc:  # noqa: BLE001 — a target crash is a gated case error
+        return {
+            "completion": "",
+            "completions": [],
+            "harness_error": f"{type(exc).__name__}: {exc}",
+        }
 
 
-def _markdown_summary(payload: dict[str, Any]) -> str:
-    summary = payload["summary"]
-    lines = [
-        f"# Eval run `{payload['run_id']}`",
-        "",
-        f"- replay: `{payload['replay']}`",
-        f"- suite filter: `{payload['suite']}`",
-        f"- model: `{payload.get('model')}`",
-        f"- model_chat: `{payload.get('model_chat')}`",
-        f"- model_lesson: `{payload.get('model_lesson')}`",
-        f"- skill_sha: `{payload.get('skill_sha')}` ({payload.get('skill_sha_source')})",
-        f"- rubric_version: `{payload.get('rubric_version')}`",
-        "",
-        "| Suite | Pass | Fail |",
-        "| --- | ---: | ---: |",
-    ]
-    by_suite = summary.get("by_suite") or {}
-    for name in sorted(by_suite):
-        row = by_suite[name]
-        lines.append(f"| {name} | {row['passed']} | {row['failed']} |")
-    lines.extend(
-        [
-            "",
-            f"**Gated pass/fail:** {summary['gated_passed']} pass / {summary['gated_failed']} fail",
-        ]
-    )
-    failed_ids = summary.get("failed_ids") or []
-    if failed_ids:
-        lines.append("")
-        lines.append("Failed cases:")
-        for case in payload["cases"]:
-            if case["id"] in failed_ids:
-                lines.append(f"- `{case['id']}` — {case.get('error') or 'failed'}")
-    new_failures = summary.get("new_failures") or []
-    resolved = summary.get("resolved") or []
-    if payload.get("baseline_path"):
-        lines.append("")
-        lines.append(f"Baseline: `{payload['baseline_path']}`")
-        lines.append(
-            "New failures vs baseline: "
-            + (", ".join(f"`{i}`" for i in new_failures) if new_failures else "none")
+def _examples(loaded: list[tuple[Path, dict[str, Any]]], args: argparse.Namespace) -> list[Example]:
+    examples: list[Example] = []
+    for path, case in loaded:
+        case_id = str(case.get("id") or path.stem)
+        suite = str(case.get("suite") or path.parent.name)
+        load_error = case.get("_load_error")
+        fixture: dict[str, Any] = {}
+        if not load_error:
+            try:
+                fixture = _load_fixture(case)
+            except CaseError as exc:
+                load_error = str(exc)
+        examples.append(
+            Example(
+                id=uuid.uuid4(),
+                inputs={
+                    "case": case,
+                    "case_id": case_id,
+                    "suite": suite,
+                    "fixture": fixture,
+                    "replay": bool(args.replay),
+                    "enable_judge": not args.no_judge,
+                    "self_consistency": None if args.replay else args.self_consistency,
+                    "load_error": load_error,
+                },
+                outputs={},
+            )
         )
-        if resolved:
-            lines.append("Resolved vs baseline: " + ", ".join(f"`{i}`" for i in resolved))
-    else:
-        lines.append("")
-        lines.append("Baseline: skipped (file missing).")
-    agreement = payload.get("agreement")
-    if agreement:
-        lines.append("")
-        lines.append("## Agreement (author-proposed labels vs judge)")
-        lines.append("")
-        lines.append(agreement.get("note") or "")
-        dims = agreement.get("dimensions") or {}
-        if dims:
-            lines.append("")
-            lines.append("| Dimension | N | % agree | Cohen's κ |")
-            lines.append("| --- | ---: | ---: | ---: |")
-            for name, row in dims.items():
-                pct = row.get("percent_agree")
-                kappa = row.get("cohens_kappa")
-                pct_s = "—" if pct is None else f"{pct:.1%}"
-                kap_s = "—" if kappa is None else f"{kappa:.3f}"
-                lines.append(f"| {name} | {row.get('n', 0)} | {pct_s} | {kap_s} |")
-        else:
-            lines.append("No overlapping labels + judge scores in this run.")
-    flips_rows = payload.get("self_consistency_flips") or []
-    if payload.get("self_consistency_n"):
-        lines.append("")
-        lines.append(f"## Self-consistency (N={payload['self_consistency_n']})")
-        if payload.get("self_consistency_skipped"):
-            lines.append("")
-            lines.append(str(payload["self_consistency_skipped"]))
-        elif flips_rows:
-            lines.append("")
-            for row in flips_rows:
-                lines.append(f"- `{row['id']}` — flips: {', '.join(row['flips'])}")
-        else:
-            lines.append("")
-            lines.append("No dimension flips (or no live judge trials).")
-    judged = [c for c in payload.get("cases") or [] if isinstance(c.get("judge"), dict)]
-    skipped = sum(1 for c in judged if c["judge"].get("source") == "skipped")
-    scored = sum(1 for c in judged if c["judge"].get("scores"))
-    if judged:
-        lines.append("")
-        lines.append(
-            f"Judges (informational): {scored} scored / {skipped} skipped / "
-            f"{len(judged)} considered. Not a ship gate."
-        )
-    return "\n".join(lines) + "\n"
+    return examples
 
 
-async def async_main(args: argparse.Namespace) -> int:
-    suites = _suites_to_load(args.suite)
+def _load_cases(args: argparse.Namespace) -> list[tuple[Path, dict[str, Any]]]:
     loaded: list[tuple[Path, dict[str, Any]]] = []
-    for suite in suites:
+    for suite in _suites_to_load(args.suite):
         for path in _discover_suite_files(suite):
             try:
                 case = _load_yaml(path)
@@ -833,149 +734,188 @@ async def async_main(args: argparse.Namespace) -> int:
             if args.case_id and str(case.get("id") or path.stem) != args.case_id:
                 continue
             loaded.append((path, case))
+    return loaded
 
+
+def _print_agreement(records: list[dict[str, Any]]) -> None:
+    summary = summarize_agreement(records)
+    print("Agreement (author-proposed labels vs judge)")
+    dims = summary.get("dimensions") or {}
+    if not dims:
+        print("No overlapping labels + judge scores in this run.")
+        return
+    print(f"{'Dimension':<24} {'N':>4} {'% agree':>8} {'kappa':>8}")
+    for name, row in dims.items():
+        pct = row.get("percent_agree")
+        kappa = row.get("cohens_kappa")
+        pct_s = "—" if pct is None else f"{pct:.1%}"
+        kap_s = "—" if kappa is None else f"{kappa:.3f}"
+        print(f"{name:<24} {row.get('n', 0):>4} {pct_s:>8} {kap_s:>8}")
+
+
+async def _evaluate(args: argparse.Namespace) -> int:
+    if args.upload and not os.environ.get("LANGSMITH_API_KEY"):
+        print("LANGSMITH_API_KEY is required for --upload.", file=sys.stderr)
+        return 1
+    if args.upload and args.suite == "inbox":
+        print("--upload does not upload inbox stubs.", file=sys.stderr)
+        return 1
+
+    loaded = _load_cases(args)
     if args.case_id and not loaded:
         print(f"No case with id {args.case_id!r} in suite {args.suite!r}.", file=sys.stderr)
         return 1
-
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    records: list[dict[str, Any]] = []
-    for path, case in loaded:
-        load_error = case.pop("_load_error", None)
-        if load_error:
-            records.append(
-                {
-                    "id": str(case.get("id") or path.stem),
-                    "suite": str(case.get("suite") or path.parent.name),
-                    "mode": case.get("mode"),
-                    "path": str(path.relative_to(EVALS_ROOT)),
-                    "expect_fail": False,
-                    "gated": True,
-                    "passed": False,
-                    "error": load_error,
-                    "checks": [],
-                    "completions": [],
-                }
-            )
-            continue
-        records.append(
-            await _run_case(
-                case=case,
-                source=path,
-                replay=args.replay,
-                enable_judge=not args.no_judge,
-                self_consistency=None if args.replay else args.self_consistency,
-            )
-        )
-
-    baseline_arg = Path(args.baseline) if args.baseline else None
-    baseline = _load_baseline(baseline_arg)
-    baseline_failed: set[str] = set()
-    if baseline and isinstance(baseline.get("failed_ids"), list):
-        baseline_failed = {str(i) for i in baseline["failed_ids"]}
-    baseline_path_out: str | None = None
-    if baseline is not None:
-        used = baseline_arg or DEFAULT_BASELINE
-        try:
-            baseline_path_out = str(used.resolve().relative_to(REPO_ROOT))
-        except ValueError:
-            baseline_path_out = str(used)
-
-    by_suite: dict[str, dict[str, int]] = {}
-    failed_ids: list[str] = []
-    gated_failed_ids: list[str] = []
-    gated_passed = 0
-    gated_failed = 0
-    for rec in records:
-        suite = rec["suite"]
-        by_suite.setdefault(suite, {"passed": 0, "failed": 0})
-        if rec["passed"]:
-            by_suite[suite]["passed"] += 1
-        else:
-            by_suite[suite]["failed"] += 1
-            failed_ids.append(rec["id"])
-        if rec.get("gated"):
-            if rec["passed"]:
-                gated_passed += 1
-            else:
-                gated_failed += 1
-                gated_failed_ids.append(rec["id"])
-
-    new_failures = [i for i in gated_failed_ids if i not in baseline_failed]
-    resolved = [i for i in sorted(baseline_failed) if i not in set(gated_failed_ids)]
-
-    skill_sha, skill_sha_source = _skill_sha()
-    agreement_payload = None
-    if args.agreement:
-        agreement_payload = summarize_agreement(records)
-
-    self_consistency_flips: list[dict[str, Any]] = []
-    for rec in records:
-        judge = rec.get("judge") or {}
-        sc = judge.get("self_consistency") if isinstance(judge, dict) else None
-        if isinstance(sc, dict) and sc.get("flips"):
-            self_consistency_flips.append({"id": rec["id"], "flips": sc["flips"]})
-
-    self_consistency_skipped = None
-    if args.self_consistency and args.replay:
-        self_consistency_skipped = (
-            "Self-consistency skipped in --replay (no live Gemini). "
-            "Canned .judge.json is a single trial."
-        )
-
-    payload = {
-        "run_id": run_id,
-        "replay": args.replay,
-        "suite": args.suite,
-        "mode": args.mode,
-        "model": settings.gemini_model_lesson,
-        "model_chat": settings.gemini_model_chat,
-        "model_lesson": settings.gemini_model_lesson,
-        "skill_sha": skill_sha,
-        "skill_sha_source": skill_sha_source,
-        "git_sha": _git_sha(),
-        "rubric_version": RUBRIC_GENERATION,
-        "rubric_versions": sorted(RUBRICS),
-        "baseline_path": baseline_path_out,
-        "agreement": agreement_payload,
-        "self_consistency_n": args.self_consistency,
-        "self_consistency_flips": self_consistency_flips,
-        "self_consistency_skipped": self_consistency_skipped,
-        "cases": records,
-        "summary": {
-            "passed": sum(1 for r in records if r["passed"]),
-            "failed": sum(1 for r in records if not r["passed"]),
-            "gated_passed": gated_passed,
-            "gated_failed": gated_failed,
-            "failed_ids": failed_ids,
-            "gated_failed_ids": gated_failed_ids,
-            "new_failures": new_failures,
-            "resolved": resolved,
-            "by_suite": by_suite,
-        },
-    }
-
-    results_dir = EVALS_ROOT / "results"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    out_path = results_dir / f"{run_id}.json"
-    out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    md = _markdown_summary(payload)
-    print(md)
-    print(f"Wrote {out_path.relative_to(REPO_ROOT)}")
-
-    if not records:
+    if args.upload:
+        kept: list[tuple[Path, dict[str, Any]]] = []
+        dropped = False
+        for path, case in loaded:
+            suite = str(case.get("suite") or path.parent.name)
+            if suite == "inbox":
+                dropped = True
+                continue
+            kept.append((path, case))
+        loaded = kept
+        if dropped:
+            print("Skipping inbox stubs; --upload does not send them.", file=sys.stderr)
+    if not loaded:
         print("No cases matched (empty suite is a pass).")
         return 0
-    if gated_failed:
-        return 1
-    return 0
+
+    scored: list[dict[str, Any]] = []
+    judge_records: list[dict[str, Any]] = []
+    summary_notes: list[str] = []
+
+    def checks_evaluator(inputs: dict, outputs: dict, reference_outputs: dict | None = None) -> dict:
+        row = score_case(
+            case=inputs["case"],
+            fixture=inputs.get("fixture") or {},
+            completion=str((outputs or {}).get("completion") or ""),
+            harness_error=(outputs or {}).get("harness_error"),
+            suite=str(inputs.get("suite") or ""),
+        )
+        scored.append(
+            {
+                "id": inputs.get("case_id"),
+                "suite": inputs.get("suite"),
+                "checks": row["checks"],
+                "gate": row["gate"],
+                "comment": row["comment"],
+                "checks_ok": row["checks_ok"],
+            }
+        )
+        return {
+            "results": [
+                {"key": "checks", "score": row["checks"], "comment": row["comment"]},
+                {"key": "gate", "score": row["gate"], "comment": row["comment"]},
+            ]
+        }
+
+    async def judge_evaluator(
+        inputs: dict, outputs: dict, reference_outputs: dict | None = None
+    ) -> dict:
+        if (outputs or {}).get("harness_error"):
+            return {"key": "judge", "score": 1, "comment": "skipped: harness error"}
+        scored_row = score_case(
+            case=inputs["case"],
+            fixture=inputs.get("fixture") or {},
+            completion=str((outputs or {}).get("completion") or ""),
+            harness_error=None,
+            suite=str(inputs.get("suite") or ""),
+        )
+        record = await judge_case(
+            case=inputs["case"],
+            case_id=str(inputs["case_id"]),
+            suite=str(inputs.get("suite") or ""),
+            fixture=inputs.get("fixture") or {},
+            completion=str((outputs or {}).get("completion") or ""),
+            checks_ok=bool(scored_row["checks_ok"]),
+            replay=bool(inputs.get("replay")),
+            enable_judge=bool(inputs.get("enable_judge")),
+            self_consistency=inputs.get("self_consistency"),
+        )
+        if record is not None:
+            judge_records.append(
+                {
+                    "id": inputs.get("case_id"),
+                    "labels": _case_labels(inputs["case"]),
+                    "judge": record,
+                }
+            )
+        return {"key": "judge", "score": 1, "comment": (record or {}).get("source") or "skipped"}
+
+    def summary_evaluator(runs: list, examples: list) -> dict:
+        path = Path(args.baseline) if args.baseline else DEFAULT_BASELINE
+        baseline_failed: set[str] = set()
+        found = path.is_file()
+        if found:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, dict) and isinstance(data.get("failed_ids"), list):
+                baseline_failed = {str(item) for item in data["failed_ids"]}
+        gated_failed = [str(row["id"]) for row in scored if row["gate"] == 0]
+        new_failures = [item for item in gated_failed if item not in baseline_failed]
+        if found:
+            comment = "New failures vs baseline: " + (", ".join(new_failures) if new_failures else "none")
+        else:
+            comment = "Baseline: skipped (file missing)."
+        summary_notes.append(comment)
+        return {"key": "new_failures", "score": 0 if new_failures else 1, "comment": comment}
+
+    warnings.filterwarnings("ignore", message="'upload_results' parameter is in beta.")
+    client = _langsmith_client(upload=bool(args.upload))
+    results = await client.aevaluate(
+        _target,
+        data=_examples(loaded, args),
+        evaluators=[checks_evaluator, judge_evaluator],
+        summary_evaluators=[summary_evaluator],
+        upload_results=bool(args.upload),
+        max_concurrency=1,
+        experiment_prefix="lingua-coach",
+        metadata={
+            "replay": bool(args.replay),
+            "suite": args.suite,
+            "rubric_version": RUBRIC_GENERATION,
+        },
+        error_handling="log",
+        disable_evaluator_tracing=not args.upload,
+    )
+    async for _row in results:
+        pass
+
+    failures = [row for row in scored if row["gate"] == 0]
+    gated_pass = sum(
+        1 for row in scored if row["suite"] in GATED_SUITES and row["gate"] == 1 and row["checks"] == 1
+    )
+    print(f"Gated pass/fail: {gated_pass} pass / {len(failures)} fail")
+    for row in failures:
+        print(f"- {row['id']}: {row['comment'] or 'failed'}")
+    for note in summary_notes:
+        print(note)
+    if args.self_consistency and args.replay:
+        print("Self-consistency skipped in --replay (no live Gemini). Canned .judge.json is a single trial.")
+    flips = []
+    for record in judge_records:
+        judge = record.get("judge") or {}
+        consistency = judge.get("self_consistency") if isinstance(judge, dict) else None
+        if isinstance(consistency, dict) and consistency.get("flips"):
+            flips.append(f"{record['id']}: {', '.join(consistency['flips'])}")
+    if flips:
+        print("Self-consistency flips: " + "; ".join(flips))
+    if args.agreement:
+        _print_agreement(judge_records)
+    if not scored:
+        print("No cases matched (empty suite is a pass).")
+        return 0
+    return 1 if failures else 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    return asyncio.run(async_main(args))
+    return asyncio.run(_evaluate(args))
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

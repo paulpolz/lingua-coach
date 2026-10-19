@@ -19,7 +19,7 @@ export PYTHONPATH="${GITHUB_WORKSPACE}/apps/backend:${GITHUB_WORKSPACE}"
 apps/backend/.venv/bin/python -m evals.run --suite regression --replay
 ```
 
-`PYTHONPATH` is backend first (`app.*`) then repo root (`evals`). Run artifacts under `evals/results/` are gitignored and uploaded as a workflow artifact when present.
+`PYTHONPATH` is backend first (`app.*`) then repo root (`evals`). The replay command does not write `evals/results/`. The workflow artifact upload ignores a missing directory.
 
 ## Required status check
 

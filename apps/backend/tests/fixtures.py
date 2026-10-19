@@ -59,7 +59,7 @@ VALID_COURSE_ROADMAP: dict = {
                 "block_day": 1,
                 "grammar_focus": "Present simple vs continuous",
                 "vocab_theme": "Self-intro & role vocabulary",
-                "input_type": "listening",
+                "input_type": "reading",
                 "production_focus": "Write a short self-intro paragraph",
                 "goal_specific_focus": "Opening technique for stated goal",
             }
@@ -71,26 +71,6 @@ VALID_COURSE_ROADMAP: dict = {
         "recurring_error_pattern": "inject_retrieval_drill",
     },
     "current_milestone_index": 0,
-}
-
-
-VALID_LISTENING_RESOURCE: dict = {
-    "id": "en-voa-lle-work-a2",
-    "kind": "video",
-    "title": "VOA Let's Learn English Level 2 — Budget Cuts",
-    "url": "https://www.youtube.com/watch?v=fUmNAGJBLSA",
-    "duration_sec": 480,
-    "source": "VOA Learning English",
-    "captions": "target",
-    "synopsis": (
-        "Studio staff overhear talk of budget cuts and worry about jobs. "
-        "The meeting is actually about new assignments."
-    ),
-    "notice_points": [
-        "Job titles and workplace nouns",
-        "Going to for rumors and plans",
-        "How the misunderstanding is resolved",
-    ],
 }
 
 
@@ -112,10 +92,9 @@ VALID_LESSON_CURRICULUM: dict = {
         },
     ],
     "input_task": {
-        "type": "listening",
+        "type": "reading",
         "topic": "A team retrospective meeting",
-        "focus": "Listen for past simple vs present perfect usage",
-        "resource": VALID_LISTENING_RESOURCE,
+        "focus": "Notice past simple vs present perfect usage",
     },
     "goal_specific_task": {"label": "Write a retro summary email", "format": "email"},
     "exit_criteria": [

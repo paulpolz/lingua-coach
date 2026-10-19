@@ -1,15 +1,8 @@
-"""Single Gemini API client wrapper (`generateContent`, streamed for chat).
+"""Gemini calls for chat and lesson JSON.
 
-Two model configs from settings (`GEMINI_MODEL_CHAT`, `GEMINI_MODEL_LESSON`)
-per docs/tech_requirements/ai-api.md. One provider, one client — no
-multi-provider abstraction in MVP.
-
-On timeout/failure, every public function raises `GeminiError`; the API layer
-maps this to SSE `error` events (chat) or HTTP `502` (lesson generation,
-Phase 3).
-
-Also records Prometheus LLM metrics and structured `llm_call` logs (tokens,
-latency, status) when available from Gemini `usage_metadata`.
+`stream_chat` and `generate_json` are the only public entry points. Both use
+LangChain's `ChatGoogleGenerativeAI`. Callers, including graph nodes, keep
+these signatures. Failures raise `GeminiError`.
 """
 
 from __future__ import annotations
@@ -20,9 +13,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from google import genai
-from google.genai import types
 from google.genai.errors import APIError as GenAIAPIError
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai.chat_models import (
+    ChatGoogleGenerativeAIError,
+    GoogleContextOverflowError,
+    GoogleRateLimitError,
+)
 
 from app.config import settings
 from app.core.logging import get_logger
@@ -46,17 +44,15 @@ class GeminiError(RuntimeError):
 
 @dataclass(frozen=True)
 class ChatTurn:
-    """One turn of conversational history for a Gemini `contents` list.
+    """One turn of conversational history.
 
-    `role` is Gemini's own turn role, not the app's `chat_messages.role` —
+    `role` is Gemini's turn role, not the app's `chat_messages.role` —
     the assistant's turn is `"model"`, not `"assistant"`.
     """
 
     role: Literal["user", "model"]
     text: str
 
-
-_client: genai.Client | None = None
 
 _CONTEXT_LIMIT_MARKERS = (
     "context length",
@@ -67,46 +63,138 @@ _CONTEXT_LIMIT_MARKERS = (
 )
 
 
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        if not settings.gemini_api_key:
-            raise GeminiError(
-                "GEMINI_API_KEY is not configured",
-                code="LLM_CONFIG_ERROR",
-                error_type="config_error",
-            )
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
+def _schema_dict(response_schema: object | None) -> dict | None:
+    if response_schema is None:
+        return None
+    if isinstance(response_schema, dict):
+        return response_schema
+    model_json_schema = getattr(response_schema, "model_json_schema", None)
+    if callable(model_json_schema):
+        schema = model_json_schema()
+        if isinstance(schema, dict):
+            return schema
+    raise GeminiError(
+        "response_schema must be a dict or a Pydantic model",
+        code="LLM_CONFIG_ERROR",
+        error_type="config_error",
+    )
 
 
-def _to_contents(history: list[ChatTurn]) -> list[types.Content]:
-    return [
-        types.Content(role=turn.role, parts=[types.Part.from_text(text=turn.text)])
-        for turn in history
-    ]
+def _chat_model(
+    *,
+    model_id: str,
+    timeout: float,
+    json_mode: bool,
+    response_schema: object | None,
+) -> ChatGoogleGenerativeAI:
+    if not settings.gemini_api_key:
+        raise GeminiError(
+            "GEMINI_API_KEY is not configured",
+            code="LLM_CONFIG_ERROR",
+            error_type="config_error",
+        )
+    # temperature=None leaves Gemini's default in place; the wrapper otherwise
+    # sends 0.7. max_retries=0 so a quota failure is not retried away.
+    kwargs: dict = {
+        "model": model_id,
+        "api_key": settings.gemini_api_key,
+        "temperature": None,
+        "max_retries": 0,
+        "timeout": timeout,
+    }
+    if json_mode:
+        kwargs["response_mime_type"] = "application/json"
+        schema = _schema_dict(response_schema)
+        if schema is not None:
+            kwargs["response_schema"] = schema
+    return ChatGoogleGenerativeAI(**kwargs)
 
 
-def _classify_genai_error(exc: GenAIAPIError) -> tuple[str, str]:
+def _messages(system_instruction: str, history: list[ChatTurn]) -> list:
+    messages: list = []
+    if system_instruction:
+        messages.append(SystemMessage(content=system_instruction))
+    for turn in history:
+        if turn.role == "user":
+            messages.append(HumanMessage(content=turn.text))
+        else:
+            messages.append(AIMessage(content=turn.text))
+    return messages
+
+
+def _message_text(message: object) -> str:
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        text = getattr(message, "text", None)
+        return text if isinstance(text, str) else ""
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict):
+            text = block.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "".join(parts)
+
+
+def _iter_causes(exc: BaseException):
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    return "timeout" in type(exc).__name__.lower() or "timed out" in str(exc).lower()
+
+
+def _is_quota(exc: BaseException) -> bool:
+    if isinstance(exc, GoogleRateLimitError):
+        return True
+    status = str(getattr(exc, "status", None) or "")
     message = str(exc)
-    status = getattr(exc, "status", None) or ""
-    if status == "RESOURCE_EXHAUSTED" or "RESOURCE_EXHAUSTED" in message:
-        return "LLM_QUOTA_EXCEEDED", "quota"
+    return status == "RESOURCE_EXHAUSTED" or "RESOURCE_EXHAUSTED" in message
+
+
+def _is_context_limit(exc: BaseException) -> bool:
+    if isinstance(exc, GoogleContextOverflowError):
+        return True
+    message = str(exc)
     lowered = message.lower()
-    if any(marker.lower() in lowered or marker in message for marker in _CONTEXT_LIMIT_MARKERS):
+    return any(marker.lower() in lowered or marker in message for marker in _CONTEXT_LIMIT_MARKERS)
+
+
+def _classify_exception(exc: BaseException) -> tuple[str, str]:
+    """Map a LangChain-wrapped Gemini failure onto the existing error codes."""
+    chain = list(_iter_causes(exc))
+    if any(_is_timeout(item) for item in chain):
+        return "LLM_TIMEOUT", "timeout"
+    if any(_is_context_limit(item) for item in chain if isinstance(item, GoogleContextOverflowError)):
         return "LLM_CONTEXT_LIMIT", "context_limit"
-    return "LLM_API_ERROR", "api_error"
+    if any(_is_quota(item) for item in chain):
+        return "LLM_QUOTA_EXCEEDED", "quota"
+    if any(_is_context_limit(item) for item in chain):
+        return "LLM_CONTEXT_LIMIT", "context_limit"
+    if any(isinstance(item, (ChatGoogleGenerativeAIError, GenAIAPIError)) for item in chain):
+        return "LLM_API_ERROR", "api_error"
+    return "LLM_ERROR", "error"
 
 
 def _usage_tokens(usage: object | None) -> tuple[int, int]:
-    if usage is None:
+    if not isinstance(usage, dict):
         return 0, 0
-    input_tokens = int(getattr(usage, "prompt_token_count", None) or 0)
-    output_tokens = int(getattr(usage, "candidates_token_count", None) or 0)
-    if not output_tokens:
-        total = int(getattr(usage, "total_token_count", None) or 0)
-        if total and input_tokens:
-            output_tokens = max(total - input_tokens, 0)
+    input_tokens = int(usage.get("input_tokens") or usage.get("prompt_token_count") or 0)
+    output_tokens = int(usage.get("output_tokens") or usage.get("candidates_token_count") or 0)
+    if not output_tokens and input_tokens:
+        total = int(usage.get("total_tokens") or usage.get("total_token_count") or 0)
+        output_tokens = max(total - input_tokens, 0)
     return input_tokens, output_tokens
 
 
@@ -144,6 +232,51 @@ def _emit_llm_observability(
     )
 
 
+def _failure(
+    exc: BaseException,
+    *,
+    call_type: str,
+    model: str,
+    started: float,
+    timeout: float,
+) -> GeminiError:
+    if isinstance(exc, GeminiError):
+        _emit_llm_observability(
+            call_type=call_type,
+            model=model,
+            status="error",
+            duration_seconds=time.perf_counter() - started,
+            error_type=exc.error_type,
+        )
+        return exc
+    code, error_type = _classify_exception(exc)
+    _emit_llm_observability(
+        call_type=call_type,
+        model=model,
+        status="error",
+        duration_seconds=time.perf_counter() - started,
+        error_type=error_type,
+    )
+    if code == "LLM_TIMEOUT":
+        message = f"Gemini request timed out after {timeout}s"
+    elif code == "LLM_ERROR":
+        message = f"Gemini request failed: {exc}"
+    else:
+        message = f"Gemini API error: {exc}"
+    return GeminiError(message, code=code, error_type=error_type)
+
+
+async def _note_usage(
+    message: object,
+    on_usage: Callable[[int], Awaitable[None]] | None,
+) -> tuple[int, int]:
+    usage = getattr(message, "usage_metadata", None)
+    input_tokens, output_tokens = _usage_tokens(usage)
+    if usage is not None and on_usage is not None:
+        await on_usage(input_tokens)
+    return input_tokens, output_tokens
+
+
 async def stream_chat(
     *,
     system_instruction: str,
@@ -158,9 +291,15 @@ async def stream_chat(
     Raises `GeminiError` on timeout or any upstream failure — callers (the
     chat SSE route) turn this into an `event: error` frame.
     """
-    client = _get_client()
     model_id = model or settings.gemini_model_chat
     timeout = timeout_seconds if timeout_seconds is not None else settings.gemini_timeout_seconds
+    chat = _chat_model(
+        model_id=model_id,
+        timeout=timeout,
+        json_mode=False,
+        response_schema=None,
+    )
+    messages = _messages(system_instruction, history)
     call_type = "chat"
     started = time.perf_counter()
     input_tokens = 0
@@ -168,62 +307,20 @@ async def stream_chat(
 
     try:
         async with asyncio.timeout(timeout):
-            stream = await client.aio.models.generate_content_stream(
-                model=model_id,
-                contents=_to_contents(history),
-                config=types.GenerateContentConfig(system_instruction=system_instruction),
-            )
-            async for chunk in stream:
-                usage = getattr(chunk, "usage_metadata", None)
-                if usage is not None:
-                    input_tokens, output_tokens = _usage_tokens(usage)
-                    if on_usage is not None:
-                        await on_usage(input_tokens)
-                text = getattr(chunk, "text", None)
+            async for chunk in chat.astream(messages):
+                # Gemini streams a running total. LangChain stores the delta, so a
+                # later chunk often has input_tokens == 0. Sum every chunk.
+                chunk_in, chunk_out = _usage_tokens(getattr(chunk, "usage_metadata", None))
+                input_tokens += chunk_in
+                output_tokens += chunk_out
+                text = _message_text(chunk)
                 if text:
                     yield text
-    except TimeoutError as exc:
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type="timeout",
-        )
-        raise GeminiError(
-            f"Gemini request timed out after {timeout}s",
-            code="LLM_TIMEOUT",
-            error_type="timeout",
-        ) from exc
-    except GenAIAPIError as exc:
-        code, error_type = _classify_genai_error(exc)
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type=error_type,
-        )
-        raise GeminiError(f"Gemini API error: {exc}", code=code, error_type=error_type) from exc
-    except GeminiError as exc:
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type=exc.error_type,
-        )
-        raise
     except Exception as exc:  # noqa: BLE001 - normalize all failures to GeminiError
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type="error",
-        )
-        raise GeminiError(f"Gemini request failed: {exc}", code="LLM_ERROR", error_type="error") from exc
+        raise _failure(exc, call_type=call_type, model=model_id, started=started, timeout=timeout) from exc
 
+    if on_usage is not None:
+        await on_usage(input_tokens)
     _emit_llm_observability(
         call_type=call_type,
         model=model_id,
@@ -243,84 +340,33 @@ async def generate_json(
     response_schema: type | None = None,
     on_usage: Callable[[int], Awaitable[None]] | None = None,
 ) -> str:
-    """Non-streaming JSON-mode completion for lesson generation
-    (ai-api.md "Structured lesson output"): one `generateContent` call,
-    `response_mime_type="application/json"` (+ `response_schema` when a
-    Pydantic model is passed, for Gemini's structured-output mode), against
-    `GEMINI_MODEL_LESSON` by default.
+    """Non-streaming JSON-mode completion.
 
-    Returns the raw JSON text; this function does **not** retry or validate
-    against the caller's schema — the one-repair-retry loop and Pydantic
-    validation live in app/services/lesson_generation.py, which calls this
-    twice at most per generation. Raises `GeminiError` on timeout or any
-    upstream failure, exactly like `stream_chat`.
+    Returns the raw JSON text. This function does not retry or validate
+    against the caller's schema — lesson generation's one repair lives in
+    the lesson graph. Raises `GeminiError` on timeout or any upstream
+    failure, exactly like `stream_chat`.
     """
-    client = _get_client()
     model_id = model or settings.gemini_model_lesson
     timeout = timeout_seconds if timeout_seconds is not None else settings.gemini_timeout_seconds
+    chat = _chat_model(
+        model_id=model_id,
+        timeout=timeout,
+        json_mode=True,
+        response_schema=response_schema,
+    )
+    messages = _messages(system_instruction, history)
     call_type = "lesson_json"
     started = time.perf_counter()
 
-    config_kwargs: dict = {
-        "system_instruction": system_instruction,
-        "response_mime_type": "application/json",
-    }
-    if response_schema is not None:
-        config_kwargs["response_schema"] = response_schema
-
     try:
         async with asyncio.timeout(timeout):
-            response = await client.aio.models.generate_content(
-                model=model_id,
-                contents=_to_contents(history),
-                config=types.GenerateContentConfig(**config_kwargs),
-            )
-    except TimeoutError as exc:
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type="timeout",
-        )
-        raise GeminiError(
-            f"Gemini request timed out after {timeout}s",
-            code="LLM_TIMEOUT",
-            error_type="timeout",
-        ) from exc
-    except GenAIAPIError as exc:
-        code, error_type = _classify_genai_error(exc)
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type=error_type,
-        )
-        raise GeminiError(f"Gemini API error: {exc}", code=code, error_type=error_type) from exc
-    except GeminiError as exc:
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type=exc.error_type,
-        )
-        raise
+            response = await chat.ainvoke(messages)
     except Exception as exc:  # noqa: BLE001 - normalize all failures to GeminiError
-        _emit_llm_observability(
-            call_type=call_type,
-            model=model_id,
-            status="error",
-            duration_seconds=time.perf_counter() - started,
-            error_type="error",
-        )
-        raise GeminiError(f"Gemini request failed: {exc}", code="LLM_ERROR", error_type="error") from exc
+        raise _failure(exc, call_type=call_type, model=model_id, started=started, timeout=timeout) from exc
 
-    input_tokens, output_tokens = _usage_tokens(getattr(response, "usage_metadata", None))
-    if on_usage is not None:
-        await on_usage(input_tokens)
-    text = getattr(response, "text", None)
+    input_tokens, output_tokens = await _note_usage(response, on_usage)
+    text = _message_text(response)
     if not text:
         _emit_llm_observability(
             call_type=call_type,

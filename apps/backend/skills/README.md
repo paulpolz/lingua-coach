@@ -62,7 +62,7 @@ Learner answers are accepted in any language throughout so beginners can finish.
 - **Adapt but never lower the goal** — pace adjusts; target outcome does not.
 - **Output-first** — write before (or alongside) rule explanation.
 - **Structured learner memory** — profile, errors, and progress are data, not chat history.
-- **Text chat plus catalog listening** — learner–tutor interaction is typed; listening uses a linked clip on listening days. There is no speaking practice.
+- **Text chat** — learner–tutor interaction is typed. Product skills are reading and writing. There is no speaking practice.
 - **Fixed ritual, personalized content** — daily shape stays constant; topics adapt to performance.
 
 ## Related docs

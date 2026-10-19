@@ -63,7 +63,7 @@ def seed_four_week_plan_markdown(roadmap: CourseRoadmap) -> str:
             f"| Focus | Detail |\n| --- | --- |\n"
             f"| Grammar | {theme.grammar_focus} |\n"
             f"| Vocabulary | {theme.vocab_theme} |\n"
-            f"| Listening / reading | {theme.input_type} |\n"
+            f"| Reading | reading |\n"
             f"| Writing | {theme.production_focus} |\n"
             f"| Goal-specific | {theme.goal_specific_focus} |"
         )

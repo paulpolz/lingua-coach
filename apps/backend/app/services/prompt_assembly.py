@@ -70,23 +70,6 @@ def lesson_curriculum_snippet_from_payload(curriculum: dict | None) -> str:
             f"topic: {input_task.get('topic', '')}; "
             f"focus: {input_task.get('focus', '')}"
         )
-        resource = input_task.get("resource") or {}
-        if resource:
-            notice = resource.get("notice_points") or []
-            notice_text = "; ".join(str(n) for n in notice) if notice else "(none)"
-            duration = resource.get("duration_sec")
-            minutes = f"{int(duration) // 60} min" if duration else ""
-            input_text += (
-                f"\nListening resource (use this URL; do not invent another):\n"
-                f"  id: {resource.get('id', '')}\n"
-                f"  title: {resource.get('title', '')}\n"
-                f"  url: {resource.get('url', '')}\n"
-                f"  duration: {minutes}\n"
-                f"  source: {resource.get('source', '')}\n"
-                f"  captions: {resource.get('captions', '')}\n"
-                f"  synopsis: {resource.get('synopsis', '')}\n"
-                f"  notice_points: {notice_text}"
-            )
     else:
         input_text = "Input task: (none)"
 
@@ -163,11 +146,8 @@ def build_generation_user_prompt(context: dict) -> str:
         "Pick one grammar focus and one vocab theme aligned to the current "
         "milestone; interleave due items from open_mistakes and prior_lessons "
         "before adding new material.\n"
-        "input_assignment is chosen by the backend. If mode is listening, copy "
-        "input_assignment.resource onto input_task.resource exactly (same id and "
-        "url) and set input_task.type to listening. Do not invent a URL. If mode "
-        "is reading, set input_task.type to reading and omit resource; write a "
-        "150-300 word passage in chat later, not a fake listening task.\n"
+        "Set input_task.type to reading. Omit resource. The tutor writes a "
+        "150-300 word reading passage in chat later.\n"
         "Do not emit a speaking slot. Map any speaking activity on the weekly "
         "template to writing (email, message, summary, written dialogue). "
         "goal_specific_task.format must be a written format, never oral roleplay."

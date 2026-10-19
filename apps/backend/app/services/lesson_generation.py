@@ -10,25 +10,21 @@ lifecycle"; exercise_tutor.md "Inputs"): active `learning_plans.roadmap`,
 `profiles`, last N=5 accomplished `lessons` (`payload.curriculum` +
 `payload.session_summary` only — never chat history), and open `mistakes`.
 
-Validation (ai-api.md): one repair retry on invalid JSON / schema failure,
-then fail the job + lesson with a clear `error` message. A `GeminiError`
-(timeout/upstream failure) is not retried here — it fails the job
-immediately, same as `stream_chat` failures do for chat.
+Validation lives in the lesson graph: one repair retry on invalid JSON /
+schema failure, then fail the job + lesson with a clear `error` message.
+A `GeminiError` (timeout/upstream failure) is not retried — it fails the
+job immediately, same as `stream_chat` failures do for chat.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.core.metrics import record_llm_retry
 from app.db.session import AsyncSessionLocal
 from app.models.enums import JobStatus, LearningPlanStatus, LessonStatus
 from app.models.job import Job
@@ -36,14 +32,9 @@ from app.models.learning_plan import LearningPlan
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
 from app.models.profile import Profile
-from app.schemas.lesson import LessonCurriculum
-from app.services import gemini
-from app.services.gemini import ChatTurn, GeminiError
-from app.services.llm_usage import complete, estimate_input_tokens, reserve_gemini_call
-from app.services.listening_catalog import (
-    InputAssignment,
-    apply_input_assignment,
-    assignment_from_generation_context,
+from app.services.lesson_graph import (
+    LessonGenerationError as LessonGenerationError,
+    invoke_lesson_graph,
 )
 from app.services.prompt_assembly import (
     build_generation_user_prompt,
@@ -53,11 +44,6 @@ from app.services.prompt_assembly import (
 logger = logging.getLogger(__name__)
 
 _PRIOR_LESSONS_LIMIT = 5
-
-
-class LessonGenerationError(RuntimeError):
-    """Raised when the model fails to produce a valid curriculum after the
-    one allowed repair retry (ai-api.md "Structured lesson output")."""
 
 
 async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, user_id: uuid.UUID) -> None:
@@ -82,19 +68,18 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
         await db.commit()
 
         try:
-            prompt, native, target, assignment = await _build_generation_prompt(
+            prompt, native, target = await _build_generation_prompt(
                 db, user_id=user_id, lesson_number=lesson.lesson_number
             )
-            curriculum = await _generate_curriculum(
-                db,
-                prompt,
+            state = await invoke_lesson_graph(
+                prompt=prompt,
+                system_instruction=lesson_generation_system_instruction(native, target),
+                db=db,
                 user_id=user_id,
-                native_language=native,
-                target_language=target,
-                assignment=assignment,
                 job_id=job_id,
                 lesson_id=lesson_id,
             )
+            curriculum = state["curriculum"]
         except Exception as exc:  # noqa: BLE001 - normalize any failure into a failed job/lesson
             logger.warning(
                 "lesson_generation failed: %s",
@@ -127,7 +112,7 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
 
 async def _build_generation_prompt(
     db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int
-) -> tuple[str, str | None, str | None, InputAssignment]:
+) -> tuple[str, str | None, str | None]:
     """Gather generation context and render it as a single prompt turn.
 
     Gemini is stateless (ai-api.md "Request lifecycle") — every field the
@@ -185,12 +170,10 @@ async def _build_generation_prompt(
         ],
     }
 
-    assignment = assignment_from_generation_context(context)
-    context["input_assignment"] = assignment.prompt_dict()
     prompt = build_generation_user_prompt(context)
     native = profile.native_language if profile else None
     target = profile.target_language if profile else None
-    return prompt, native, target, assignment
+    return prompt, native, target
 
 
 def _profile_snapshot(profile: Profile | None) -> dict | None:
@@ -209,113 +192,3 @@ def _profile_snapshot(profile: Profile | None) -> dict | None:
         "grammar_mastery": profile.grammar_mastery,
         "vocabulary_summary": profile.vocabulary_summary,
     }
-
-
-def _parse_curriculum(
-    raw: str, assignment: InputAssignment | None = None
-) -> LessonCurriculum:
-    data = json.loads(raw)
-    if assignment is not None and isinstance(data, dict):
-        data = apply_input_assignment(data, assignment)
-    return LessonCurriculum.model_validate(data)
-
-
-def _build_repair_prompt(original_prompt: str, invalid_raw: str, error: Exception) -> str:
-    return (
-        f"{original_prompt}\n\n---\nYour previous response could not be parsed as valid JSON, or did "
-        f"not match the required schema.\n\nValidation error: {error}\n\nYour previous response was:\n"
-        f"{invalid_raw}\n\nRespond again with ONLY a corrected JSON object matching the required "
-        "schema exactly — no markdown, no prose, no code fences."
-    )
-
-
-async def _call_lesson_model(
-    db: AsyncSession, user_id: uuid.UUID, *, system_instruction: str, prompt: str
-) -> str:
-    event = await reserve_gemini_call(
-        db,
-        user_id,
-        "lesson_json",
-        estimated_input_tokens=estimate_input_tokens(system_instruction, prompt),
-    )
-    tokens = event.input_tokens
-
-    async def on_usage(prompt_token_count: int) -> None:
-        nonlocal tokens
-        tokens = prompt_token_count
-
-    try:
-        raw = await gemini.generate_json(
-            system_instruction=system_instruction,
-            history=[ChatTurn(role="user", text=prompt)],
-            on_usage=on_usage,
-        )
-    except GeminiError:
-        await complete(
-            db,
-            event,
-            input_tokens=event.input_tokens,
-            status="error",
-            model=settings.gemini_model_lesson,
-        )
-        raise
-    await complete(
-        db,
-        event,
-        input_tokens=tokens,
-        status="ok",
-        model=settings.gemini_model_lesson,
-    )
-    return raw
-
-
-async def _generate_curriculum(
-    db: AsyncSession,
-    prompt: str,
-    *,
-    user_id: uuid.UUID,
-    native_language: str | None = None,
-    target_language: str | None = None,
-    assignment: InputAssignment | None = None,
-    job_id: uuid.UUID | None = None,
-    lesson_id: uuid.UUID | None = None,
-) -> LessonCurriculum:
-    system_instruction = lesson_generation_system_instruction(
-        native_language, target_language
-    )
-    correlation = {
-        "job_id": str(job_id) if job_id else None,
-        "lesson_id": str(lesson_id) if lesson_id else None,
-        "request_id": str(job_id) if job_id else None,
-    }
-
-    # Note: `response_schema=LessonCurriculum` (Gemini's structured-output
-    # mode) was tried here but the live API rejects the schema Gemini's own
-    # SDK generates for `partner_session: dict | None` ("Unknown name
-    # 'additional_properties'... Cannot find field" — an open-ended object
-    # isn't expressible in Gemini's structured-output dialect). Falling back
-    # to `response_mime_type="application/json"` JSON mode only, plus our
-    # own Pydantic validation + one repair retry below, which is the actual
-    # documented contract (ai-api.md "Structured lesson output").
-    raw = await _call_lesson_model(
-        db, user_id, system_instruction=system_instruction, prompt=prompt
-    )
-    try:
-        return _parse_curriculum(raw, assignment)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        # ai-api.md: exactly one repair retry on invalid JSON/schema, then fail.
-        record_llm_retry(call_type="lesson_json", reason="schema_repair")
-        logger.info(
-            "lesson_curriculum_schema_repair",
-            extra={"event": "llm_retry", "reason": "schema_repair", **correlation},
-        )
-        repair_prompt = _build_repair_prompt(prompt, raw, exc)
-        raw_retry = await _call_lesson_model(
-            db, user_id, system_instruction=system_instruction, prompt=repair_prompt
-        )
-        try:
-            return _parse_curriculum(raw_retry, assignment)
-        except (json.JSONDecodeError, ValidationError) as exc2:
-            raise LessonGenerationError(
-                f"Lesson curriculum failed schema validation after one repair retry: {exc2}"
-            ) from exc2
