@@ -368,7 +368,6 @@ export default function OnboardingChat({
           <ChatMessageBubble
             key={item.id}
             message={item}
-            quality={{ sessionId, surface: "onboarding", getToken }}
           />
         );
       })}

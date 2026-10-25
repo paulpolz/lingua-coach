@@ -1,7 +1,4 @@
-"""Common API error shape per docs/implementation-readiness.md §6.
-
-`{ "detail": "Human-readable message", "code": "MACHINE_READABLE_CODE" }`
-"""
+"""Error body: `{"detail": "...", "code": "MACHINE_CODE", ...extra}`."""
 
 from collections.abc import Mapping
 
@@ -28,8 +25,6 @@ class APIError(Exception):
         self.detail = detail
         self.code = code
         self.headers = dict(headers) if headers else {}
-        # Extra body fields for endpoints that need more than detail/code —
-        # e.g. `409 ACTIVE_LESSON_EXISTS`'s `active_lesson_id` (readiness §6).
         self.extra = extra
         super().__init__(detail)
 

@@ -1,21 +1,11 @@
 /**
- * Lesson generation job client for the FastAPI backend.
- *
- * Mirrors docs/implementation-readiness.md §6 (`POST /lessons/start`,
- * `GET /jobs/{id}`, `GET /lessons/active`, `GET /lessons/{id}`) and the
- * `lesson_record` v1 `payload.curriculum` shape in
- * docs/tech_requirements/database.md — the plan's "blind spots" table calls
- * out that this nested `curriculum.slots` shape is canonical, not the flat
- * example under readiness §8. There is no shared-types package in MVP, so
- * these types are the frontend's manual mirror of the backend Pydantic
- * models — keep them in sync at integration checkpoints.
+ * Lesson and job client. Types mirror the backend by hand.
  */
 
 import { ApiError, apiFetch, toApiError } from "@/lib/api";
-import { isCsatValue } from "@/lib/quality";
 
 // ---------------------------------------------------------------------------
-// Jobs (readiness §6)
+// Jobs
 // ---------------------------------------------------------------------------
 
 export type JobStatus = "pending" | "running" | "done" | "failed";
@@ -87,7 +77,7 @@ export interface LessonSessionSummaryFocusPatternResult {
   note?: string;
 }
 
-/** Written on `POST /lessons/{id}/finish` (Phase 5) — `null` until then. */
+/** Written on finish; `null` until then. */
 export interface LessonSessionSummary {
   duration_minutes: number;
   completed_slots: string[];
@@ -109,7 +99,7 @@ export interface LessonPayload {
 }
 
 // ---------------------------------------------------------------------------
-// Lessons (readiness §6)
+// Lessons
 // ---------------------------------------------------------------------------
 
 export type LessonStatus = "generating" | "active" | "accomplished" | "failed";
@@ -149,7 +139,7 @@ export async function getLesson(token: string | null, lessonId: string): Promise
 }
 
 // ---------------------------------------------------------------------------
-// Start lesson (readiness §6) — the 409 conflict is a valid, expected state
+// Start lesson — the 409 conflict is a valid, expected state
 // (one in-flight lesson per user), not an error condition to surface as a
 // generic failure.
 // ---------------------------------------------------------------------------
@@ -211,14 +201,14 @@ export async function startLesson(token: string | null): Promise<StartLessonResp
 }
 
 // ---------------------------------------------------------------------------
-// Stop lesson (readiness §6) — optional UI-convenience action. The lesson
+// Stop lesson — optional UI-convenience action. The lesson
 // stays `active` either way (backend.md); this just lets the UI leave the
 // chat and go back to the dashboard's Resume state.
 // ---------------------------------------------------------------------------
 
 /**
  * `POST /api/v1/lessons/{lesson_id}/stop` — expects `204 No Content`.
- * Callers should treat this as best-effort: per readiness §6 it's optional
+ * Callers should treat this as best-effort: it's optional
  * and the UI may leave chat without calling it at all, so failures here
  * should not block navigation away from the lesson chat page.
  */
@@ -231,16 +221,12 @@ export async function stopLesson(token: string | null, lessonId: string): Promis
 }
 
 // ---------------------------------------------------------------------------
-// Finish lesson (readiness §6) — the explicit "Finish lesson" action; always
-// available while the lesson is `active` (early finish OK, frontend.md
-// "Lesson lifecycle in UI"). Optional JSON: CSAT 1–5, free-text feedback,
-// and completed slot ids. Empty body is allowed; rating must not block finish.
+// Finish lesson — always available while active. Optional feedback and
+// completed slot ids; an empty body is allowed.
 // ---------------------------------------------------------------------------
 
 export interface FinishLessonRequest {
   learner_feedback?: string;
-  /** Optional 1–5 lesson CSAT. Omit when the learner skips the rating. */
-  csat?: number;
   completed_slot_ids?: string[];
 }
 
@@ -251,12 +237,11 @@ export interface FinishLessonResponse {
   schedule_updated: boolean;
 }
 
-/** Drop blank / out-of-range fields so finish stays valid with an empty rating. */
+/** Drop blank fields. */
 export function buildFinishLessonBody(input: FinishLessonRequest = {}): FinishLessonRequest {
   const body: FinishLessonRequest = {};
   const feedback = input.learner_feedback?.trim();
   if (feedback) body.learner_feedback = feedback;
-  if (input.csat !== undefined && isCsatValue(input.csat)) body.csat = input.csat;
   if (input.completed_slot_ids && input.completed_slot_ids.length > 0) {
     body.completed_slot_ids = input.completed_slot_ids;
   }
@@ -293,7 +278,7 @@ export function describeFinishResult(result: FinishLessonResponse): string {
 
 // ---------------------------------------------------------------------------
 // Finish hint hand-off — LessonChat finishes a lesson and redirects straight
-// to the dashboard (frontend.md: nothing more to do in that chat). We carry
+// to the dashboard (nothing more to do in that chat). We carry
 // the one-line pace acknowledgment across that redirect via sessionStorage
 // rather than a query param, so the dashboard can show it once and it
 // doesn't linger in the URL/history.

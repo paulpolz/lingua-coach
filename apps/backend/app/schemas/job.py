@@ -1,5 +1,3 @@
-"""`GET /api/v1/jobs/{job_id}` response shape — docs/implementation-readiness.md §6."""
-
 from __future__ import annotations
 
 from datetime import datetime

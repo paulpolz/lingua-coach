@@ -1,16 +1,9 @@
 /**
- * Progress / pace summary client for the FastAPI backend.
- *
- * Mirrors docs/implementation-readiness.md §6 (`GET /progress`) — the
- * dashboard's plan-pacing surface (frontend.md "Dashboard pace hints").
- * There is no shared-types package in MVP, so these types are the
- * frontend's manual mirror of the backend Pydantic models — keep them in
- * sync at integration checkpoints.
+ * `GET /progress` client for the dashboard pace strip.
  */
 
 import { apiFetch, toApiError } from "@/lib/api";
 
-/** Also used by `profile.schedule.pace_summary` (readiness §6 `GET /profile`). */
 export type PaceSummary = "on_pace" | "behind" | "ahead" | "not_started";
 
 export interface ProgressActiveLesson {

@@ -1,7 +1,6 @@
 """Stateless Clerk session-JWT verification via JWKS.
 
-Verifies the `Authorization: Bearer <clerk_jwt>` header without storing
-sessions in Postgres (Clerk owns sessions; see docs/tech_requirements/database.md).
+Clerk owns sessions; nothing is stored in Postgres.
 
 Flow:
 1. Read the `iss` claim from the *unverified* token.

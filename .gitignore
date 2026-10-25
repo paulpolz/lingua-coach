@@ -117,11 +117,3 @@ blob-report/
 .cache/
 tmp/
 temp/
-
-# Eval run output (baselines live under evals/fixtures/)
-evals/results/
-
-# Miner inbox stubs may include truncated production snippets. Promote to
-# evals/cases/regression/ after stripping PII; do not commit raw stubs.
-evals/cases/inbox/*.yaml
-evals/cases/inbox/*.yml

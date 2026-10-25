@@ -1,10 +1,3 @@
-"""`GET /api/v1/progress` — docs/implementation-readiness.md §6.
-
-Not lesson-scoped (mirrors `jobs.py` living alongside `lessons.py`) — kept as
-its own module since it aggregates lesson + profile state rather than acting
-on a single lesson.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

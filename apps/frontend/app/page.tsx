@@ -5,8 +5,7 @@ import RootAuthGate from "@/components/RootAuthGate";
 import { syncUser } from "@/lib/api";
 
 /**
- * Root route — Clerk sign-in is the MVP entry point (see
- * docs/tech_requirements/frontend.md "Auth UX").
+ * Root route.
  *
  * Signed out -> /sign-in. Signed in -> sync user with the backend, then
  * route-guard on `onboarding_complete` -> /onboarding or /dashboard.

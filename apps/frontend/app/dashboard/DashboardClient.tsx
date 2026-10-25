@@ -18,18 +18,13 @@ import {
   type Lesson,
 } from "@/lib/lessons";
 import { getProgress, type Progress } from "@/lib/progress";
-import { reportClientError } from "@/lib/reportError";
 import FinishLessonDialog from "@/components/FinishLessonDialog";
 import Button from "@/components/ui/Button";
 import PaceSummary from "./PaceSummary";
 
-// Poll cadence + timeout guard for lesson generation (frontend.md "Do not
-// block the whole app shell on lesson generation — poll in place"). The
-// ceiling must clear the worst case of GEMINI_TIMEOUT_SECONDS (120s) *twice*
-// (initial attempt + the 1 documented JSON-repair retry, readiness §11) plus
-// request/DB overhead, with headroom — that's ~240s+ minimum.
+// Generation is one Gemini call; the ceiling (~150s) clears GEMINI_TIMEOUT_SECONDS (120s).
 const POLL_INTERVAL_MS = 1800;
-const MAX_POLL_ATTEMPTS = 170;
+const MAX_POLL_ATTEMPTS = 85;
 
 type DashboardState =
   | { phase: "loading" }
@@ -73,9 +68,7 @@ export default function DashboardClient() {
   // over from LessonChat's finish-then-redirect (readAndClearFinishHint).
   const [finishAckMessage, setFinishAckMessage] = useState<string | null>(() => readAndClearFinishHint());
 
-  // Pace/plan summary (frontend.md "Dashboard pace hints") — fetched
-  // alongside the active lesson but never blocks the Start/Resume flow;
-  // failures just hide the section (see PaceSummary.tsx).
+  // Pace summary never blocks Start/Resume; a failure just hides the section.
   const [progress, setProgress] = useState<Progress | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
 
@@ -141,11 +134,6 @@ export default function DashboardClient() {
         setState({
           phase: "load-error",
           message,
-        });
-        reportClientError({
-          code: "DASHBOARD_LOAD_ERROR",
-          message,
-          surface: "dashboard",
         });
       }
     }
@@ -301,11 +289,7 @@ export default function DashboardClient() {
     }
   }, [state, isStopping, getToken]);
 
-  // "Finish lesson" — always available while the lesson is active
-  // (frontend.md "Lesson lifecycle in UI"). On success the lesson is
-  // accomplished server-side, so we drop straight back to `idle`: the
-  // backend owns lesson numbering, so the next "Start lesson" click just
-  // starts lesson N+1 with no state to track here.
+  // After finish the dashboard returns to idle; the backend owns lesson numbering.
   const handleFinishLesson = useCallback(
     async (feedback: FinishLessonRequest = {}) => {
       if (state.phase !== "active" || isFinishing) return;

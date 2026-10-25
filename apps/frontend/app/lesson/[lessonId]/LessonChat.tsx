@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { applyChecklistMetadata, createChatSession, getChatMessages, streamChatMessage, type ChatMessage, type LessonPlanTask } from "@/lib/chat";
-import { reportClientError } from "@/lib/reportError";
 import {
   describeFinishResult,
   finishLesson,
@@ -62,11 +61,8 @@ function writeStoredSessionId(lessonId: string, id: string): void {
 }
 
 /**
- * Lesson chat — the Phase 4 replacement for the Phase 3 placeholder body.
- * Mirrors OnboardingChat's session create/resume + SSE-streaming pattern
- * (see docs/implementation-readiness.md §6-8), adapted for lesson turns:
- * a collapsible lesson focus card instead of a full worksheet, and
- * Stop/Finish session controls instead of an Accept-plan card.
+ * Lesson chat: same session create/resume and SSE streaming as OnboardingChat,
+ * with a collapsible focus card, a pinned checklist, and Stop/Finish controls.
  */
 export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
   const { getToken } = useAuth();
@@ -105,9 +101,7 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
-  // Auto-collapse the focus card once the conversation gets going, so it
-  // doesn't dominate the screen (frontend.md: "thin brief, not a
-  // worksheet"). Still user-toggleable afterwards via the header.
+  // Auto-collapse the focus card once the conversation starts; still toggleable.
   useEffect(() => {
     if (!hasAutoCollapsedRef.current && messages.length > 0) {
       hasAutoCollapsedRef.current = true;
@@ -169,12 +163,6 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
             : "Could not reach the server. Is the backend running?"
         );
         setLoadState("error");
-        reportClientError({
-          code: "LESSON_CHAT_LOAD_ERROR",
-          message: error instanceof Error ? error.message : "Lesson chat load failed",
-          surface: "lesson",
-          meta: { lesson_id: lessonId },
-        });
       }
     }
 
@@ -236,9 +224,7 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
                 : message
             )
           );
-          // Track only the latest turn's signal — the tutor re-evaluates
-          // this on every reply (readiness §7), so we don't latch `true`
-          // forever once it's said once.
+          // The tutor re-evaluates this every turn, so keep only the latest value.
           setSuggestFinish(Boolean(data.metadata?.suggest_finish));
           setChecklistTasks((prevTasks) => {
             const next = applyChecklistMetadata(
@@ -288,21 +274,13 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
         await stopLesson(token, lessonId);
       } catch (error) {
         console.error("Failed to stop lesson session (non-blocking):", error);
-        reportClientError({
-          code: "LESSON_STOP_ERROR",
-          message: error instanceof Error ? error.message : "Failed to stop lesson",
-          surface: "lesson",
-          meta: { lesson_id: lessonId },
-        });
       }
     })();
     router.push("/dashboard");
   }, [isStopping, getToken, lessonId, router]);
 
-  // "Finish lesson" — always available while active (readiness §6, always
-  // an explicit action even when `suggestFinish` is true). Nothing more to
-  // do in this chat once accomplished, so we carry the one-line pace
-  // acknowledgment across the redirect and hand off to the dashboard.
+  // Finish is always an explicit action. The pace acknowledgment is carried
+  // across the redirect to the dashboard.
   // CSAT / free-text are optional and must not block finish.
   const handleFinish = useCallback(
     (feedback: FinishLessonRequest = {}) => {
@@ -387,11 +365,6 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
                   <ChatMessageBubble
                     key={message.id}
                     message={message}
-                    quality={
-                      sessionId
-                        ? { sessionId, surface: "lesson", lessonId, getToken }
-                        : undefined
-                    }
                   />
                 ))}
 

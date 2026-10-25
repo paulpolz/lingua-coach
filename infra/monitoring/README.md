@@ -13,4 +13,4 @@ docker compose --profile monitoring up
 | `promtail-config.yml` | Docker log shipping → Loki |
 | `grafana/provisioning/` | Datasources + dashboard JSON |
 
-See [`docs/mvp/monitoring_20260811/monitoring_20260811.md`](../../docs/mvp/monitoring_20260811/monitoring_20260811.md) and [`apps/README.md`](../../apps/README.md).
+See [`apps/README.md`](../../apps/README.md) and [deployment.md](../../docs/mvp/init/tech_requirements/deployment.md).
