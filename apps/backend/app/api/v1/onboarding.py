@@ -10,7 +10,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.config import settings
 from app.core.errors import APIError
 from app.db.session import get_db
 from app.models.chat import ChatMessage, ChatSession
@@ -21,6 +20,7 @@ from app.models.profile import Profile
 from app.models.user import User
 from app.models.user_report import UserReport
 from app.schemas.onboarding import OnboardingAcceptRequest, OnboardingAcceptResponse
+from app.services.lesson_timing import TimeBudgetRequired, target_minutes
 from app.services.report_seed import seed_four_week_plan_markdown, seed_roadmap_markdown
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -57,6 +57,17 @@ async def accept_onboarding(
             "ONBOARDING_INTERVIEW_INCOMPLETE",
         )
 
+    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
+    try:
+        target_minutes(profile)
+    except TimeBudgetRequired:
+        raise APIError(
+            422,
+            "The plan needs a lesson length: tell the coach how many minutes each lesson should last.",
+            "TIME_BUDGET_REQUIRED",
+        ) from None
+    assert profile is not None  # target_minutes() raises for a missing profile
+
     now = datetime.now(UTC)
     roadmap = body.course_roadmap.model_dump()
     plan_days = body.course_roadmap.summary.target_plan_days
@@ -72,10 +83,6 @@ async def accept_onboarding(
     db.add(plan)
     await db.flush()
 
-    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
-    if profile is None:
-        profile = Profile(user_id=user.id, pace_window_hours=settings.pace_window_hours)
-        db.add(profile)
     profile.active_learning_plan_id = plan.id
     profile.target_plan_days = plan_days or None
     profile.projected_completion_at = now + timedelta(hours=plan_days * (profile.pace_window_hours or 24))

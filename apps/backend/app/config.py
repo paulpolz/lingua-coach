@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     max_message_chars: int = 4000
     chat_context_messages: int = 10
     pace_window_hours: int = 24
+    # Longest gap between lesson-chat messages that still counts as practice time.
+    # A measurement constant, not a lesson length (lessons have no default length).
+    lesson_idle_cap_minutes: int = 5
     skills_dir: str = str(_BACKEND_ROOT / "skills")
 
     @model_validator(mode="after")

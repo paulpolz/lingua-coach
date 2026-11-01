@@ -212,9 +212,7 @@
             "type": "string"
           },
           "metadata": {
-            "additionalProperties": true,
-            "title": "Metadata",
-            "type": "object"
+            "$ref": "#/components/schemas/TurnMetadata"
           }
         },
         "required": [
@@ -225,7 +223,42 @@
         "title": "ChatTurnResponse",
         "type": "object"
       },
+      "Correction": {
+        "properties": {
+          "correction": {
+            "title": "Correction",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "span": {
+            "title": "Span",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "span",
+          "correction",
+          "type"
+        ],
+        "title": "Correction",
+        "type": "object"
+      },
       "CourseRoadmap": {
+        "description": "String values are in the learning language; keys stay English.",
         "properties": {
           "adaptation_rules": {
             "anyOf": [
@@ -310,29 +343,6 @@
         "title": "CourseRoadmap",
         "type": "object"
       },
-      "CourseRoadmapActivity": {
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "minutes": {
-            "title": "Minutes",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "label",
-          "minutes"
-        ],
-        "title": "CourseRoadmapActivity",
-        "type": "object"
-      },
       "CourseRoadmapCurrentBlock": {
         "properties": {
           "focus_summary": {
@@ -362,6 +372,7 @@
                 "type": "null"
               }
             ],
+            "description": "First 1-4 weeks. Themes only: no word lists, exercises or URLs.",
             "title": "Themes"
           },
           "weeks": {
@@ -549,7 +560,7 @@
             "title": "Block Day",
             "type": "integer"
           },
-          "goal_specific_focus": {
+          "goal_context": {
             "anyOf": [
               {
                 "type": "string"
@@ -558,7 +569,8 @@
                 "type": "null"
               }
             ],
-            "title": "Goal Specific Focus"
+            "description": "The goal situation practiced in reading/writing.",
+            "title": "Goal Context"
           },
           "grammar_focus": {
             "anyOf": [
@@ -570,28 +582,6 @@
               }
             ],
             "title": "Grammar Focus"
-          },
-          "input_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input Type"
-          },
-          "production_focus": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Production Focus"
           },
           "vocab_theme": {
             "anyOf": [
@@ -612,26 +602,23 @@
         "type": "object"
       },
       "CourseRoadmapWeeklyTemplate": {
+        "description": "Every lesson is `minutes_per_session` of mixed chat practice; there is no activity split.",
         "properties": {
-          "activities": {
-            "items": {
-              "$ref": "#/components/schemas/CourseRoadmapActivity"
-            },
-            "title": "Activities",
-            "type": "array"
-          },
           "minutes_per_session": {
+            "description": "The learner's lesson length in minutes.",
             "title": "Minutes Per Session",
             "type": "integer"
           },
-          "partner_session": {
+          "sessions_per_week": {
             "anyOf": [
-              {},
+              {
+                "type": "integer"
+              },
               {
                 "type": "null"
               }
             ],
-            "title": "Partner Session"
+            "title": "Sessions Per Week"
           },
           "weekends": {
             "anyOf": [
@@ -646,28 +633,13 @@
           }
         },
         "required": [
-          "minutes_per_session",
-          "activities"
+          "minutes_per_session"
         ],
         "title": "CourseRoadmapWeeklyTemplate",
         "type": "object"
       },
       "FinishLessonRequest": {
         "properties": {
-          "completed_slot_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed Slot Ids"
-          },
           "learner_feedback": {
             "anyOf": [
               {
@@ -951,6 +923,40 @@
         "title": "OnboardingAcceptResponse",
         "type": "object"
       },
+      "PracticeResult": {
+        "properties": {
+          "aspect": {
+            "enum": [
+              "grammar",
+              "vocabulary",
+              "review"
+            ],
+            "title": "Aspect",
+            "type": "string"
+          },
+          "item": {
+            "description": "review: the mistake pattern_type exactly as listed; grammar: the point; vocabulary: the word.",
+            "title": "Item",
+            "type": "string"
+          },
+          "result": {
+            "description": "solid: done correctly, ideally without help; shaky: wrong or needed help.",
+            "enum": [
+              "solid",
+              "shaky"
+            ],
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "aspect",
+          "item",
+          "result"
+        ],
+        "title": "PracticeResult",
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "goal_summary": {
@@ -1038,6 +1044,19 @@
           "schedule"
         ],
         "title": "ProfileResponse",
+        "type": "object"
+      },
+      "ProfileUpdateRequest": {
+        "description": "Only the lesson length is editable here; other plan changes go through the coach chat.",
+        "properties": {
+          "time_budget": {
+            "$ref": "#/components/schemas/TimeBudgetUpdate"
+          }
+        },
+        "required": [
+          "time_budget"
+        ],
+        "title": "ProfileUpdateRequest",
         "type": "object"
       },
       "ProgressResponse": {
@@ -1162,6 +1181,105 @@
           "pace_summary"
         ],
         "title": "ScheduleOut",
+        "type": "object"
+      },
+      "TimeBudgetUpdate": {
+        "properties": {
+          "minutes_per_session": {
+            "description": "Length of one lesson in minutes.",
+            "maximum": 180.0,
+            "minimum": 5.0,
+            "title": "Minutes Per Session",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minutes_per_session"
+        ],
+        "title": "TimeBudgetUpdate",
+        "type": "object"
+      },
+      "TurnMetadata": {
+        "description": "Stored on every assistant message and returned with the turn. Every key is always\npresent; each branch sets only what differs from the defaults.",
+        "properties": {
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/Correction"
+            },
+            "title": "Corrections",
+            "type": "array"
+          },
+          "course_roadmap_draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseRoadmap"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan_updates": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Updates"
+          },
+          "practiced": {
+            "items": {
+              "$ref": "#/components/schemas/PracticeResult"
+            },
+            "title": "Practiced",
+            "type": "array"
+          },
+          "suggest_finish": {
+            "default": false,
+            "title": "Suggest Finish",
+            "type": "boolean"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnTiming"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tips": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tips",
+            "type": "array"
+          }
+        },
+        "title": "TurnMetadata",
+        "type": "object"
+      },
+      "TurnTiming": {
+        "properties": {
+          "active_minutes": {
+            "title": "Active Minutes",
+            "type": "integer"
+          },
+          "target_minutes": {
+            "title": "Target Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_minutes",
+          "target_minutes"
+        ],
+        "title": "TurnTiming",
         "type": "object"
       },
       "UserReportOut": {
@@ -1786,6 +1904,51 @@
           }
         ],
         "summary": "Get Profile",
+        "tags": [
+          "profile"
+        ]
+      },
+      "patch": {
+        "description": "Set the lesson length (merged into `time_budget`). Profiles from before lesson timing\nhave none, and `POST /lessons/start` answers 409 TIME_BUDGET_REQUIRED until it is set.",
+        "operationId": "update_profile_api_v1_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Profile",
         "tags": [
           "profile"
         ]

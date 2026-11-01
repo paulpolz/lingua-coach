@@ -35,46 +35,6 @@
       "title": "Correction",
       "type": "object"
     },
-    "LessonPlan": {
-      "properties": {
-        "tasks": {
-          "items": {
-            "$ref": "#/$defs/LessonPlanTask"
-          },
-          "minItems": 1,
-          "title": "Tasks",
-          "type": "array"
-        }
-      },
-      "required": [
-        "tasks"
-      ],
-      "title": "LessonPlan",
-      "type": "object"
-    },
-    "LessonPlanTask": {
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "minutes": {
-          "title": "Minutes",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "label",
-        "minutes"
-      ],
-      "title": "LessonPlanTask",
-      "type": "object"
-    },
     "MistakeEntry": {
       "properties": {
         "correction": {
@@ -196,6 +156,40 @@
       "title": "PlanUpdates",
       "type": "object"
     },
+    "PracticeResult": {
+      "properties": {
+        "aspect": {
+          "enum": [
+            "grammar",
+            "vocabulary",
+            "review"
+          ],
+          "title": "Aspect",
+          "type": "string"
+        },
+        "item": {
+          "description": "review: the mistake pattern_type exactly as listed; grammar: the point; vocabulary: the word.",
+          "title": "Item",
+          "type": "string"
+        },
+        "result": {
+          "description": "solid: done correctly, ideally without help; shaky: wrong or needed help.",
+          "enum": [
+            "solid",
+            "shaky"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "aspect",
+        "item",
+        "result"
+      ],
+      "title": "PracticeResult",
+      "type": "object"
+    },
     "TimeBudget": {
       "properties": {
         "intensity": {
@@ -220,19 +214,8 @@
             }
           ],
           "default": null,
+          "description": "Length of one lesson in minutes (5-180); every lesson is timed to this. Required before a roadmap is drafted.",
           "title": "Minutes Per Session"
-        },
-        "optional_partner_minutes": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Optional Partner Minutes"
         },
         "sessions_per_week": {
           "anyOf": [
@@ -252,14 +235,6 @@
     }
   },
   "properties": {
-    "completed_task_ids": {
-      "description": "Ids of tasks marked done this turn.",
-      "items": {
-        "type": "string"
-      },
-      "title": "Completed Task Ids",
-      "type": "array"
-    },
     "content": {
       "description": "Learner-facing reply for this turn.",
       "minLength": 1,
@@ -273,18 +248,6 @@
       },
       "title": "Corrections",
       "type": "array"
-    },
-    "lesson_plan": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/LessonPlan"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Include on the first coaching turn and when the agenda changes."
     },
     "mistakes": {
       "description": "One entry per recurring error pattern.",
@@ -306,9 +269,17 @@
       "default": null,
       "description": "Null unless the learner asks for a concrete plan change. Then include only the changed fields among goal_summary, level, time_budget, topics, vocab_priorities, target_plan_days, and grammar_mastery."
     },
+    "practiced": {
+      "description": "Items the learner practiced this turn and how it went.",
+      "items": {
+        "$ref": "#/$defs/PracticeResult"
+      },
+      "title": "Practiced",
+      "type": "array"
+    },
     "suggest_finish": {
       "default": false,
-      "description": "Set only when every slot and exit criterion is done.",
+      "description": "True only in the closing recap, once the Time line shows the time budget is used.",
       "title": "Suggest Finish",
       "type": "boolean"
     },

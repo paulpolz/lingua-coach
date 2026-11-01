@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ScheduleOut(BaseModel):
@@ -25,3 +25,13 @@ class ProfileResponse(BaseModel):
     vocab_priorities: list
     grammar_mastery: dict
     schedule: ScheduleOut
+
+
+class TimeBudgetUpdate(BaseModel):
+    minutes_per_session: int = Field(ge=5, le=180, description="Length of one lesson in minutes.")
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Only the lesson length is editable here; other plan changes go through the coach chat."""
+
+    time_budget: TimeBudgetUpdate

@@ -6,9 +6,6 @@ from app.schemas.llm import (
     CourseRoadmap,
     CourseRoadmapMilestone,
     CourseRoadmapSummary,
-    CurriculumSlot,
-    GoalSpecificTask,
-    InputTask,
     LessonCurriculum,
 )
 
@@ -19,10 +16,10 @@ def curriculum() -> LessonCurriculum:
         grammar_focus="Polite requests.",
         vocab_theme="Cafe",
         milestone_index=0,
-        slots=[CurriculumSlot(id="warmup", label="Warmup", exercise_set="reading")],
-        input_task=InputTask(type="reading", topic="Menus", focus="vocab"),
-        goal_specific_task=GoalSpecificTask(label="Write an order", format="writing"),
-        exit_criteria=["Writes a short order"],
+        new_vocabulary=["latte", "to go", "receipt"],
+        review_patterns=[],
+        goal_context="Ordering at a cafe while travelling",
+        practice_targets=["Writes a short order"],
     )
 
 

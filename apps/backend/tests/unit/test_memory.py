@@ -34,16 +34,21 @@ def test_never_reviewed_mistake_is_not_due() -> None:
     assert rank_mistakes([m], "", NOW, k=1) == [m]  # type: ignore[list-item]
 
 
-def test_prior_lesson_line_condenses_the_summary() -> None:
+def test_prior_lesson_line_uses_the_timed_summary() -> None:
     lesson = SimpleNamespace(
         lesson_number=9,
         payload={
             "curriculum": {"grammar_focus": "past simple", "vocab_theme": "travel"},
-            "session_summary": {"duration_minutes": 12, "completed_slots": ["warmup"]},
+            "session_summary": {
+                "duration_minutes": 12,
+                "target_minutes": 15,
+                "practiced_solid": ["went"],
+                "practiced_shaky": ["articles"],
+            },
         },
     )
     line = prior_lesson_line(lesson)  # type: ignore[arg-type]
-    assert line == 'Lesson 9: grammar "past simple", vocab "travel", 12 min'
+    assert line == 'Lesson 9: grammar "past simple", vocab "travel", 12 of 15 min, solid: went; shaky: articles'
 
 
 def test_prior_lesson_line_tolerates_legacy_summaries() -> None:

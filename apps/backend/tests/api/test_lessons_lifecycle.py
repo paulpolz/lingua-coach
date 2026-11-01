@@ -20,7 +20,7 @@ from app.models.lesson import Lesson
 from app.schemas.llm import ReportPatch
 from tests.asgi import asgi_post
 from tests.conftest import Auth
-from tests.factories import make_chat_session, make_lesson, make_messages, make_profile, make_user
+from tests.factories import make_chat_session, make_lesson, make_messages, make_mistake, make_profile, make_user
 from tests.fake_llm import FakeLLM, LLMCall
 from tests.samples import curriculum
 
@@ -146,3 +146,110 @@ async def test_report_failure_does_not_undo_finish(
     assert any(getattr(r, "event", None) == "report_patch_failed" for r in caplog.records)
     db.expire_all()
     assert (await db.get(Lesson, lesson_id)).status == LessonStatus.accomplished  # type: ignore[union-attr]
+
+
+async def test_early_finish_counts_and_records_the_shortfall(
+    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM
+) -> None:
+    user = await make_user(db)
+    await make_profile(db, user, minutes_per_session=15)
+    payload = {
+        "version": 1,
+        "curriculum": {"grammar_focus": "past simple", "vocab_theme": "travel", "new_vocabulary": ["luggage", "gate"]},
+        "target_minutes": 15,
+        "session_summary": None,
+    }
+    lesson = await make_lesson(db, user, payload=payload)
+    session = await make_chat_session(db, user, lesson)
+    messages = await make_messages(db, session, [0, 2, 4, 8])  # user, assistant, user, assistant
+    messages[1].metadata_json = {
+        "practiced": [
+            {"aspect": "grammar", "item": "past simple", "result": "shaky"},
+            {"aspect": "vocabulary", "item": "gate", "result": "solid"},
+        ]
+    }
+    messages[3].metadata_json = {"practiced": [{"aspect": "grammar", "item": "past simple", "result": "solid"}]}
+    await make_mistake(db, user, "articles", resolved_at=datetime.now(UTC), next_review_at=None)
+    long_ago = datetime.now(UTC) - timedelta(days=30)
+    await make_mistake(db, user, "word order", lesson_id=lesson.id, occurrence_count=3, created_at=long_ago)
+    await make_mistake(db, user, "past simple", lesson_id=lesson.id, created_at=datetime.now(UTC))
+    lesson.started_at = datetime.now(UTC) - timedelta(minutes=20)
+    await db.flush()
+    lesson_id = lesson.id
+    fake_llm.push(ReportPatch(ops=[]))
+
+    response = await client.post(f"/api/v1/lessons/{lesson_id}/finish", json={"learner_feedback": "More emails"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "accomplished"
+    db.expire_all()
+    done = await db.get(Lesson, lesson_id)
+    assert done is not None and done.status == LessonStatus.accomplished
+    summary = done.payload["session_summary"]
+    assert summary["duration_minutes"] == 8
+    assert summary["target_minutes"] == 15
+    assert summary["shortfall_minutes"] == 7
+    assert summary["finished_early"] is True
+    assert sorted(summary["practiced_solid"]) == ["gate", "past simple"]
+    assert summary["practiced_shaky"] == []
+    assert summary["resolved_pattern_types"] == ["articles"]
+    assert summary["new_vocabulary"] == ["luggage", "gate"]
+    assert summary["learner_feedback"] == "More emails"
+    assert summary["new_pattern_types"] == ["past simple"]  # "word order" only recurred
+    assert not {"completed_slots", "deferred_items", "exit_criteria_met"} & set(summary)
+    assert "finished_early" in fake_llm.calls[-1].text
+
+
+async def test_start_without_a_time_budget_is_409(client: httpx.AsyncClient, db: AsyncSession) -> None:
+    user = await make_user(db)
+    await make_profile(db, user, minutes_per_session=None)
+
+    response = await client.post("/api/v1/lessons/start")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "TIME_BUDGET_REQUIRED"
+
+
+async def test_patch_profile_minutes_then_start_succeeds(
+    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM
+) -> None:
+    user = await make_user(db)
+    await make_profile(db, user, minutes_per_session=None, time_budget={"sessions_per_week": 5})
+    fake_llm.push(curriculum())
+
+    patched = await client.patch("/api/v1/profile", json={"time_budget": {"minutes_per_session": 20}})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["time_budget"] == {"sessions_per_week": 5, "minutes_per_session": 20}
+
+    started = await client.post("/api/v1/lessons/start")
+    assert started.status_code == 202, started.text
+    lesson = await client.get(f"/api/v1/lessons/{started.json()['lesson_id']}")
+    assert lesson.json()["payload"]["target_minutes"] == 20
+
+
+@pytest.mark.parametrize("minutes", [0, 4, 181, "fifteen"])
+async def test_patch_profile_rejects_out_of_range_minutes(
+    client: httpx.AsyncClient, db: AsyncSession, minutes: object
+) -> None:
+    user = await make_user(db)
+    await make_profile(db, user)
+    response = await client.patch("/api/v1/profile", json={"time_budget": {"minutes_per_session": minutes}})
+    assert response.status_code == 422
+
+
+async def test_finishing_within_a_minute_of_the_target_is_not_early(
+    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM
+) -> None:
+    user = await make_user(db)
+    await make_profile(db, user)
+    lesson = await make_lesson(db, user, payload={"curriculum": {}, "target_minutes": 15})
+    session = await make_chat_session(db, user, lesson)
+    await make_messages(db, session, [0, 4, 8, 12, 14])
+    lesson_id = lesson.id
+    fake_llm.push(ReportPatch(ops=[]))
+
+    await client.post(f"/api/v1/lessons/{lesson_id}/finish", json={})
+
+    db.expire_all()
+    summary = (await db.get(Lesson, lesson_id)).payload["session_summary"]  # type: ignore[union-attr]
+    assert (summary["shortfall_minutes"], summary["finished_early"]) == (1, False)

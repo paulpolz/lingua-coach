@@ -44,13 +44,13 @@ The onboarding chat runs the `onboarding_interviewer` skill followed by `course_
 
 1. It starts in English and asks for the native language, then the target language.
 2. From then on it speaks the target language and accepts answers in any language.
-3. It asks about the goal and horizon, the current level (with a short diagnostic), the time budget per session and per week, skill and topic priorities, constraints (budget, practice partner, learning style), and motivation.
-4. When it has enough, it stores a learner profile and proposes a **course roadmap**: goal summary, starting level, target plan days with a range, milestones with success criteria, a weekly session template, and the first block of daily themes.
+3. It asks about the goal and horizon, the current level (with a short diagnostic), how many **minutes each lesson** should last and how many lessons per week, skill and topic priorities, constraints (budget, learning style), and motivation. The lesson length is required: there is no default, and a vague answer gets a follow-up asking for a number.
+4. When it has enough, it stores a learner profile and proposes a **course roadmap**: goal summary, starting level, target plan days with a range, milestones with success criteria, the lesson length and lessons per week, and the first block of daily themes (grammar, vocabulary, goal context).
 
 The roadmap appears next to the chat as a card with **Accept** and **Change**.
 
 - **Change** keeps the card visible and sends a hidden request to the coach, which asks what to adjust. The learner answers in plain words ("fewer days", "more email writing"), and the coach replies with a revised roadmap that replaces the card.
-- **Accept** saves the roadmap as the learner's plan, creates the Roadmap and 4-Week Plan reports, deletes the onboarding transcript, and opens the dashboard.
+- **Accept** needs a lesson length in the profile; without one the coach is asked for it first. It saves the roadmap as the learner's plan, creates the Roadmap and 4-Week Plan reports, deletes the onboarding transcript, and opens the dashboard.
 
 ## 3. Dashboard
 
@@ -76,18 +76,18 @@ The account menu in the header opens the four reports and signs out.
 
 ### Start
 
-**Start lesson** is available only when no other lesson is generating or open. The coach writes the curriculum for the next lesson from the accepted roadmap, the learner profile, the last five lesson summaries, and the recorded mistakes. A curriculum holds one lesson goal, one grammar focus, one vocabulary theme, a list of slots (warm-up, input, production, and so on), a reading input task, a goal-specific writing task, and exit criteria. Generation takes up to about two minutes. If it fails, that lesson is marked failed and the learner can start a new one.
+**Start lesson** is available only when no other lesson is generating or open. A learner whose profile predates lesson timing is first asked "How many minutes per lesson?" on the dashboard. The coach writes the curriculum for the next lesson from the accepted roadmap, the learner profile, the last two lesson summaries in full plus a one-line note on the three before, and the most relevant recorded mistakes. A curriculum holds one lesson goal, one grammar focus, one vocabulary theme with the new words, the due mistake patterns to retest, the goal situation for reading and writing, and a few practice targets, sized to the lesson length. Generation takes up to about two minutes. If it fails, or the server restarted while generating, that lesson is marked failed and the learner can start a new one.
 
 ### Lesson chat
 
-The lesson chat runs the `exercise_tutor` skill. On week-end vocabulary review lessons it also loads `vocabulary_practice_formats`.
+The lesson chat runs the `exercise_tutor` skill. A lesson lasts the learner's chosen number of minutes. Every exercise is the same chat exchange, so grammar, vocabulary, review of past mistakes, and reading/writing for the goal are mixed in one conversation rather than split into blocks.
 
 - A collapsible **focus card** at the top shows the lesson goal, grammar focus, and vocabulary theme. It collapses once the conversation starts.
-- On the first turn the coach states the agenda. A pinned **checklist** shows the agenda items and ticks them off as the coach marks them done.
-- The coach runs each exercise, corrects mistakes inline, gives tips, and reviews weak patterns that are due.
-- Recurring errors are saved as **mistake patterns**. A repeated pattern is scheduled for review after 1, 3, 7, and then 14 days, and due patterns are fed back into later lessons.
+- A **time card** shows practice time against the lesson length (for example "8 / 15 min"). It counts active time: a long pause adds at most 5 minutes.
+- The coach teaches, then practices: a short explanation and graded exercises for the grammar point, the new words in full format with exercises, a retest of due mistakes in a new context, and a reading or writing task in the goal context. If the learner is fast, the coach makes it harder instead of ending early; after a skip it offers an easier variant of the same item.
+- The coach praises specific things done right and corrects mistakes with a one-line rule. Recurring errors are saved as **mistake patterns**, scheduled for review after 1, 3, 7, and then 14 days. A due pattern done right again moves its review further out; done right in two different lessons, it is closed.
 - The learner can ask for plan changes in the lesson chat ("make it 60 days", "focus on travel"). The coach applies them to the profile and, for the target plan days, recomputes the projected completion date. There is no separate plan editor.
-- When every slot and exit criterion is done, the coach suggests finishing.
+- In the last minutes the coach gives a short recap and suggests finishing. It never suggests finishing before the lesson time is used.
 
 ### Stop and resume
 
@@ -97,7 +97,7 @@ The lesson chat runs the `exercise_tutor` skill. On week-end vocabulary review l
 
 **Finish lesson** is always available while the lesson is open, even before the coach suggests it. It opens a short dialog with an optional free-text note. On finish:
 
-1. The lesson gets a **session summary**: duration, completed and deferred slots, whether the exit criteria were met, the grammar focus, the new mistake patterns, and the learner's note. Unfinished slots count as not done.
+1. The lesson gets a **session summary**: practice minutes against the lesson length, what is now solid and what is still shaky, patterns closed, new mistake patterns, the new words, and the learner's note. Finishing early still counts as a plan day; the dialog says "You practiced 8 of 15 min" and the shortfall is noted in the Progress report.
 2. Pace is evaluated against the 24-hour window, and the plan slips by one day if needed.
 3. The Progress and Error Log reports are updated by the `report_writer` skill in the background, after the learner is back on the dashboard.
 4. The lesson transcript is deleted. The summary, mistakes, and reports are what later lessons read.
@@ -110,8 +110,8 @@ Four markdown reports live under the account menu. They are written by the coach
 | Report | Created | Contents |
 |--------|---------|----------|
 | Roadmap | On plan accept | Overview, milestones, learning principles, scope notes |
-| 4-Week Plan | On plan accept | Block overview, day-by-day themes, weekly session template |
-| Progress | After the first finished lesson | Latest session, a skills table (grammar, vocabulary, listening, reading, writing, goal-specific), and an update log |
+| 4-Week Plan | On plan accept | Block overview, day-by-day themes (grammar, vocabulary, goal context), lesson length and rhythm |
+| Progress | After the first finished lesson | Latest session (time practiced, what is solid, what is shaky), a skills table (grammar, vocabulary, reading, writing, goal-specific), and an update log |
 | Error Log | After the first finished lesson | Pattern tracker, a daily log of fixes, and a list of confusable words |
 
 After each finished lesson the coach appends dated entries or rewrites whole sections. A report that does not exist yet shows "Fills in after your first lesson".

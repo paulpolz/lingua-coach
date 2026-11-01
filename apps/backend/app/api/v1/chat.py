@@ -33,9 +33,12 @@ from app.schemas.chat import (
     ChatSessionCreateRequest,
     ChatSessionResponse,
     ChatTurnResponse,
+    TurnMetadata,
+    TurnTiming,
 )
-from app.schemas.llm import LessonReply, MistakeEntry, OnboardingReply
+from app.schemas.llm import LessonReply, MistakeEntry, OnboardingReply, PracticeResult, normalize_pattern
 from app.services.gemini import ChatTurn, GeminiError, public_detail
+from app.services.lesson_timing import active_minutes, lesson_target_minutes
 from app.services.llm_usage import check_and_record_user_limit, metered_structured_call
 from app.services.memory import CHAT_MISTAKES, rank_mistakes
 from app.services.prompt_assembly import (
@@ -45,7 +48,6 @@ from app.services.prompt_assembly import (
     mistake_lines,
     onboarding_system_instruction,
 )
-from app.services.skills import should_include_vocab_formats
 
 logger = get_logger(__name__)
 
@@ -217,6 +219,8 @@ async def _upsert_mistakes(db: AsyncSession, user: User, lesson: Lesson, items: 
             occurrence_count=1,
             last_seen_at=now,
             next_review_at=now + timedelta(days=_REVIEW_DAYS[1]),
+            solid_streak=0,
+            last_solid_lesson_id=None,
         )
         count = Mistake.occurrence_count + 1
         await db.execute(
@@ -230,10 +234,68 @@ async def _upsert_mistakes(db: AsyncSession, user: User, lesson: Lesson, items: 
                     "last_seen_at": stmt.excluded.last_seen_at,
                     "next_review_at": stmt.excluded.last_seen_at
                     + func.make_interval(0, 0, 0, case(_REVIEW_DAYS, value=count, else_=14)),
+                    # A repeat reopens a closed pattern and restarts its solid streak.
+                    "solid_streak": 0,
+                    "last_solid_lesson_id": None,
+                    "resolved_at": None,
                     "updated_at": func.now(),
                 },
             )
         )
+
+
+def _review_days(occurrence_count: int) -> int:
+    return _REVIEW_DAYS.get(occurrence_count, 14)
+
+
+async def _apply_practiced(db: AsyncSession, user: User, lesson: Lesson, results: list[PracticeResult]) -> None:
+    """Close the feedback loop on practiced items.
+
+    On an open mistake pattern, `solid` pushes the review out one step and counts toward
+    closing it, at most once per lesson: solid results in two different lessons close the
+    pattern (spaced repetition, not two turns a minute apart). `shaky` restarts the streak.
+    A `solid` grammar point is merged into `profiles.grammar_mastery`. Runs before the
+    mistake upsert, so a mistake reported in the same reply wins.
+    """
+    latest = {(r.aspect, r.item.strip()): r for r in results if r.item.strip()}
+    if not latest:
+        return
+    names = {normalize_pattern(item) for _, item in latest}
+    open_mistakes = (
+        await db.execute(
+            select(Mistake).where(
+                Mistake.user_id == user.id,
+                Mistake.resolved_at.is_(None),
+                func.lower(Mistake.pattern_type).in_(names),
+            )
+        )
+    ).scalars()
+    by_pattern = {normalize_pattern(m.pattern_type): m for m in open_mistakes}
+    now = datetime.now(UTC)
+    mastered: dict[str, str] = {}
+    touched: set[str] = set()
+    for (aspect, item), result in latest.items():
+        # One streak step per pattern per reply, even if it is reported under two aspects.
+        key = normalize_pattern(item)
+        mistake = None if key in touched else by_pattern.get(key)
+        touched.add(key)
+        if mistake is not None and result.result == "solid":
+            if mistake.last_solid_lesson_id != lesson.id:
+                mistake.solid_streak += 1
+                mistake.last_solid_lesson_id = lesson.id
+            if mistake.solid_streak >= 2:
+                mistake.resolved_at, mistake.next_review_at = now, None
+            else:
+                mistake.next_review_at = now + timedelta(days=_review_days(mistake.occurrence_count + 1))
+        elif mistake is not None:
+            mistake.solid_streak, mistake.last_solid_lesson_id = 0, None
+        if aspect == "grammar" and result.result == "solid":
+            mastered[item] = "solid"
+    if mastered:
+        profile = await _profile(db, user)
+        if profile is not None:
+            profile.grammar_mastery = {**(profile.grammar_mastery or {}), **mastered}
+    await db.flush()
 
 
 async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> None:
@@ -242,9 +304,13 @@ async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> No
     if profile is None or not updates:
         return
     focus = dict(profile.focus or {})
-    for key, column in (("goal_summary", "goal_outcome"), ("level", "target_level"), ("time_budget", "time_budget")):
+    for key, column in (("goal_summary", "goal_outcome"), ("level", "target_level")):
         if updates.get(key) is not None:
             setattr(profile, column, updates[key])
+    if isinstance(updates.get("time_budget"), dict):
+        # Merge, so a change to one field never clears the lesson length.
+        changed = {k: v for k, v in updates["time_budget"].items() if v is not None}
+        profile.time_budget = {**(profile.time_budget or {}), **changed}
     if updates.get("topics") is not None:
         focus["topic_priorities"] = updates["topics"]
     if updates.get("vocab_priorities") is not None:
@@ -266,21 +332,34 @@ async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> No
     db.add(ProgressEvent(user_id=user.id, event_type="plan_updated", payload=updates))
 
 
+async def _lesson_timing(
+    db: AsyncSession, session: ChatSession, lesson: Lesson, profile: Profile | None
+) -> TurnTiming | None:
+    target = lesson_target_minutes(lesson, profile)
+    if target is None:
+        return None
+    active = await active_minutes(db, session.id, settings.lesson_idle_cap_minutes, until=datetime.now(UTC))
+    return TurnTiming(active_minutes=active, target_minutes=target)
+
+
 async def _build_prompt(
-    db: AsyncSession, user: User, lesson: Lesson | None, history: list[ChatTurn]
-) -> tuple[str, list[ChatTurn]]:
+    db: AsyncSession, user: User, session: ChatSession, lesson: Lesson | None, history: list[ChatTurn]
+) -> tuple[str, list[ChatTurn], TurnTiming | None]:
     profile = await _profile(db, user)
     native = profile.native_language if profile else None
     target = profile.target_language if profile else None
     if lesson is None:
-        return onboarding_system_instruction(native, target), history
+        return onboarding_system_instruction(native, target), history, None
 
     curriculum = (lesson.payload or {}).get("curriculum") or {}
+    timing = await _lesson_timing(db, session, lesson, profile)
     now = datetime.now(UTC)
-    open_mistakes = (await db.execute(select(Mistake).where(Mistake.user_id == user.id))).scalars()
+    open_mistakes = (
+        await db.execute(select(Mistake).where(Mistake.user_id == user.id, Mistake.resolved_at.is_(None)))
+    ).scalars()
     focus = f"{curriculum.get('grammar_focus') or ''} {curriculum.get('vocab_theme') or ''}"
     mistakes = mistake_lines(rank_mistakes(list(open_mistakes), focus, now, k=CHAT_MISTAKES), now)
-    context = lesson_context_block(curriculum, profile, mistakes)
+    context = lesson_context_block(curriculum, profile, mistakes, timing)
     log_context_tokens(
         "chat",
         {
@@ -289,8 +368,7 @@ async def _build_prompt(
             "history": "\n".join(turn.text for turn in history),
         },
     )
-    system = lesson_system_instruction(native, target, should_include_vocab_formats(curriculum))
-    return system, [ChatTurn(role="user", text=context), *history]
+    return lesson_system_instruction(native, target), [ChatTurn(role="user", text=context), *history], timing
 
 
 async def _persist_turn(
@@ -298,46 +376,40 @@ async def _persist_turn(
     user: User,
     lesson: Lesson | None,
     reply: OnboardingReply | LessonReply,
-) -> dict:
-    """Upsert artifacts from the structured reply and return the seven metadata keys."""
+    timing: TurnTiming | None,
+) -> TurnMetadata:
+    """Upsert artifacts from the structured reply and return the turn metadata."""
     if isinstance(reply, OnboardingReply):
         profile = reply.learner_profile
-        if profile is not None:
-            await _save_learner_profile(db, user, profile.model_dump())
-        goal = profile.goal if profile is not None else None
-        level = profile.level if profile is not None else None
-        return {
-            "corrections": [],
-            "tips": [],
-            "plan_updates": {
-                "goal_summary": None if goal is None else goal.outcome,
-                "level": None if level is None else level.self_assessed,
-            }
-            if profile is not None
-            else None,
-            "suggest_finish": False,
-            "course_roadmap_draft": None if reply.course_roadmap is None else reply.course_roadmap.model_dump(),
-            "lesson_plan": None,
-            "task_update": None,
-        }
+        if profile is None:
+            return TurnMetadata(course_roadmap_draft=reply.course_roadmap)
+        await _save_learner_profile(db, user, profile.model_dump())
+        return TurnMetadata(
+            plan_updates={
+                "goal_summary": profile.goal.outcome if profile.goal else None,
+                "level": profile.level.self_assessed if profile.level else None,
+            },
+            course_roadmap_draft=reply.course_roadmap,
+        )
 
     if lesson is None:
         raise RuntimeError("lesson reply requires a lesson")
 
+    await _apply_practiced(db, user, lesson, reply.practiced)
     await _upsert_mistakes(db, user, lesson, reply.mistakes)
     plan_updates = None if reply.plan_updates is None else reply.plan_updates.model_dump()
     if plan_updates is not None:
         await _apply_plan_updates(db, user, plan_updates)
-    task_ids = list(reply.completed_task_ids)
-    return {
-        "corrections": [item.model_dump() for item in reply.corrections],
-        "tips": list(reply.tips),
-        "plan_updates": plan_updates,
-        "suggest_finish": reply.suggest_finish,
-        "course_roadmap_draft": None,
-        "lesson_plan": None if reply.lesson_plan is None else reply.lesson_plan.model_dump(),
-        "task_update": {"completed_task_ids": task_ids} if task_ids else None,
-    }
+    # The model cannot see a clock; hold back the wrap-up until the budget is nearly used.
+    suggest_finish = reply.suggest_finish and (timing is None or timing.active_minutes >= timing.target_minutes - 1)
+    return TurnMetadata(
+        corrections=reply.corrections,
+        tips=reply.tips,
+        plan_updates=plan_updates,
+        suggest_finish=suggest_finish,
+        practiced=reply.practiced,
+        timing=timing,
+    )
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatTurnResponse)
@@ -377,7 +449,7 @@ async def post_chat_message(
         ChatTurn(role="model" if m.role == ChatMessageRole.assistant else "user", text=m.content)
         for m in reversed(recent)
     ] + [ChatTurn(role="user", text=content)]
-    system_instruction, contents = await _build_prompt(db, user, lesson, history)
+    system_instruction, contents, timing = await _build_prompt(db, user, session, lesson, history)
 
     async def save_user_message() -> None:
         db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
@@ -403,12 +475,21 @@ async def post_chat_message(
         raise APIError(_GEMINI_STATUS.get(exc.code, 502), public_detail(exc.code), exc.code) from exc
 
     try:
-        metadata = await _persist_turn(db, user, lesson, reply)
+        if timing is not None:
+            # Re-measure now: the learner's message is saved and the reply took a while. This is the
+            # value the UI shows and the guard uses, so it agrees with what finish records.
+            timing = TurnTiming(
+                active_minutes=await active_minutes(
+                    db, session.id, settings.lesson_idle_cap_minutes, until=datetime.now(UTC)
+                ),
+                target_minutes=timing.target_minutes,
+            )
+        metadata = await _persist_turn(db, user, lesson, reply, timing)
         message = ChatMessage(
             session_id=session.id,
             role=ChatMessageRole.assistant,
             content=reply.content,
-            metadata_json=metadata,
+            metadata_json=metadata.model_dump(mode="json"),
         )
         db.add(message)
         await db.commit()

@@ -65,3 +65,35 @@ async def test_accept_without_draft_goal_is_422(client: httpx.AsyncClient, db: A
 
     assert response.status_code == 422
     assert response.json()["code"] == "ONBOARDING_INTERVIEW_INCOMPLETE"
+
+
+async def test_accept_without_lesson_minutes_is_422(client: httpx.AsyncClient, db: AsyncSession) -> None:
+    _, session = await _ready_user(db, minutes_per_session=None)
+
+    response = await client.post(
+        "/api/v1/onboarding/accept", json={"session_id": str(session.id), "course_roadmap": roadmap_dict()}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "TIME_BUDGET_REQUIRED"
+
+
+async def test_accept_ignores_legacy_roadmap_fields(client: httpx.AsyncClient, db: AsyncSession) -> None:
+    user, session = await _ready_user(db)
+    user_id = user.id
+    legacy = roadmap_dict(
+        weekly_template={
+            "minutes_per_session": 15,
+            "activities": [{"id": "warmup", "label": "Warm-up", "minutes": 5}],
+            "partner_session": None,
+        }
+    )
+
+    response = await client.post(
+        "/api/v1/onboarding/accept", json={"session_id": str(session.id), "course_roadmap": legacy}
+    )
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    plan = (await db.execute(select(LearningPlan).where(LearningPlan.user_id == user_id))).scalar_one()
+    assert plan.roadmap["weekly_template"] == {"minutes_per_session": 15, "sessions_per_week": None, "weekends": None}

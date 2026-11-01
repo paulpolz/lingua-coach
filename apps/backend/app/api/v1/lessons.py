@@ -25,6 +25,7 @@ from app.models.progress_event import ProgressEvent
 from app.models.user import User
 from app.schemas.lesson import FinishLessonRequest, FinishLessonResponse, LessonOut, LessonStartResponse
 from app.services.lesson_generation import reap_stale_generation, run_lesson_generation_job, stale_generation_cutoff
+from app.services.lesson_timing import TimeBudgetRequired, active_minutes, lesson_target_minutes, target_minutes
 from app.services.llm_usage import check_and_record_user_limit
 from app.services.pace import compute_lesson_pace_status, compute_projected_completion
 from app.services.report_writer import run_report_update
@@ -99,6 +100,14 @@ async def start_lesson(
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> LessonStartResponse:
+    profile = await _profile(db, user.id)
+    try:
+        target_minutes(profile)
+    except TimeBudgetRequired:
+        # Legacy profiles predate the required lesson length; the dashboard asks and PATCHes /profile.
+        raise APIError(
+            409, "Set how many minutes each lesson should last before starting one.", "TIME_BUDGET_REQUIRED"
+        ) from None
     await reap_stale_generation(db, user.id)
     existing = await _active_lesson(db, user.id)
     if existing is not None:
@@ -108,7 +117,6 @@ async def start_lesson(
     lesson_number = (
         await db.scalar(select(func.coalesce(func.max(Lesson.lesson_number), 0)).where(Lesson.user_id == user.id)) or 0
     ) + 1
-    profile = await _profile(db, user.id)
     goal = (
         await db.execute(
             select(LearningGoal).where(
@@ -169,44 +177,74 @@ async def stop_lesson(
     await db.commit()
 
 
+def _final_practice_results(metadata_rows: list[dict | None]) -> dict[str, str]:
+    """Last reported result per practiced item across the lesson's turns."""
+    final: dict[str, str] = {}
+    for metadata in metadata_rows:
+        for result in (metadata or {}).get("practiced") or []:
+            item = str(result.get("item") or "").strip()
+            if item and result.get("result") in ("solid", "shaky"):
+                final[item] = result["result"]
+    return final
+
+
 async def _session_summary(
-    db: AsyncSession, lesson: Lesson, session: ChatSession | None, now: datetime, body: FinishLessonRequest | None
+    db: AsyncSession,
+    lesson: Lesson,
+    session: ChatSession | None,
+    profile: Profile | None,
+    now: datetime,
+    body: FinishLessonRequest | None,
 ) -> dict:
-    """Completed slots come from the client if sent; otherwise any `suggest_finish` turn
-    means all slots were done; otherwise none were. Missing slots count as 0%."""
+    """Built by the backend at finish, before the chat rows are deleted; the model never writes it.
+
+    `duration_minutes` is active minutes (idle gaps capped), not wall time. An early finish
+    still counts; the shortfall is only recorded.
+    """
     curriculum = (lesson.payload or {}).get("curriculum") or {}
-    slot_ids = [s.get("id") for s in curriculum.get("slots") or [] if s.get("id")]
-
-    suggested = False
+    active = 0
+    metadata_rows: list[dict | None] = []
     if session is not None:
-        metadata = (
-            await db.execute(
-                select(ChatMessage.metadata_json).where(
-                    ChatMessage.session_id == session.id, ChatMessage.role == ChatMessageRole.assistant
+        active = await active_minutes(db, session.id, settings.lesson_idle_cap_minutes, until=now)
+        metadata_rows = list(
+            (
+                await db.execute(
+                    select(ChatMessage.metadata_json).where(
+                        ChatMessage.session_id == session.id, ChatMessage.role == ChatMessageRole.assistant
+                    )
                 )
+            ).scalars()
+        )
+    target = lesson_target_minutes(lesson, profile)
+    shortfall = max(target - active, 0) if target else 0
+    practice = _final_practice_results(metadata_rows)
+    lesson_start = lesson.started_at or lesson.created_at
+    # First seen in this lesson; a pattern that only recurred here is not new.
+    new_patterns = (
+        await db.execute(
+            select(Mistake.pattern_type).where(Mistake.lesson_id == lesson.id, Mistake.created_at >= lesson_start)
+        )
+    ).scalars()
+    resolved = (
+        await db.execute(
+            select(Mistake.pattern_type).where(
+                Mistake.user_id == lesson.user_id,
+                Mistake.resolved_at >= lesson_start,
             )
-        ).scalars()
-        suggested = any((m or {}).get("suggest_finish") for m in metadata)
-
-    if body and body.completed_slot_ids is not None:
-        completed = [s for s in body.completed_slot_ids if s in slot_ids]
-    elif suggested:
-        completed = list(slot_ids)
-    else:
-        completed = []
-    exit_met = bool(slot_ids) and set(completed) == set(slot_ids)
-
-    new_patterns = (await db.execute(select(Mistake.pattern_type).where(Mistake.lesson_id == lesson.id))).scalars()
-    started = lesson.started_at or now
+        )
+    ).scalars()
     return {
-        "duration_minutes": max(int((now - started).total_seconds() // 60), 0),
-        "completed_slots": completed,
-        "deferred_items": [
-            {"slot_id": s, "reason": "not_completed_before_finish"} for s in slot_ids if s not in completed
-        ],
-        "exit_criteria_met": exit_met,
+        "duration_minutes": active,
+        "target_minutes": target,
+        "shortfall_minutes": shortfall,
+        # Same one-minute tolerance as the suggest_finish guard: 14 of 15 is a full lesson.
+        "finished_early": shortfall > 1,
         "grammar_focus": curriculum.get("grammar_focus"),
+        "practiced_solid": [item for item, result in practice.items() if result == "solid"],
+        "practiced_shaky": [item for item, result in practice.items() if result == "shaky"],
+        "resolved_pattern_types": list(resolved),
         "new_pattern_types": list(new_patterns),
+        "new_vocabulary": curriculum.get("new_vocabulary") or [],
         "vocab_themes_covered": [curriculum["vocab_theme"]] if curriculum.get("vocab_theme") else [],
         "learner_feedback": body.learner_feedback if body else None,
     }
@@ -236,7 +274,7 @@ async def finish_lesson(
     ).scalar_one_or_none()
 
     pace_status = compute_lesson_pace_status(lesson.started_at, now, window)
-    summary = await _session_summary(db, lesson, session, now, body)
+    summary = await _session_summary(db, lesson, session, profile, now, body)
     lesson.payload = {**(lesson.payload or {}), "session_summary": summary}
     lesson.status = LessonStatus.accomplished
     lesson.accomplished_at = now

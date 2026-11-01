@@ -1,13 +1,12 @@
 # Lingua Coach — Agent Skills
 
-Goal-agnostic coach skills. The backend loads these files at runtime as the Gemini system instruction; they define **what the coach does**. How the backend wires them (contracts, context, persistence) is in [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md).
+Goal-agnostic coach skills. The backend loads these files at runtime as the Gemini system instruction; they define **what the coach does**. How the backend wires them (contracts, context, persistence) is in [ai-api.md](../../../docs/tech_requirements/ai-api.md).
 
 | Skill | Loaded for | Role |
 |-------|------------|------|
 | [onboarding_interviewer.md](./onboarding_interviewer.md) | Onboarding chat | Discovery interview → learner profile |
-| [course_composer.md](./course_composer.md) | Onboarding chat | Profile → roadmap, weekly template, plan days |
-| [exercise_tutor.md](./exercise_tutor.md) | Lesson chat, lesson generation | Curriculum, in-chat coaching, error capture |
-| [vocabulary_practice_formats.md](./vocabulary_practice_formats.md) | Lesson chat on vocab-review lessons | Weekly deep-review formats |
+| [course_composer.md](./course_composer.md) | Onboarding chat | Profile → roadmap, lesson length and rhythm, plan days |
+| [exercise_tutor.md](./exercise_tutor.md) | Lesson chat, lesson generation | Curriculum, timed in-chat coaching, praise and error capture |
 | [report_writer.md](./report_writer.md) | Lesson finish | Incremental updates to the Progress and Error Log reports |
 
 ## Pipeline
@@ -51,13 +50,14 @@ Learner answers are accepted in any language throughout so beginners can finish.
 - **Output-first** — write before (or alongside) rule explanation.
 - **Structured learner memory** — profile, errors, and progress are data, not chat history.
 - **Text chat** — learner–tutor interaction is typed. Product skills are reading and writing. There is no speaking practice.
-- **Fixed ritual, personalized content** — daily shape stays constant; topics adapt to performance.
+- **Fixed time budget, personalized content** — every lesson lasts the learner's chosen minutes; what fills them adapts to performance.
+- **Skills say how to teach and decide** — payload shapes live in the Pydantic schemas (their field descriptions reach the model), persistence in the routers, context lists in `prompt_assembly.py`.
 
 ## Related docs
 
 | Doc | Role |
 |-----|------|
-| [cjm.md](../../../docs/mvp/init/business_requirements/cjm.md) | Learner journey |
-| [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md) | Skill loading, contracts, context per call |
-| [database.md](../../../docs/mvp/init/tech_requirements/database.md) | What each artifact persists to |
-| [backend.md](../../../docs/mvp/init/tech_requirements/backend.md) | Request flows and lesson lifecycle |
+| [cjm.md](../../../docs/business_requirements/cjm.md) | Learner journey |
+| [ai-api.md](../../../docs/tech_requirements/ai-api.md) | Skill loading, contracts, context per call |
+| [database.md](../../../docs/tech_requirements/database.md) | What each artifact persists to |
+| [backend.md](../../../docs/tech_requirements/backend.md) | Request flows and lesson lifecycle |

@@ -84,6 +84,7 @@ cd apps/frontend && npm install && npm run dev
 | `MAX_MESSAGE_CHARS` | `4000` | Longest learner message |
 | `CHAT_CONTEXT_MESSAGES` | `10` | Turns sent to Gemini per chat call |
 | `PACE_WINDOW_HOURS` | `24` | Pace window for new profiles |
+| `LESSON_IDLE_CAP_MINUTES` | `5` | Longest gap between lesson messages that counts as practice time |
 | `SKILLS_DIR` | `apps/backend/skills` | Skill markdown location |
 
 ## Frontend environment (`apps/frontend/.env.local`)

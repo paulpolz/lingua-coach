@@ -23,7 +23,6 @@ class LessonOut(BaseModel):
 
 
 class FinishLessonRequest(BaseModel):
-    completed_slot_ids: list[str] | None = None
     learner_feedback: str | None = None
 
 

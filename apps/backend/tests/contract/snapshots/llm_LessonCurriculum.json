@@ -1,91 +1,18 @@
 {
-  "$defs": {
-    "CurriculumSlot": {
-      "properties": {
-        "exercise_set": {
-          "title": "Exercise Set",
-          "type": "string"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "label",
-        "exercise_set"
-      ],
-      "title": "CurriculumSlot",
-      "type": "object"
-    },
-    "GoalSpecificTask": {
-      "properties": {
-        "format": {
-          "title": "Format",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        }
-      },
-      "required": [
-        "label",
-        "format"
-      ],
-      "title": "GoalSpecificTask",
-      "type": "object"
-    },
-    "InputTask": {
-      "properties": {
-        "focus": {
-          "title": "Focus",
-          "type": "string"
-        },
-        "topic": {
-          "title": "Topic",
-          "type": "string"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "type",
-        "topic",
-        "focus"
-      ],
-      "title": "InputTask",
-      "type": "object"
-    }
-  },
+  "description": "One timed lesson of mixed chat practice. The backend stores `target_minutes` beside it.",
   "properties": {
-    "exit_criteria": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Exit Criteria",
-      "type": "array"
-    },
-    "goal_specific_task": {
-      "$ref": "#/$defs/GoalSpecificTask"
+    "goal_context": {
+      "description": "The real reading/writing situation from the learner's goal used today, e.g. 'a status email'.",
+      "title": "Goal Context",
+      "type": "string"
     },
     "grammar_focus": {
-      "description": "The grammar point and why it matters.",
+      "description": "One grammar point and why it matters for the learner's goal.",
       "title": "Grammar Focus",
       "type": "string"
     },
-    "input_task": {
-      "$ref": "#/$defs/InputTask"
-    },
     "lesson_goal": {
-      "description": "One sentence.",
+      "description": "One sentence: what the learner can do after this lesson.",
       "title": "Lesson Goal",
       "type": "string"
     },
@@ -93,27 +20,32 @@
       "title": "Milestone Index",
       "type": "integer"
     },
-    "partner_session": {
-      "anyOf": [
-        {},
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Null. This product has no speaking practice.",
-      "title": "Partner Session"
-    },
-    "slots": {
+    "new_vocabulary": {
+      "description": "Words or phrases to teach today, in the target language: about 3-4 for a 10-minute lesson, 6-10 for 30 minutes or more. Later lessons review them.",
       "items": {
-        "$ref": "#/$defs/CurriculumSlot"
+        "type": "string"
       },
-      "minItems": 1,
-      "title": "Slots",
+      "title": "New Vocabulary",
+      "type": "array"
+    },
+    "practice_targets": {
+      "description": "2-4 observable things to get right today. Used for praise and checks, not to end the lesson.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Practice Targets",
+      "type": "array"
+    },
+    "review_patterns": {
+      "description": "pattern_type values of due mistakes to retest today, copied exactly. Empty if none are due.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Review Patterns",
       "type": "array"
     },
     "vocab_theme": {
-      "description": "Theme label.",
+      "description": "Theme label for today's words.",
       "title": "Vocab Theme",
       "type": "string"
     }
@@ -123,10 +55,10 @@
     "grammar_focus",
     "vocab_theme",
     "milestone_index",
-    "slots",
-    "input_task",
-    "goal_specific_task",
-    "exit_criteria"
+    "new_vocabulary",
+    "review_patterns",
+    "goal_context",
+    "practice_targets"
   ],
   "title": "LessonCurriculum",
   "type": "object"

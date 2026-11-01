@@ -66,17 +66,20 @@ def seed_four_week_plan_markdown(roadmap: dict) -> str:
             "| Focus | Detail |\n| --- | --- |\n"
             f"| Grammar | {_v(t.get('grammar_focus'))} |\n"
             f"| Vocabulary | {_v(t.get('vocab_theme'))} |\n"
-            f"| Reading | {_v(t.get('input_type') or 'reading')} |\n"
-            f"| Writing | {_v(t.get('production_focus'))} |\n"
-            f"| Goal-specific | {_v(t.get('goal_specific_focus'))} |"
+            f"| Goal context | {_v(t.get('goal_context'))} |"
             for t in block.get("themes") or []
         )
         or "_Day-by-day themes will appear here._"
     )
-    activities = (
-        "\n".join(f"- {_v(a.get('label'))}: {_v(a.get('minutes'))} min" for a in weekly.get("activities") or [])
-        or "_No weekly template yet._"
+    rhythm = f"{_v(weekly.get('minutes_per_session'))} min per lesson"
+    if weekly.get("sessions_per_week"):
+        rhythm += f" · {weekly['sessions_per_week']} lessons/week"
+    template = (
+        f"{rhythm}\n\nEach lesson mixes grammar, vocabulary, review of past mistakes, "
+        "and reading/writing for your goal."
     )
+    if weekly.get("weekends"):
+        template += f"\n\n**Weekends:** {weekly['weekends']}"
     return "\n\n".join(
         [
             "# 4-Week Plan",
@@ -84,13 +87,13 @@ def seed_four_week_plan_markdown(roadmap: dict) -> str:
             "## Day-by-day breakdown",
             wrap_section("day_by_day", days),
             "## Weekly template",
-            wrap_section("weekly_template", f"{_v(weekly.get('minutes_per_session'))} min sessions\n\n{activities}"),
+            wrap_section("weekly_template", template),
         ]
     )
 
 
 def blank_progress_markdown() -> str:
-    rows = ["Grammar", "Vocabulary", "Listening", "Reading", "Writing", "Goal-specific"]
+    rows = ["Grammar", "Vocabulary", "Reading", "Writing", "Goal-specific"]
     table = "\n".join(
         [
             "| Category | Level | Target | Progress | Weaknesses | Recommendations |",

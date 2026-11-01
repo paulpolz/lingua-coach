@@ -9,6 +9,7 @@ from datetime import date, datetime
 from app.core.logging import get_logger
 from app.models.mistake import Mistake
 from app.models.profile import Profile
+from app.schemas.chat import TurnTiming
 from app.services.llm_usage import estimate_input_tokens
 from app.services.report_ops import trim_log_sections
 from app.services.skills import get_system_instruction, load_skill
@@ -34,10 +35,8 @@ def onboarding_system_instruction(native: str | None, target: str | None) -> str
     return "\n\n".join([get_system_instruction("onboarding"), language_policy(native, target, onboarding=True)])
 
 
-def lesson_system_instruction(native: str | None, target: str | None, include_vocab: bool) -> str:
-    return "\n\n".join(
-        [get_system_instruction("lesson", include_vocab_formats=include_vocab), language_policy(native, target)]
-    )
+def lesson_system_instruction(native: str | None, target: str | None) -> str:
+    return "\n\n".join([get_system_instruction("lesson"), language_policy(native, target)])
 
 
 def lesson_generation_system_instruction(native: str | None, target: str | None) -> str:
@@ -62,6 +61,10 @@ def log_context_tokens(call_type: str, blocks: Mapping[str, str]) -> None:
     )
 
 
+def time_line(active_minutes: int, target_minutes: int) -> str:
+    return f"Time: {active_minutes} of {target_minutes} min used."
+
+
 def learner_memory(text: str) -> str:
     """Fence stored learner data (their own sentences, model-written logs) so it reads as data."""
     note = (
@@ -77,15 +80,19 @@ def mistake_lines(mistakes: Sequence[Mistake], now: datetime) -> str:
     return "\n".join(f"  - {m.pattern_type}{due(m)}: {m.example_text}" for m in mistakes) or "  (none)"
 
 
-def lesson_context_block(curriculum: dict, profile: Profile | None, mistakes_text: str) -> str:
+def lesson_context_block(
+    curriculum: dict, profile: Profile | None, mistakes_text: str, timing: TurnTiming | None
+) -> str:
     native = profile.native_language if profile else None
     target = (profile.target_language if profile else None) or "en"
+    clock = time_line(timing.active_minutes, timing.target_minutes) if timing else "Time: (no time budget set)."
     return (
         f"Current lesson curriculum (JSON):\n{json.dumps(curriculum or {}, ensure_ascii=False)}\n\n"
         f"Learner: native {native or '(not set)'}, target {target}, "
         f"goal {(profile.goal_outcome if profile else None) or '(not set)'}, "
         f"level {(profile.target_level if profile else None) or '(not set)'}.\n"
         f"Conduct this lesson only in {target}.\n"
+        f"{clock}\n"
         f"Weak patterns to recycle, most relevant first:\n{learner_memory(mistakes_text)}"
     )
 
@@ -94,9 +101,11 @@ def generation_user_prompt(context: dict) -> str:
     return (
         "Generate the next lesson's curriculum for this learner. Context (JSON):\n"
         f"{learner_memory(json.dumps(context, default=str, ensure_ascii=False))}\n\n"
+        f"The lesson lasts target_minutes ({context.get('target_minutes')}) of mixed chat practice: "
+        "new grammar, new vocabulary, review of due mistakes, and reading/writing in the goal context. "
+        "Size it to the time: about 1 grammar point and 3-4 words in 10 minutes, more in 60. "
         "Pick one grammar focus and one vocab theme aligned to the current milestone; "
-        "interleave due mistakes and prior lessons before new material. "
-        "Reading and writing only: no speaking slots, no URLs."
+        "put due mistakes in review_patterns. Reading and writing only: no speaking, no URLs."
     )
 
 

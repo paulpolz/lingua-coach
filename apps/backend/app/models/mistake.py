@@ -29,4 +29,11 @@ class Mistake(Base, TimestampMixin):
     correction: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     next_review_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    # Consecutive `solid` practiced results; 2 in a row close the pattern (resolved_at).
+    solid_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    # The lesson of the last counted `solid`: the streak moves at most once per lesson.
+    last_solid_lesson_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="SET NULL"), nullable=True
+    )
     last_seen_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
