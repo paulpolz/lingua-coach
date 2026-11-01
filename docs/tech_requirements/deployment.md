@@ -106,5 +106,5 @@ The backend container runs `uv run alembic upgrade head` before serving. Outside
 
 | Job | Steps |
 |-----|-------|
-| `backend-import` | `uv sync --frozen`, then `uv run python -c "import app.main"` |
+| `backend-import` | `uv sync --frozen`, then `uv run python -c "import app.main"`, then `uv run python -m unittest tests.test_structured_output` |
 | `frontend-check` | `npm ci`, `npm run lint`, `npm run typecheck` |

@@ -192,13 +192,13 @@ Present the roadmap in chat as readable markdown **in the learning language**. T
 
 On each refinement turn, regenerate the relevant roadmap sections and keep the full `course_roadmap` object internally consistent for eventual persistence.
 
-Once a roadmap has been presented, any reply that applies the learner's plan feedback must re-emit a **full** updated `course_roadmap` JSON block in the same turn (not prose-only). Ask a clarifying question without regenerating only when the request is too ambiguous to apply.
+Once a roadmap has been presented, any reply that applies the learner's plan feedback must set `course_roadmap` to the full updated object in the same turn, and keep the markdown roadmap in `content`. Leave `course_roadmap` null on a clarifying question.
 
 ---
 
 ## Output: `course_roadmap` (JSON)
 
-When the user **accepts**, emit and persist this structure (validate with Pydantic before write):
+Set `course_roadmap` to this object on a new or revised plan. Leave it null on a clarifying question. When the user **accepts**, this structure is what gets persisted (validate with Pydantic before write):
 
 ```json
 {

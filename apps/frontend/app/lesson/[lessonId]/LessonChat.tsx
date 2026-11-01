@@ -4,7 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { applyChecklistMetadata, createChatSession, getChatMessages, streamChatMessage, type ChatMessage, type LessonPlanTask } from "@/lib/chat";
+import { applyChecklistMetadata, createChatSession, getChatMessages, sendChatMessage, type ChatMessage, type LessonPlanTask } from "@/lib/chat";
 import {
   describeFinishResult,
   finishLesson,
@@ -61,7 +61,7 @@ function writeStoredSessionId(lessonId: string, id: string): void {
 }
 
 /**
- * Lesson chat: same session create/resume and SSE streaming as OnboardingChat,
+ * Lesson chat: same session create/resume and JSON chat post as OnboardingChat,
  * with a collapsible focus card, a pinned checklist, and Stop/Finish controls.
  */
 export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
@@ -200,52 +200,50 @@ export default function LessonChat({ lessonId, lesson }: LessonChatProps) {
         { id: streamingId, role: "assistant", content: "", isStreaming: true },
       ]);
 
-      const token = await getToken();
+      const failSend = (message: string) => {
+        setMessages((prev) => prev.filter((item) => item.id !== streamingId));
+        setSendError(message || "Something went wrong, try again.");
+        setLastFailedContent(content);
+      };
 
-      await streamChatMessage(token, sessionId, content, {
-        onToken: (text) => {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === streamingId ? { ...message, content: message.content + text } : message
-            )
+      try {
+        const token = await getToken();
+        const data = await sendChatMessage(token, sessionId, content);
+        if (!data.content?.trim()) {
+          failSend("Something went wrong, try again.");
+          return;
+        }
+
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === streamingId
+              ? {
+                  id: data.message_id,
+                  role: "assistant",
+                  content: data.content,
+                  metadata: data.metadata,
+                  isStreaming: false,
+                }
+              : message
+          )
+        );
+        // The tutor re-evaluates this every turn, so keep only the latest value.
+        setSuggestFinish(Boolean(data.metadata?.suggest_finish));
+        setChecklistTasks((prevTasks) => {
+          const next = applyChecklistMetadata(
+            data.metadata,
+            prevTasks,
+            completedTaskIdsRef.current
           );
-        },
-        onDone: (data) => {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === streamingId
-                ? {
-                    id: data.message_id,
-                    role: "assistant",
-                    content: data.content,
-                    metadata: data.metadata,
-                    isStreaming: false,
-                  }
-                : message
-            )
-          );
-          // The tutor re-evaluates this every turn, so keep only the latest value.
-          setSuggestFinish(Boolean(data.metadata?.suggest_finish));
-          setChecklistTasks((prevTasks) => {
-            const next = applyChecklistMetadata(
-              data.metadata,
-              prevTasks,
-              completedTaskIdsRef.current
-            );
-            completedTaskIdsRef.current = next.completedIds;
-            setCompletedTaskIds(next.completedIds);
-            return next.tasks;
-          });
-          setIsSending(false);
-        },
-        onError: (error) => {
-          // Drop the empty streaming bubble and let the user retry the send.
-          setMessages((prev) => prev.filter((message) => message.id !== streamingId));
-          setSendError(error.message || "Something went wrong, try again.");
-          setLastFailedContent(content);
-          setIsSending(false);
-        },
-      });
+          completedTaskIdsRef.current = next.completedIds;
+          setCompletedTaskIds(next.completedIds);
+          return next.tasks;
+        });
+      } catch (error) {
+        failSend(error instanceof Error ? error.message : "Something went wrong, try again.");
+      } finally {
+        setIsSending(false);
+      }
     },
     [sessionId, isSending, getToken]
   );

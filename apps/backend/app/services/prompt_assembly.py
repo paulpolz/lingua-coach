@@ -4,14 +4,7 @@ from __future__ import annotations
 
 import json
 
-from app.services.skills import (
-    LESSON_EXTRACTION_CONTRACT,
-    LESSON_GENERATION_CONTRACT,
-    ONBOARDING_EXTRACTION_CONTRACT,
-    REPORT_PATCH_CONTRACT,
-    get_system_instruction,
-    load_skill,
-)
+from app.services.skills import get_system_instruction, load_skill
 
 
 def language_policy(native: str | None, target: str | None, *, onboarding: bool = False) -> str:
@@ -30,32 +23,22 @@ def language_policy(native: str | None, target: str | None, *, onboarding: bool 
 
 def onboarding_system_instruction(native: str | None, target: str | None) -> str:
     return "\n\n".join(
-        [
-            get_system_instruction("onboarding"),
-            ONBOARDING_EXTRACTION_CONTRACT,
-            language_policy(native, target, onboarding=True),
-        ]
+        [get_system_instruction("onboarding"), language_policy(native, target, onboarding=True)]
     )
 
 
 def lesson_system_instruction(native: str | None, target: str | None, include_vocab: bool) -> str:
     return "\n\n".join(
-        [
-            get_system_instruction("lesson", include_vocab_formats=include_vocab),
-            LESSON_EXTRACTION_CONTRACT,
-            language_policy(native, target),
-        ]
+        [get_system_instruction("lesson", include_vocab_formats=include_vocab), language_policy(native, target)]
     )
 
 
 def lesson_generation_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join(
-        [get_system_instruction("lesson"), LESSON_GENERATION_CONTRACT, language_policy(native, target)]
-    )
+    return "\n\n".join([get_system_instruction("lesson"), language_policy(native, target)])
 
 
 def report_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join([load_skill("report_writer"), REPORT_PATCH_CONTRACT, language_policy(native, target)])
+    return "\n\n".join([load_skill("report_writer"), language_policy(native, target)])
 
 
 def lesson_context_block(curriculum: dict, profile, due_mistakes) -> str:

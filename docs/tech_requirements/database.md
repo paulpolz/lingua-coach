@@ -42,7 +42,7 @@ Created by `POST /auth/sync`.
 
 ### `profiles` (one per user)
 
-Written from the `learner_profile` fence during onboarding, then by plan accept, lesson finish, and chat plan updates.
+Written from the onboarding reply's `learner_profile`, then by plan accept, lesson finish, and chat plan updates.
 
 | Column | Type | Source |
 |--------|------|--------|
@@ -56,7 +56,7 @@ Written from the `learner_profile` fence during onboarding, then by plan accept,
 | `time_budget` | JSONB | e.g. `{minutes_per_session, sessions_per_week, intensity}` |
 | `focus` | JSONB | `{skill_priorities, topic_priorities, vocab_priorities, avoid}` |
 | `constraints`, `motivation` | JSONB | Interview answers |
-| `interview_completed_at` | timestamptz | Last `learner_profile` write |
+| `interview_completed_at` | timestamptz | Last `learner_profile` save |
 | `grammar_mastery` | JSONB | Merged from chat `plan_updates.grammar_mastery` |
 | `vocabulary_summary`, `confidence_flags` | JSONB | Passed into lesson generation |
 | `target_plan_days` | int | From the accepted roadmap or chat `plan_updates` |
@@ -79,7 +79,7 @@ Written from the `learner_profile` fence during onboarding, then by plan accept,
 | `current_milestone_index` | int | From `roadmap.current_milestone_index` |
 | `accepted_at`, `superseded_at` | timestamptz | |
 
-Roadmap shape (written by the `course_composer` skill; fields may be missing because it is stored as sent):
+Roadmap shape (written by the `course_composer` skill). A chat draft is `model_dump()` of `CourseRoadmap`, so omitted optional fields are null and unknown keys are dropped. Accept stores the object the client sends:
 
 ```json
 {
@@ -121,7 +121,8 @@ Partial index `ix_lessons_user_id_active` on `user_id` where status is `generati
     "slots": [{ "id": "warmup", "label": "...", "exercise_set": "..." }],
     "input_task": { "type": "reading", "topic": "...", "focus": "..." },
     "goal_specific_task": { "label": "...", "format": "email" },
-    "exit_criteria": ["..."]
+    "exit_criteria": ["..."],
+    "partner_session": null
   },
   "session_summary": {
     "duration_minutes": 42,
@@ -136,7 +137,7 @@ Partial index `ix_lessons_user_id_active` on `user_id` where status is `generati
 }
 ```
 
-`curriculum` is written by the generation job; `session_summary` is `null` until finish.
+`curriculum` is `LessonCurriculum.model_dump()` from the generation job, including `partner_session: null`. `session_summary` is `null` until finish. A curriculum without slots fails the job.
 
 ### `jobs`
 
@@ -170,7 +171,7 @@ Indexed on `(user_id, created_at)`. Lesson chat reads up to 10 rows with `next_r
 ### `chat_sessions` and `chat_messages`
 
 - `chat_sessions`: `type` (`onboarding` | `lesson`), `lesson_id` (nullable). Unique partial indexes allow one onboarding session per user and one session per `(user_id, lesson_id)`; session creation is an `INSERT … ON CONFLICT DO NOTHING` against them.
-- `chat_messages`: `session_id`, `role` (`user` | `assistant`), `content` (fences stripped), `metadata` JSONB (the SSE `done` metadata). Indexed on `(session_id, created_at)`.
+- `chat_messages`: `session_id`, `role` (`user` | `assistant`), `content` (the learner-facing reply), `metadata` JSONB (the seven chat-turn keys: `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `lesson_plan`, `task_update`). Indexed on `(session_id, created_at)`.
 
 ### `user_reports`
 
@@ -187,7 +188,7 @@ Sections are delimited by `<!-- section:ID -->` and `<!-- /section:ID -->`; the 
 
 ### `llm_usage_events`
 
-`call_type` (`chat`, `lesson_json`, `report`, `lesson_start`), `model`, `input_tokens`, `status` (`reserved`, `ok`, `error`). Indexed on `created_at` and on `(user_id, created_at, call_type)`. The rate limits count these rows over rolling windows.
+`call_type` (`chat`, `lesson_json`, `report`, `lesson_start`), `model`, `input_tokens`, `status` (`reserved`, `ok`, `error`). Indexed on `created_at` and on `(user_id, created_at, call_type)`. The rate limits count these rows over rolling windows. A known input count is stored for both `ok` and `error`. The reserve estimate remains only when the call never reported usage.
 
 ## Data lifecycle
 
@@ -195,14 +196,14 @@ Sections are delimited by `<!-- section:ID -->` and `<!-- /section:ID -->`; the 
 flowchart LR
   subgraph onboarding [Onboarding]
     om[chat_messages] -->|learner_profile| pr[profiles + draft goal]
-    om -->|course_roadmap draft| client[client only]
+    om -->|course_roadmap_draft| client[client only]
     client -->|accept| lp[learning_plans]
     lp --> rr[roadmap + four_week_plan reports]
     om -. deleted on accept .-> x1(( ))
   end
   subgraph lesson [Each lesson]
     gen[job] --> cur[lessons.payload.curriculum]
-    lm[chat_messages] -->|lesson_turn| mk[mistakes, plan_updated]
+    lm[chat_messages] -->|lesson reply| mk[mistakes, plan_updated]
     lm -->|finish| ss[session_summary, pace, events]
     ss --> rp[progress + errors_log reports]
     lm -. deleted on finish .-> x2(( ))

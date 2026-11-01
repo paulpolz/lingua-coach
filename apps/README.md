@@ -71,4 +71,4 @@ npm install
 npm run dev
 ```
 
-Checks used in CI: `npm run lint` and `npm run typecheck` in `apps/frontend`, and `uv run python -c "import app.main"` in `apps/backend`.
+Checks used in CI: `npm run lint` and `npm run typecheck` in `apps/frontend`, and `uv run python -c "import app.main"` plus `uv run python -m unittest tests.test_structured_output` in `apps/backend`.

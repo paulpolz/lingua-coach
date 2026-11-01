@@ -118,7 +118,7 @@ After each finished lesson the coach appends dated entries or rewrites whole sec
 
 ## What the product does
 
-- Text chat only. The learner types, and the coach streams text back.
+- Text chat only. The learner types, and the coach answers with a whole message after the learner sends one.
 - One lesson in flight at a time.
 - Plan changes happen in chat.
 - Transcripts are temporary. The onboarding transcript is deleted on accept and a lesson transcript on finish.

@@ -52,13 +52,13 @@ function StreamingDots() {
   );
 }
 
-/** A message rendered in a chat transcript — either persisted or still streaming in. */
+/** A message rendered in a chat transcript — either persisted or still waiting on the reply. */
 export interface DisplayMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   metadata?: ChatMessageMetadata | null;
-  /** Client-only, in-flight assistant reply — not yet finalized by a `done` event. */
+  /** Client-only: the coach reply is in flight. An empty bubble shows the typing dots. */
   isStreaming?: boolean;
   /** Hide this bubble (e.g. silent onboarding Start trigger). */
   hidden?: boolean;
@@ -67,7 +67,7 @@ export interface DisplayMessage {
 /**
  * Shared chat bubble used by both onboarding and lesson chat. Tutor messages
  * get a soft teal accent + label; learner messages are right-aligned dark.
- * Corrections / tips from `done.metadata` render as a scannable brief under
+ * Corrections / tips from message metadata render as a scannable brief under
  * the bubble.
  */
 export default function ChatMessageBubble({ message }: { message: DisplayMessage }) {
@@ -104,9 +104,6 @@ export default function ChatMessageBubble({ message }: { message: DisplayMessage
               <Markdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
                 {message.content}
               </Markdown>
-              {message.isStreaming ? (
-                <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle opacity-70" />
-              ) : null}
             </div>
           )}
 

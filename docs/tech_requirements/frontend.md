@@ -19,14 +19,14 @@ apps/frontend/
                            FinishLessonDialog, PostAuthRedirect, RootAuthGate, ui/Button
   lib/
     api.ts                 apiFetch, ApiError, toApiError, syncUser
-    chat.ts                sessions, messages, SSE parser, onboarding accept, types
+    chat.ts                sessions, messages, JSON post, onboarding accept, types
     lessons.ts             start/active/get/stop/finish, job polling, finish hint
     progress.ts            GET /progress
     reports.ts             GET /reports/{type}, section parsing
     wait-for-token.ts      waits for Clerk to issue a JWT
 ```
 
-Server components protect routes with `auth.protect()` and do the first fetch. Client components own interaction and streaming.
+Server components protect routes with `auth.protect()` and do the first fetch. Client components own interaction.
 
 ## Routing
 
@@ -60,8 +60,9 @@ Report slugs: `progress`, `errors`, `roadmap`, `four-week-plan`. The account men
 
 [`OnboardingChat`](../../../../apps/frontend/app/onboarding/OnboardingChat.tsx) receives the session id and transcript from the server page.
 
-- Messages stream through `streamChatMessage`. Tokens append to a live assistant bubble; `done` replaces it with the stored content and metadata.
-- When a `done` carries `course_roadmap_draft`, the latest draft is shown in `PlanSummaryCard` (left panel on desktop, above the chat on narrow screens). Earlier drafts are marked superseded. The card tolerates missing fields because the backend stores the model's roadmap as sent.
+- A turn is one JSON post through `sendChatMessage`. The learner bubble appears immediately. An empty coach bubble shows typing dots until the body arrives, then that bubble is replaced with one stored message. Corrections, tips, and the plan card arrive with it.
+- When the response carries `course_roadmap_draft`, the coach prose bubble stays hidden and the latest draft is shown in `PlanSummaryCard` (left panel on desktop, above the chat on narrow screens). Earlier drafts are marked superseded. The card tolerates missing fields because the backend stores the model's roadmap as sent. Dots show until the body arrives, then the card. The card is marked regenerating only while the hidden "I'd like to change my plan." send is in flight. Any other send after a plan only sets the busy state.
+- A failed send removes the pending coach bubble and shows the retry line. Retry posts the message again.
 - **Change** sends the hidden message "I'd like to change my plan." without showing it as a learner bubble.
 - **Accept** posts `{session_id, course_roadmap}` to `/onboarding/accept` and navigates to `/dashboard`.
 
@@ -96,6 +97,7 @@ stateDiagram-v2
 [`LessonChat`](../../../../apps/frontend/app/lesson/[lessonId]/LessonChat.tsx) gets the lesson from the server page.
 
 - It creates or resumes the lesson chat session (the id is cached in `sessionStorage` per lesson) and loads the transcript.
+- A turn is one JSON post through `sendChatMessage`. Typing dots show in an empty coach bubble, then one stored message. Corrections, tips, and checklist updates arrive with that message. A failed send removes the pending bubble and shows the retry line.
 - The focus card shows `curriculum.lesson_goal`, `grammar_focus`, and `vocab_theme`, and collapses after the first message.
 - `applyChecklistMetadata` replays `lesson_plan` and `task_update` from every assistant message, so `LessonChecklist` shows the agenda and ticks after a reload too.
 - `suggest_finish` from the latest turn highlights the finish action.
@@ -104,12 +106,8 @@ stateDiagram-v2
 
 ## Shared chat components
 
-- `ChatMessageBubble` renders learner and coach messages. Coach markdown is rendered with `react-markdown` and `remark-gfm`; links open in a new tab. Corrections and tips from metadata render under the coach bubble.
-- `ChatComposer` is the text box with Enter to send and Shift+Enter for a newline. It is disabled while a reply streams.
-
-## SSE parsing
-
-`EventSource` cannot send a POST body or headers, so [`streamChatMessage`](../../../../apps/frontend/lib/chat.ts) reads the `fetch` body stream, splits frames on blank lines, and dispatches `token`, `done`, and `error`. Unknown event names are ignored. It never throws: network errors, non-2xx responses, a missing body, and dropped streams all arrive as `onError({code, message})`. An aborted request (leaving the page) is silent.
+- `ChatMessageBubble` renders learner and coach messages. While a reply is in flight the empty coach bubble shows typing dots; the stored message replaces it in one step. Coach markdown is rendered with `react-markdown` and `remark-gfm`; links open in a new tab. Corrections and tips from metadata render under the coach bubble.
+- `ChatComposer` is the text box with Enter to send and Shift+Enter for a newline. It is disabled while the reply is in flight.
 
 ## Reports
 

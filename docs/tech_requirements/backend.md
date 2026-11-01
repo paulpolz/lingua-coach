@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service in [`apps/backend`](../../../../apps/backend). It authenticates Clerk users, stores learner data in Postgres, runs the coach chat over Server-Sent Events, generates lessons in a background task, and exposes Prometheus metrics.
+FastAPI service in [`apps/backend`](../../../../apps/backend). It authenticates Clerk users, stores learner data in Postgres, runs the coach chat as one JSON response per turn, generates lessons in a background task, and exposes Prometheus metrics.
 
 ## Layout
 
@@ -14,12 +14,11 @@ apps/backend/
     core/              clerk_auth (JWKS), errors, logging (JSON), metrics, request-id middleware
     db/                engine and AsyncSession factory
     models/            SQLAlchemy tables (see database.md)
-    schemas/           request/response models for the HTTP boundary
+    schemas/           HTTP models, plus Gemini response models in llm.py
     services/
-      gemini.py            stream_chat and generate_json over LangChain
-      skills.py            loads skills/*.md and holds the output contracts
-      prompt_assembly.py   system instructions and context turns
-      extraction.py        pulls ```json:<name>``` fences out of replies
+      gemini.py            generate_structured over LangChain
+      skills.py            loads skills/*.md
+      prompt_assembly.py   joins skill markdown and the language policy
       lesson_generation.py background job that writes a curriculum
       report_writer.py     patches the markdown reports after a lesson
       report_seed.py       initial report markdown
@@ -42,7 +41,7 @@ All routes are under `/api/v1` and, except `health`, require `Authorization: Bea
 | POST | `/auth/sync` | token | Upsert the `users` row for the Clerk user; returns `onboarding_complete` |
 | POST | `/chat/sessions` | synced user | Get or create the onboarding session, or the session for a lesson (`{type, lesson_id?}`) |
 | GET | `/chat/sessions/{id}/messages` | owner | Transcript with per-message metadata |
-| POST | `/chat/sessions/{id}/messages` | owner | Send a message; response is an SSE stream |
+| POST | `/chat/sessions/{id}/messages` | owner | Send a message; `200` `ChatTurnResponse` |
 | POST | `/onboarding/accept` | synced user | Accept a roadmap (`{session_id, course_roadmap}`) |
 | GET | `/profile` | synced user | Profile summary plus schedule and pace |
 | GET | `/progress` | onboarded | Plan days done, target, slip, projection, pace summary, active lesson |
@@ -93,25 +92,31 @@ sequenceDiagram
   A->>D: last CHAT_CONTEXT_MESSAGES-1 messages
   A->>A: build system instruction + context
   A->>L: reserve global RPM / TPM / RPD
-  A->>D: save user message
-  A->>G: stream_chat
-  loop chunks
-    G-->>A: text
-    A-->>F: event: token {text}
-  end
-  A->>A: extract hidden JSON fences
-  A->>D: save artifacts + assistant message (fences stripped)
-  A-->>F: event: done {message_id, content, metadata}
+  A->>D: save user message and commit
+  A->>G: generate_structured
+  A->>D: save artifacts + assistant message
+  A-->>F: 200 {message_id, content, metadata}
 ```
+
+The body is `ChatTurnResponse`: `message_id`, `content`, and `metadata`. History sent to the model is the saved assistant prose. The lesson-context turn is not written back.
 
 Artifacts saved per session type:
 
-- **Onboarding**: a `json:learner_profile` fence upserts `profiles` and the draft `learning_goals` row. A `json:course_roadmap` fence is returned as `metadata.course_roadmap_draft` and is not stored until accept.
-- **Lesson**: the `json:lesson_turn` fence carries corrections, tips, mistakes, plan updates, `suggest_finish`, and completed task ids. Mistakes are upserted by `pattern_type`. Plan updates patch the profile and write a `plan_updated` event. `json:lesson_plan` and `json:task_update` drive the pinned checklist.
+- **Onboarding**: a present `learner_profile` upserts `profiles` and the draft `learning_goals` row. `metadata.course_roadmap_draft` is `model_dump()` of a present `course_roadmap` and is not stored until accept. Onboarding metadata has empty `corrections` and `tips`, `suggest_finish: false`, and `plan_updates` of `goal_summary` and `level` only when a profile was saved.
+- **Lesson**: `LessonReply` carries corrections, tips, mistakes, plan updates, `suggest_finish`, `lesson_plan`, and `completed_task_ids`. Mistakes are upserted by `pattern_type`. Plan updates patch the profile and write a `plan_updated` event. `task_update` is `{completed_task_ids}` when that list is non-empty, otherwise null.
 
-The `done` metadata always has the keys `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `lesson_plan`, and `task_update`. It is stored on the assistant message so the transcript reloads with the same state.
+`metadata` always has the keys `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `lesson_plan`, and `task_update`. It is stored on the assistant message so the transcript reloads with the same state. A blank `content` fails schema validation and never reaches persist.
 
-If Gemini fails, the stream sends `event: error {code, message}` and the user message stays saved. If saving the turn fails, the stream sends `error` with `PERSIST_FAILED`.
+The user row is committed before Gemini. Gemini failures use the `{detail, code}` body and save no assistant row:
+
+| Code | Status |
+|------|--------|
+| `LLM_TIMEOUT` | 504 |
+| `LLM_QUOTA_EXCEEDED` | 429 |
+| `LLM_SCHEMA_ERROR`, `LLM_API_ERROR`, `LLM_CONFIG_ERROR` | 502 |
+| `PERSIST_FAILED` | 500 |
+
+`PERSIST_FAILED` happens after a valid model, so the usage row stays `ok`. The user row stays; the assistant row does not.
 
 ## Onboarding accept
 
@@ -138,7 +143,7 @@ stateDiagram-v2
 
 **Start.** Rejected with `409 ACTIVE_LESSON_EXISTS` (and `active_lesson_id`) when a lesson is generating or active. The rule is enforced in the app; a partial index on in-flight lessons keeps the lookup fast. Counts against the per-user lesson-start limit. Creates the lesson with `lesson_number = max + 1` and a `jobs` row, then schedules `run_lesson_generation_job` with FastAPI `BackgroundTasks`.
 
-**Generation job.** Runs after the response, in its own DB session. It marks the job `running`, reads the accepted roadmap, profile, last five accomplished lessons, and all mistakes, makes one Gemini JSON call, and parses the result with `json.loads`. Success stores `payload = {version: 1, curriculum, session_summary: null}`, sets the lesson `active` with `started_at = now`, and marks the job `done` with `result_ref = lesson_id`. Any exception marks both the job and the lesson `failed` with the error text.
+**Generation job.** Runs after the response, in its own DB session. It marks the job `running`, reads the accepted roadmap, profile, last five accomplished lessons, and all mistakes, and makes one structured Gemini call. Success stores `payload = {version: 1, curriculum, session_summary: null}` from `LessonCurriculum.model_dump()` (including `partner_session: null`), sets the lesson `active` with `started_at = now`, and marks the job `done` with `result_ref = lesson_id`. A curriculum without slots fails validation and fails the job. Any exception marks both the job and the lesson `failed` with the error text.
 
 **Stop.** Writes a `lesson_chat_stopped` event. The lesson, session, and transcript stay.
 
@@ -152,7 +157,7 @@ flowchart TD
   on --> sum[session_summary]
   slip --> sum
   sum --> ev[lesson_completed event]
-  ev --> rep[report_writer: one Gemini JSON call, never raises]
+  ev --> rep[report_writer: one structured Gemini call, never raises]
   rep --> del[delete lesson chat messages + session]
   del --> commit[commit]
 ```
@@ -179,7 +184,7 @@ Completed slots come from `completed_slot_ids` when the client sends them; other
 | Gemini input tokens (all users) | 250,000 | rolling minute | `429 LLM_RATE_LIMIT_EXCEEDED` |
 | Gemini requests (all users) | 500 | rolling 24h | `429 LLM_RATE_LIMIT_EXCEEDED` |
 
-Each Gemini call is reserved before it runs (input tokens estimated at 4 characters per token) and completed afterwards with the real input token count and `ok` or `error`. All 429s carry `Retry-After`.
+Each Gemini call is reserved before it runs (input tokens estimated at 4 characters per token) and completed afterwards as `ok` or `error`. A known input count is stored for both statuses. The estimate remains only when usage never arrived. `max_retries=0`. A schema failure is not retried. All 429s from these limits carry `Retry-After`.
 
 ## Errors and logging
 

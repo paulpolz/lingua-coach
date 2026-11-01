@@ -1,14 +1,11 @@
-"""Chat sessions and SSE coach turns for onboarding and lessons."""
+"""Chat sessions and coach turns for onboarding and lessons."""
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -33,15 +30,11 @@ from app.schemas.chat import (
     ChatMessagesListResponse,
     ChatSessionCreateRequest,
     ChatSessionResponse,
+    ChatTurnResponse,
 )
-from app.services.extraction import extract, strip_blocks
-from app.services.gemini import ChatTurn, GeminiError, stream_chat
-from app.services.llm_usage import (
-    check_and_record_user_limit,
-    complete,
-    estimate_input_tokens,
-    reserve_gemini_call,
-)
+from app.schemas.llm import LessonReply, OnboardingReply
+from app.services.gemini import ChatTurn, GeminiError
+from app.services.llm_usage import check_and_record_user_limit, metered_structured_call
 from app.services.prompt_assembly import (
     lesson_context_block,
     lesson_system_instruction,
@@ -56,9 +49,13 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # Days until the next review, keyed by occurrence count (exercise_tutor.md: +1, +3, +7, +14).
 _REVIEW_DAYS = {1: 1, 2: 3, 3: 7}
 
-
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+_GEMINI_STATUS = {
+    "LLM_TIMEOUT": 504,
+    "LLM_QUOTA_EXCEEDED": 429,
+    "LLM_SCHEMA_ERROR": 502,
+    "LLM_API_ERROR": 502,
+    "LLM_CONFIG_ERROR": 502,
+}
 
 
 def _uuid_or_404(value: str, what: str) -> uuid.UUID:
@@ -154,7 +151,7 @@ async def list_chat_messages(
 
 
 async def _save_learner_profile(db: AsyncSession, user: User, data: dict) -> None:
-    """Upsert `profiles` and the draft `learning_goals` row from `json:learner_profile`."""
+    """Upsert `profiles` and the draft `learning_goals` row from `learner_profile`."""
     goal = data.get("goal") or {}
     level = data.get("level") or {}
     languages = data.get("languages") or {}
@@ -265,98 +262,61 @@ async def _build_prompt(
     return system, [ChatTurn(role="user", text=lesson_context_block(curriculum, profile, due)), *history]
 
 
-async def _persist_turn(db: AsyncSession, user: User, lesson: Lesson | None, raw: str) -> dict:
-    """Store the artifacts from the hidden fences and return the SSE `done` metadata."""
-    if lesson is None:
-        learner_profile = extract(raw, "learner_profile")
-        if learner_profile:
-            await _save_learner_profile(db, user, learner_profile)
-        goal = (learner_profile or {}).get("goal") or {}
-        level = (learner_profile or {}).get("level") or {}
+async def _persist_turn(
+    db: AsyncSession,
+    user: User,
+    lesson: Lesson | None,
+    reply: OnboardingReply | LessonReply,
+) -> dict:
+    """Upsert artifacts from the structured reply and return the seven metadata keys."""
+    if isinstance(reply, OnboardingReply):
+        profile = reply.learner_profile
+        if profile is not None:
+            await _save_learner_profile(db, user, profile.model_dump())
+        goal = profile.goal if profile is not None else None
+        level = profile.level if profile is not None else None
         return {
             "corrections": [],
             "tips": [],
-            "plan_updates": {"goal_summary": goal.get("outcome"), "level": level.get("self_assessed")}
-            if learner_profile
+            "plan_updates": {
+                "goal_summary": None if goal is None else goal.outcome,
+                "level": None if level is None else level.self_assessed,
+            }
+            if profile is not None
             else None,
             "suggest_finish": False,
-            "course_roadmap_draft": extract(raw, "course_roadmap"),
+            "course_roadmap_draft": None if reply.course_roadmap is None else reply.course_roadmap.model_dump(),
             "lesson_plan": None,
             "task_update": None,
         }
 
-    turn = extract(raw, "lesson_turn") or {}
-    for item in turn.get("mistakes") or []:
-        if isinstance(item, dict):
-            await _upsert_mistake(db, user, lesson, item)
-    if isinstance(turn.get("plan_updates"), dict):
-        await _apply_plan_updates(db, user, turn["plan_updates"])
-    task_ids = list(dict.fromkeys([
-        *((extract(raw, "task_update") or {}).get("completed_task_ids") or []),
-        *(turn.get("completed_task_ids") or []),
-    ]))
+    if lesson is None or not isinstance(reply, LessonReply):
+        raise RuntimeError("lesson reply requires a lesson")
+
+    for item in reply.mistakes:
+        await _upsert_mistake(db, user, lesson, item.model_dump())
+    plan_updates = None if reply.plan_updates is None else reply.plan_updates.model_dump()
+    if plan_updates is not None:
+        await _apply_plan_updates(db, user, plan_updates)
+    task_ids = list(reply.completed_task_ids)
     return {
-        "corrections": turn.get("corrections") or [],
-        "tips": turn.get("tips") or [],
-        "plan_updates": turn.get("plan_updates"),
-        "suggest_finish": bool(turn.get("suggest_finish")),
+        "corrections": [item.model_dump() for item in reply.corrections],
+        "tips": list(reply.tips),
+        "plan_updates": plan_updates,
+        "suggest_finish": reply.suggest_finish,
         "course_roadmap_draft": None,
-        "lesson_plan": extract(raw, "lesson_plan"),
+        "lesson_plan": None if reply.lesson_plan is None else reply.lesson_plan.model_dump(),
         "task_update": {"completed_task_ids": task_ids} if task_ids else None,
     }
 
 
-async def _event_stream(
-    db: AsyncSession,
-    user: User,
-    session: ChatSession,
-    lesson: Lesson | None,
-    system_instruction: str,
-    contents: list[ChatTurn],
-    usage_event,
-) -> AsyncGenerator[str, None]:
-    async def on_usage(tokens: int) -> None:
-        await complete(db, usage_event, input_tokens=tokens, status="ok", model=settings.gemini_model_chat)
-
-    parts: list[str] = []
-    try:
-        async for chunk in stream_chat(system_instruction=system_instruction, history=contents, on_usage=on_usage):
-            parts.append(chunk)
-            yield _sse("token", {"text": chunk})
-    except GeminiError as exc:
-        await complete(
-            db, usage_event, input_tokens=usage_event.input_tokens, status="error", model=settings.gemini_model_chat
-        )
-        yield _sse("error", {"code": exc.code, "message": str(exc)})
-        return
-
-    raw = "".join(parts)
-    try:
-        metadata = await _persist_turn(db, user, lesson, raw)
-        message = ChatMessage(
-            session_id=session.id, role=ChatMessageRole.assistant, content=strip_blocks(raw), metadata_json=metadata
-        )
-        db.add(message)
-        await db.commit()
-    except SQLAlchemyError:
-        logger.warning(
-            "chat_persist_failed",
-            exc_info=True,
-            extra={"event": "db_persist_failed", "user_id": str(user.id), "session_id": str(session.id)},
-        )
-        await db.rollback()
-        yield _sse("error", {"code": "PERSIST_FAILED", "message": "Could not save this turn. Please try again."})
-        return
-    yield _sse("done", {"message_id": str(message.id), "content": message.content, "metadata": metadata})
-
-
-@router.post("/sessions/{session_id}/messages")
+@router.post("/sessions/{session_id}/messages", response_model=ChatTurnResponse)
 async def post_chat_message(
     session_id: str,
     body: ChatMessageCreateRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
+) -> ChatTurnResponse:
     session = await _owned_session(db, session_id, user)
     content = body.content.strip()
     if not content:
@@ -385,17 +345,40 @@ async def post_chat_message(
     ] + [ChatTurn(role="user", text=content)]
     system_instruction, contents = await _build_prompt(db, user, lesson, history)
 
-    usage_event = await reserve_gemini_call(
-        db,
-        user.id,
-        "chat",
-        estimated_input_tokens=estimate_input_tokens(system_instruction, *(t.text for t in contents)),
-    )
-    db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
-    await db.commit()
+    async def save_user_message() -> None:
+        db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
+        await db.commit()
 
-    return StreamingResponse(
-        _event_stream(db, user, session, lesson, system_instruction, contents, usage_event),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    try:
+        reply = await metered_structured_call(
+            db,
+            user.id,
+            "chat",
+            model_id=settings.gemini_model_chat,
+            schema=OnboardingReply if lesson is None else LessonReply,
+            system_instruction=system_instruction,
+            history=contents,
+            before_call=save_user_message,
+        )
+    except GeminiError as exc:
+        raise APIError(_GEMINI_STATUS.get(exc.code, 502), str(exc), exc.code) from exc
+
+    try:
+        metadata = await _persist_turn(db, user, lesson, reply)
+        message = ChatMessage(
+            session_id=session.id,
+            role=ChatMessageRole.assistant,
+            content=reply.content,
+            metadata_json=metadata,
+        )
+        db.add(message)
+        await db.commit()
+    except SQLAlchemyError:
+        logger.warning(
+            "chat_persist_failed",
+            exc_info=True,
+            extra={"event": "db_persist_failed", "user_id": str(user.id), "session_id": str(session.id)},
+        )
+        await db.rollback()
+        raise APIError(500, "Could not save this turn. Please try again.", "PERSIST_FAILED") from None
+    return ChatTurnResponse(message_id=str(message.id), content=message.content, metadata=metadata)

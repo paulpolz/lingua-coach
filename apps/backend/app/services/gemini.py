@@ -1,15 +1,16 @@
-"""Gemini via LangChain: `stream_chat` for coach turns, `generate_json` for lesson and report JSON."""
+"""Gemini via LangChain structured output. One schema, one parse, no repair call."""
 
 from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel
 
 from app.config import settings
 from app.core.logging import get_logger
@@ -17,6 +18,7 @@ from app.core.metrics import record_llm_call
 
 logger = get_logger(__name__)
 
+T = TypeVar("T", bound=BaseModel)
 OnUsage = Callable[[int], Awaitable[None]] | None
 
 
@@ -32,33 +34,24 @@ class ChatTurn:
     text: str
 
 
-def _model(model_id: str, *, json_mode: bool) -> ChatGoogleGenerativeAI:
+def _model(model_id: str) -> ChatGoogleGenerativeAI:
     if not settings.gemini_api_key:
         raise GeminiError("GEMINI_API_KEY is not configured", code="LLM_CONFIG_ERROR")
     # max_retries=0 so a quota failure surfaces instead of being retried away.
-    kwargs: dict = {
-        "model": model_id,
-        "api_key": settings.gemini_api_key,
-        "temperature": None,
-        "max_retries": 0,
-        "timeout": settings.gemini_timeout_seconds,
-    }
-    if json_mode:
-        kwargs["response_mime_type"] = "application/json"
-    return ChatGoogleGenerativeAI(**kwargs)
+    # No response_mime_type here; with_structured_output supplies the schema.
+    return ChatGoogleGenerativeAI(
+        model=model_id,
+        api_key=settings.gemini_api_key,
+        temperature=None,
+        max_retries=0,
+        timeout=settings.gemini_timeout_seconds,
+    )
 
 
 def _messages(system_instruction: str, history: list[ChatTurn]) -> list:
     return [SystemMessage(content=system_instruction)] + [
         HumanMessage(content=t.text) if t.role == "user" else AIMessage(content=t.text) for t in history
     ]
-
-
-def _text(message: object) -> str:
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    return "".join(b if isinstance(b, str) else str(b.get("text", "")) for b in content or [])
 
 
 def _tokens(message: object) -> tuple[int, int]:
@@ -100,54 +93,51 @@ def _error(exc: Exception) -> GeminiError:
     return GeminiError(f"Gemini API error: {exc}", code="LLM_API_ERROR")
 
 
-async def stream_chat(
-    *, system_instruction: str, history: list[ChatTurn], on_usage: OnUsage = None
-) -> AsyncIterator[str]:
-    """Yield text chunks. `history` ends with the new user turn. Raises GeminiError."""
-    model_id = settings.gemini_model_chat
-    started = time.perf_counter()
-    input_tokens = output_tokens = 0
-    try:
-        chat = _model(model_id, json_mode=False)
-        async with asyncio.timeout(settings.gemini_timeout_seconds):
-            async for chunk in chat.astream(_messages(system_instruction, history)):
-                # LangChain reports per-chunk deltas, so the totals are sums.
-                chunk_in, chunk_out = _tokens(chunk)
-                input_tokens += chunk_in
-                output_tokens += chunk_out
-                if text := _text(chunk):
-                    yield text
-    except Exception as exc:  # noqa: BLE001
-        _record("chat", model_id, "error", started)
-        raise _error(exc) from exc
-    if on_usage is not None:
-        await on_usage(input_tokens)
-    _record("chat", model_id, "ok", started, (input_tokens, output_tokens))
-
-
-async def generate_json(
+async def generate_structured(
     *,
+    model_id: str,
+    schema: type[T],
     system_instruction: str,
     history: list[ChatTurn],
+    call_type: str,
     on_usage: OnUsage = None,
-    call_type: str = "lesson_json",
-) -> str:
-    """Return raw JSON text from a JSON-mode call. Raises GeminiError."""
-    model_id = settings.gemini_model_lesson
+) -> T:
+    """Return a parsed model. Does not touch the quota row.
+
+    A finished call invokes `on_usage` with the raw input count, then returns
+    `parsed` or raises `LLM_SCHEMA_ERROR`. Transport failures are recorded with
+    zero tokens and do not call `on_usage`. There is no repair call.
+    """
     started = time.perf_counter()
     try:
-        chat = _model(model_id, json_mode=True)
+        chat = _model(model_id).with_structured_output(schema, method="json_schema", include_raw=True)
         async with asyncio.timeout(settings.gemini_timeout_seconds):
-            response = await chat.ainvoke(_messages(system_instruction, history))
+            result = await chat.ainvoke(_messages(system_instruction, history))
     except Exception as exc:  # noqa: BLE001
         _record(call_type, model_id, "error", started)
         raise _error(exc) from exc
-    tokens = _tokens(response)
+
+    # include_raw yields {"raw", "parsed", "parsing_error"}.
+    raw = parsed = None
+    parsing_error: object = result
+    if isinstance(result, dict):
+        raw = result.get("raw")
+        parsed = result.get("parsed")
+        parsing_error = result.get("parsing_error")
+    tokens = _tokens(raw)
     if on_usage is not None:
         await on_usage(tokens[0])
-    text = _text(response)
-    if not text:
+    if parsing_error is not None or not isinstance(parsed, schema):
         _record(call_type, model_id, "error", started, tokens)
-        raise GeminiError("Gemini returned an empty response", code="LLM_EMPTY_RESPONSE")
+        logger.warning(
+            "llm_schema_error",
+            extra={
+                "event": "llm_schema_error",
+                "call_type": call_type,
+                "model": model_id,
+                "error": (str(parsing_error)[:500] if parsing_error else "parsed output was not the schema"),
+            },
+        )
+        raise GeminiError("Gemini response did not match the schema", code="LLM_SCHEMA_ERROR")
     _record(call_type, model_id, "ok", started, tokens)
-    return text
+    return parsed

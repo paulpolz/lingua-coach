@@ -5,8 +5,8 @@ How Lingua Coach is built. The learner-facing behavior is in [business_requireme
 | Doc | Covers |
 |-----|--------|
 | [backend.md](./backend.md) | FastAPI service, endpoints, request flows, limits, errors |
-| [frontend.md](./frontend.md) | Next.js routes, screens, API clients, SSE handling |
-| [ai-api.md](./ai-api.md) | Gemini calls, skill loading, hidden JSON fences, prompt context |
+| [frontend.md](./frontend.md) | Next.js routes, screens, API clients |
+| [ai-api.md](./ai-api.md) | Gemini calls, skill loading, prompt context |
 | [database.md](./database.md) | Postgres tables, JSON shapes, lifecycles |
 | [deployment.md](./deployment.md) | Docker Compose, environment variables, migrations, CI |
 | [hosting.md](./hosting.md) | Where each piece runs and what is external |
@@ -17,7 +17,7 @@ How Lingua Coach is built. The learner-facing behavior is in [business_requireme
 flowchart LR
   browser[Browser] --> next[Next.js frontend :3000]
   browser --> clerk[Clerk]
-  next -->|Bearer JWT, REST and SSE| api[FastAPI backend :8000]
+  next -->|Bearer JWT, REST| api[FastAPI backend :8000]
   api -->|JWKS| clerk
   api --> pg[(Postgres :5432)]
   api --> gemini[Google Gemini]

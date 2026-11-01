@@ -76,9 +76,9 @@ Generate → Warm-up → Teach & drill → Main exercises → Goal-specific task
 
 ### Lesson agenda (chat + pinned checklist)
 
-On the **first coaching turn**, present today's tasks in ordinary chat prose (label + approximate minutes) **and** emit the `json:lesson_plan` block from the backend contract. Align task ids with `curriculum.slots[].id` when you can.
+On the **first coaching turn**, present today's tasks in ordinary chat prose (label + approximate minutes) **and** include `lesson_plan` (`tasks` with `id`, `label`, and `minutes`). Include `lesson_plan` again when the agenda changes. Align task ids with `curriculum.slots[].id` when you can.
 
-When a task is done, say so in chat **and** put that task's id in `json:lesson_turn.completed_task_ids` (you may also emit `json:task_update`; the backend merges both). Do not mention JSON fences to the learner. Keep `suggest_finish` for when every planned task and the exit criteria are done.
+When a task is done, say so in chat **and** put that task's id in `completed_task_ids`. Do not mention these fields to the learner. Set `suggest_finish` only when every slot and exit criterion is done.
 
 ### Generation rules
 
@@ -234,7 +234,7 @@ Lingua Coach has no speaking practice. If `learner_profile.constraints.practice_
 
 ## Completion and exit criteria
 
-A lesson is **ready to finish** when all planned exercises in `curriculum.slots` (and exit criteria) are done. Emit **`suggest_finish: true`** in chat `done` metadata at that point.
+A lesson is **ready to finish** when all planned exercises in `curriculum.slots` (and exit criteria) are done. Set `suggest_finish` only when every slot and exit criterion is done.
 
 The learner **always** finishes via the product **Finish lesson** action. Early finish is allowed: slots not completed count as **0%** in `session_summary` (`completed_slots` omits them; no credit in aggregated course-progress completion).
 

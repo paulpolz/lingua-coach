@@ -1,4 +1,4 @@
-"""After a lesson finishes, one Gemini JSON call patches the four markdown reports."""
+"""After a lesson finishes, one structured Gemini call patches the four markdown reports."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.models.user import User
 from app.models.user_report import UserReport
-from app.services import gemini
+from app.schemas.llm import ReportPatch
 from app.services.gemini import ChatTurn
-from app.services.llm_usage import complete, estimate_input_tokens, reserve_gemini_call
+from app.services.llm_usage import metered_structured_call
 from app.services.prompt_assembly import report_system_instruction
 from app.services.report_ops import apply_report_op
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
@@ -81,31 +81,16 @@ async def _update(
     )
     system_instruction = report_system_instruction(native, target)
 
-    event = await reserve_gemini_call(
-        db, user.id, "report", estimated_input_tokens=estimate_input_tokens(system_instruction, prompt)
+    patch = await metered_structured_call(
+        db,
+        user.id,
+        "report",
+        model_id=settings.gemini_model_lesson,
+        schema=ReportPatch,
+        system_instruction=system_instruction,
+        history=[ChatTurn(role="user", text=prompt)],
     )
-    tokens = event.input_tokens
-
-    async def on_usage(count: int) -> None:
-        nonlocal tokens
-        tokens = count
-
-    try:
-        raw = await gemini.generate_json(
-            system_instruction=system_instruction,
-            history=[ChatTurn(role="user", text=prompt)],
-            on_usage=on_usage,
-            call_type="report",
-        )
-    except Exception:
-        await complete(db, event, input_tokens=tokens, status="error", model=settings.gemini_model_lesson)
-        raise
-    await complete(db, event, input_tokens=tokens, status="ok", model=settings.gemini_model_lesson)
-
-    for op in json.loads(raw).get("ops") or []:
-        try:
-            row = reports.get(UserReportType(op.get("report_type")))
-        except ValueError:
-            continue
+    for op in patch.ops:
+        row = reports.get(UserReportType(op.report_type))
         if row is not None:
-            row.body = apply_report_op(row.body, op)
+            row.body = apply_report_op(row.body, op.model_dump())

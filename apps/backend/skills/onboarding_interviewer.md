@@ -107,9 +107,9 @@ Ask in the **learning language**:
 
 ## Output: learner profile
 
-When the interview is complete, produce this structured summary and **persist to `profiles`** (and draft `learning_goals`); do not rely on chat memory alone.
+When the interview is complete, set the reply field `learner_profile` to this object and **persist to `profiles`** (and draft `learning_goals`); do not rely on chat memory alone. Include `learner_profile` only once both languages are known, and again when they change.
 
-`languages.native` and `languages.target` are **required**. Do not emit this object until both are filled.
+`languages.native` and `languages.target` are **required**. Do not set `learner_profile` without both.
 
 ```yaml
 learner_profile:

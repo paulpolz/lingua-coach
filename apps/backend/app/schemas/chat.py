@@ -31,3 +31,9 @@ class ChatMessageOut(BaseModel):
 
 class ChatMessagesListResponse(BaseModel):
     messages: list[ChatMessageOut]
+
+
+class ChatTurnResponse(BaseModel):
+    message_id: str
+    content: str
+    metadata: dict

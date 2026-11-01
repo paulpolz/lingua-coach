@@ -1,4 +1,4 @@
-"""Background job from `POST /lessons/start`: one Gemini JSON call writes the curriculum.
+"""Background job from `POST /lessons/start`: one structured Gemini call writes the curriculum.
 
 Runs after the HTTP response is sent, so it opens its own DB session. Context is the
 accepted roadmap, profile, last five lesson summaries, and mistakes, never chat history.
@@ -6,7 +6,6 @@ accepted roadmap, profile, last five lesson summaries, and mistakes, never chat 
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -22,9 +21,9 @@ from app.models.learning_plan import LearningPlan
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
 from app.models.profile import Profile
-from app.services import gemini
+from app.schemas.llm import LessonCurriculum
 from app.services.gemini import ChatTurn
-from app.services.llm_usage import complete, estimate_input_tokens, reserve_gemini_call
+from app.services.llm_usage import metered_structured_call
 from app.services.prompt_assembly import generation_user_prompt, lesson_generation_system_instruction
 
 logger = logging.getLogger(__name__)
@@ -110,27 +109,13 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
     )
     prompt = generation_user_prompt(context)
 
-    event = await reserve_gemini_call(
-        db, user_id, "lesson_json", estimated_input_tokens=estimate_input_tokens(system_instruction, prompt)
+    curriculum = await metered_structured_call(
+        db,
+        user_id,
+        "lesson_json",
+        model_id=settings.gemini_model_lesson,
+        schema=LessonCurriculum,
+        system_instruction=system_instruction,
+        history=[ChatTurn(role="user", text=prompt)],
     )
-    tokens = event.input_tokens
-
-    async def on_usage(count: int) -> None:
-        nonlocal tokens
-        tokens = count
-
-    try:
-        raw = await gemini.generate_json(
-            system_instruction=system_instruction,
-            history=[ChatTurn(role="user", text=prompt)],
-            on_usage=on_usage,
-        )
-    except Exception:
-        await complete(db, event, input_tokens=tokens, status="error", model=settings.gemini_model_lesson)
-        raise
-    await complete(db, event, input_tokens=tokens, status="ok", model=settings.gemini_model_lesson)
-
-    curriculum = json.loads(raw)
-    if not isinstance(curriculum, dict):
-        raise ValueError("lesson curriculum is not a JSON object")
-    return curriculum
+    return curriculum.model_dump()

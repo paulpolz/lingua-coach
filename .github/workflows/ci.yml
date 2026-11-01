@@ -23,6 +23,7 @@ jobs:
           enable-cache: true
           working-directory: apps/backend
       - run: uv sync --frozen && uv run python -c "import app.main"
+      - run: uv run python -m unittest tests.test_structured_output
 
   frontend-check:
     name: frontend-check
