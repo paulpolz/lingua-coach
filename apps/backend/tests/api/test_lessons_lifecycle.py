@@ -68,7 +68,7 @@ async def test_stale_generating_lesson_does_not_block_start(
 ) -> None:
     user = await make_user(db)
     await make_profile(db, user)
-    long_ago = datetime.now(UTC) - timedelta(seconds=settings.gemini_timeout_seconds * 2 + 60)
+    long_ago = datetime.now(UTC) - timedelta(seconds=settings.llm_timeout_seconds * 2 + 60)
     stuck = await make_lesson(db, user, status=LessonStatus.generating, payload={}, created_at=long_ago)
     stuck_job = Job(user_id=user.id, type="lesson_generate", status=JobStatus.running)
     stuck_job.created_at = long_ago

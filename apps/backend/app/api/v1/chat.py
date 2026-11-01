@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_owned
 from app.config import settings
 from app.core.errors import APIError
 from app.core.logging import get_logger
@@ -36,11 +36,20 @@ from app.schemas.chat import (
     TurnMetadata,
     TurnTiming,
 )
-from app.schemas.llm import LessonReply, MistakeEntry, OnboardingReply, PracticeResult, normalize_pattern
-from app.services.gemini import ChatTurn, GeminiError, public_detail
+from app.schemas.llm import (
+    LearnerGoal,
+    LearnerLevel,
+    LearnerProfile,
+    LessonReply,
+    MistakeEntry,
+    OnboardingReply,
+    PracticeResult,
+    normalize_pattern,
+)
 from app.services.lesson_timing import active_minutes, lesson_target_minutes
 from app.services.llm_usage import check_and_record_user_limit, metered_structured_call
 from app.services.memory import CHAT_MISTAKES, rank_mistakes
+from app.services.pace import compute_projected_completion, pace_window
 from app.services.prompt_assembly import (
     lesson_context_block,
     lesson_system_instruction,
@@ -48,6 +57,8 @@ from app.services.prompt_assembly import (
     mistake_lines,
     onboarding_system_instruction,
 )
+from app.services.queries import accomplished_count, get_profile
+from app.services.structured_llm import ChatTurn, LLMError, public_detail
 
 logger = get_logger(__name__)
 
@@ -56,38 +67,13 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # Days until the next review, keyed by occurrence count (exercise_tutor.md: +1, +3, +7, +14).
 _REVIEW_DAYS = {1: 1, 2: 3, 3: 7}
 
-_GEMINI_STATUS = {
+_LLM_STATUS = {
     "LLM_TIMEOUT": 504,
     "LLM_QUOTA_EXCEEDED": 429,
     "LLM_SCHEMA_ERROR": 502,
     "LLM_API_ERROR": 502,
     "LLM_CONFIG_ERROR": 502,
 }
-
-
-def _uuid_or_404(value: str, what: str) -> uuid.UUID:
-    try:
-        return uuid.UUID(value)
-    except ValueError:
-        raise APIError(404, f"{what} not found", "NOT_FOUND") from None
-
-
-async def _owned_session(db: AsyncSession, session_id: str, user: User) -> ChatSession:
-    session = await db.get(ChatSession, _uuid_or_404(session_id, "Chat session"))
-    if session is None or session.user_id != user.id:
-        raise APIError(404, "Chat session not found", "NOT_FOUND")
-    return session
-
-
-async def _owned_lesson(db: AsyncSession, lesson_id: uuid.UUID | None, user: User) -> Lesson:
-    lesson = await db.get(Lesson, lesson_id) if lesson_id else None
-    if lesson is None or lesson.user_id != user.id:
-        raise APIError(404, "Lesson not found", "NOT_FOUND")
-    return lesson
-
-
-async def _profile(db: AsyncSession, user: User) -> Profile | None:
-    return (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
 
 
 async def _get_or_create_session(db: AsyncSession, user: User, lesson: Lesson | None) -> ChatSession:
@@ -132,7 +118,7 @@ async def create_chat_session(
         raise APIError(422, "lesson_id is required for type=lesson", "LESSON_ID_REQUIRED")
     if not user.onboarding_complete:
         raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
-    lesson = await _owned_lesson(db, _uuid_or_404(body.lesson_id, "Lesson"), user)
+    lesson = await get_owned(db, Lesson, body.lesson_id, user, "Lesson")
     if lesson.status not in (LessonStatus.generating, LessonStatus.active):
         raise APIError(409, f"Lesson is {lesson.status.value}", "LESSON_NOT_ACTIVE")
     session = await _get_or_create_session(db, user, lesson)
@@ -141,11 +127,11 @@ async def create_chat_session(
 
 @router.get("/sessions/{session_id}/messages", response_model=ChatMessagesListResponse)
 async def list_chat_messages(
-    session_id: str,
+    session_id: uuid.UUID,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatMessagesListResponse:
-    session = await _owned_session(db, session_id, user)
+    session = await get_owned(db, ChatSession, session_id, user, "Chat session")
     rows = (
         await db.execute(
             select(ChatMessage).where(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at)
@@ -161,29 +147,28 @@ async def list_chat_messages(
     )
 
 
-async def _save_learner_profile(db: AsyncSession, user: User, data: dict) -> None:
+async def _save_learner_profile(db: AsyncSession, user: User, data: LearnerProfile) -> None:
     """Upsert `profiles` and the draft `learning_goals` row from `learner_profile`."""
-    goal = data.get("goal") or {}
-    level = data.get("level") or {}
-    languages = data.get("languages") or {}
+    goal = data.goal or LearnerGoal()
+    level = data.level or LearnerLevel()
 
-    profile = await _profile(db, user)
+    profile = await get_profile(db, user.id)
     if profile is None:
         profile = Profile(user_id=user.id, pace_window_hours=settings.pace_window_hours)
         db.add(profile)
-    profile.goal_outcome = goal.get("outcome")
-    profile.goal_horizon = goal.get("horizon")
-    profile.goal_success_criteria = goal.get("success_criteria")
-    profile.native_language = (languages.get("native") or "").strip() or None
-    profile.target_language = (languages.get("target") or "").strip() or None
-    profile.target_level = level.get("self_assessed")
-    profile.level_strengths = level.get("strengths")
-    profile.level_weaknesses = level.get("weaknesses")
-    profile.diagnostic_notes = level.get("diagnostic_notes")
-    profile.time_budget = data.get("time_budget")
-    profile.focus = data.get("focus")
-    profile.constraints = data.get("constraints")
-    profile.motivation = data.get("motivation")
+    profile.goal_outcome = goal.outcome
+    profile.goal_horizon = goal.horizon
+    profile.goal_success_criteria = goal.success_criteria
+    profile.native_language = data.languages.native
+    profile.target_language = data.languages.target
+    profile.target_level = level.self_assessed
+    profile.level_strengths = level.strengths
+    profile.level_weaknesses = level.weaknesses
+    profile.diagnostic_notes = level.diagnostic_notes
+    profile.time_budget = data.time_budget.model_dump() if data.time_budget else None
+    profile.focus = data.focus.model_dump() if data.focus else None
+    profile.constraints = data.constraints.model_dump() if data.constraints else None
+    profile.motivation = data.motivation.model_dump() if data.motivation else None
     profile.interview_completed_at = datetime.now(UTC)
 
     draft = (
@@ -194,9 +179,9 @@ async def _save_learner_profile(db: AsyncSession, user: User, data: dict) -> Non
     if draft is None:
         draft = LearningGoal(user_id=user.id, status=LearningGoalStatus.draft)
         db.add(draft)
-    draft.goal_statement = goal.get("outcome")
-    draft.horizon = goal.get("horizon")
-    draft.success_criteria = goal.get("success_criteria")
+    draft.goal_statement = goal.outcome
+    draft.horizon = goal.horizon
+    draft.success_criteria = goal.success_criteria
 
 
 async def _upsert_mistakes(db: AsyncSession, user: User, lesson: Lesson, items: list[MistakeEntry]) -> None:
@@ -292,7 +277,7 @@ async def _apply_practiced(db: AsyncSession, user: User, lesson: Lesson, results
         if aspect == "grammar" and result.result == "solid":
             mastered[item] = "solid"
     if mastered:
-        profile = await _profile(db, user)
+        profile = await get_profile(db, user.id)
         if profile is not None:
             profile.grammar_mastery = {**(profile.grammar_mastery or {}), **mastered}
     await db.flush()
@@ -300,7 +285,7 @@ async def _apply_practiced(db: AsyncSession, user: User, lesson: Lesson, results
 
 async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> None:
     """Chat is the only plan editor: patch `profiles` and log a `plan_updated` event."""
-    profile = await _profile(db, user)
+    profile = await get_profile(db, user.id)
     if profile is None or not updates:
         return
     focus = dict(profile.focus or {})
@@ -321,13 +306,9 @@ async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> No
     target_days = updates.get("target_plan_days")
     if isinstance(target_days, int) and target_days != profile.target_plan_days:
         profile.target_plan_days = target_days
-        done = await db.scalar(
-            select(func.count())
-            .select_from(Lesson)
-            .where(Lesson.user_id == user.id, Lesson.status == LessonStatus.accomplished)
-        )
-        profile.projected_completion_at = datetime.now(UTC) + timedelta(
-            hours=max(target_days - (done or 0), 0) * profile.pace_window_hours
+        remaining = target_days - await accomplished_count(db, user.id)
+        profile.projected_completion_at = compute_projected_completion(
+            datetime.now(UTC), remaining, pace_window(profile)
         )
     db.add(ProgressEvent(user_id=user.id, event_type="plan_updated", payload=updates))
 
@@ -345,7 +326,7 @@ async def _lesson_timing(
 async def _build_prompt(
     db: AsyncSession, user: User, session: ChatSession, lesson: Lesson | None, history: list[ChatTurn]
 ) -> tuple[str, list[ChatTurn], TurnTiming | None]:
-    profile = await _profile(db, user)
+    profile = await get_profile(db, user.id)
     native = profile.native_language if profile else None
     target = profile.target_language if profile else None
     if lesson is None:
@@ -383,7 +364,7 @@ async def _persist_turn(
         profile = reply.learner_profile
         if profile is None:
             return TurnMetadata(course_roadmap_draft=reply.course_roadmap)
-        await _save_learner_profile(db, user, profile.model_dump())
+        await _save_learner_profile(db, user, profile)
         return TurnMetadata(
             plan_updates={
                 "goal_summary": profile.goal.outcome if profile.goal else None,
@@ -414,12 +395,12 @@ async def _persist_turn(
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatTurnResponse)
 async def post_chat_message(
-    session_id: str,
+    session_id: uuid.UUID,
     body: ChatMessageCreateRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatTurnResponse:
-    session = await _owned_session(db, session_id, user)
+    session = await get_owned(db, ChatSession, session_id, user, "Chat session")
     content = body.content.strip()
     if not content:
         raise APIError(422, "Message content must not be empty", "EMPTY_MESSAGE")
@@ -431,7 +412,9 @@ async def post_chat_message(
     if session.type == ChatSessionType.lesson:
         if not user.onboarding_complete:
             raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
-        lesson = await _owned_lesson(db, session.lesson_id, user)
+        if session.lesson_id is None:
+            raise APIError(404, "Lesson not found", "NOT_FOUND")
+        lesson = await get_owned(db, Lesson, session.lesson_id, user, "Lesson")
 
     recent = (
         (
@@ -461,7 +444,7 @@ async def post_chat_message(
             db,
             user.id,
             "chat",
-            model_id=settings.gemini_model_chat,
+            model_id=settings.llm_model_chat,
             schema=schema,
             system_instruction=system_instruction,
             history=contents,
@@ -471,12 +454,12 @@ async def post_chat_message(
                 "lesson_number": lesson.lesson_number if lesson else None,
             },
         )
-    except GeminiError as exc:
+    except LLMError as exc:
         logger.warning(
             "chat_llm_failed",
             extra={"event": "chat_llm_failed", "code": exc.code, "error": str(exc)[:500], "user_id": str(user.id)},
         )
-        raise APIError(_GEMINI_STATUS.get(exc.code, 502), public_detail(exc.code), exc.code) from exc
+        raise APIError(_LLM_STATUS.get(exc.code, 502), public_detail(exc.code), exc.code) from exc
 
     try:
         if timing is not None:

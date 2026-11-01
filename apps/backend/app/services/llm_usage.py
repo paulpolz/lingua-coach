@@ -1,13 +1,17 @@
-"""DB-backed chat, lesson-start, and global Gemini limits.
+"""DB-backed chat, lesson-start, and global LLM limits.
 
 Per-user chat (rolling hour) counts `call_type='chat'` rows written by
-`reserve_gemini_call`. Per-user lesson starts (rolling 24h) are
+`reserve_llm_call`. Per-user lesson starts (rolling 24h) are
 `call_type='lesson_start'` rows, one per HTTP start. Global RPM, input TPM,
 and RPD count Gemini calls only (`chat`, `lesson_json`, `report`), including
 `reserved` and `error` rows. Windows are 60s / 3600s / 86400s.
 
 Rows are committed on a side session so a caller's open transaction is not
 committed early, and in-flight reservations are visible to the next request.
+
+These are soft limits: check-then-insert is not atomic across processes, so two
+concurrent requests can both pass a nearly full window. That is acceptable for
+protecting a provider quota; it is not a billing boundary.
 """
 
 from __future__ import annotations
@@ -27,15 +31,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.errors import APIError
 from app.models.llm_usage import LlmUsageEvent
-from app.services.gemini import ChatTurn, generate_structured
+from app.services.structured_llm import ChatTurn, generate_structured
 
 T = TypeVar("T", bound=BaseModel)
 
-GeminiCallType = Literal["chat", "lesson_json", "report"]
+LLMCallType = Literal["chat", "lesson_json", "report"]
 UserLimitKind = Literal["chat", "lesson_start"]
 UsageStatus = Literal["ok", "error"]
 
-_GEMINI_CALL_TYPES = ("chat", "lesson_json", "report")
+_LLM_CALL_TYPES = ("chat", "lesson_json", "report")
 _MINUTE_SECONDS = 60
 _HOUR_SECONDS = 3600
 _DAY_SECONDS = 86400
@@ -51,9 +55,7 @@ def estimate_input_tokens(*parts: str) -> int:
     return sum(len(part) for part in parts) // 4
 
 
-def _retry_after(oldest: datetime | None, window_seconds: int, *, fixed: int | None = None) -> int:
-    if fixed is not None:
-        return fixed
+def _retry_after(oldest: datetime | None, window_seconds: int) -> int:
     if oldest is None:
         return window_seconds
     if oldest.tzinfo is None:
@@ -112,7 +114,7 @@ async def check_and_record_user_limit(db: AsyncSession, user_id: uuid.UUID, *, k
     """Enforce the per-user chat hour or lesson-start day bucket.
 
     Chat is checked against Gemini `chat` rows (recorded by the following
-    `reserve_gemini_call`). A lesson start inserts one `lesson_start` row.
+    `reserve_llm_call`). A lesson start inserts one `lesson_start` row.
     Raises `429 RATE_LIMIT_EXCEEDED` with `Retry-After` when the bucket is full.
     """
     if kind == "chat":
@@ -142,10 +144,10 @@ async def check_and_record_user_limit(db: AsyncSession, user_id: uuid.UUID, *, k
         )
 
 
-async def reserve_gemini_call(
+async def reserve_llm_call(
     db: AsyncSession,
     user_id: uuid.UUID,
-    call_type: GeminiCallType,
+    call_type: LLMCallType,
     *,
     estimated_input_tokens: int,
 ) -> LlmUsageEvent:
@@ -155,30 +157,27 @@ async def reserve_gemini_call(
     `estimated_input_tokens` for this prompt. Raises `429 LLM_RATE_LIMIT_EXCEEDED`
     with `Retry-After` (60s for RPM/TPM, remaining time in the 24h window for RPD).
     """
-    minute_count, minute_tokens, _minute_oldest = await _window_stats(
-        db, window_seconds=_MINUTE_SECONDS, call_types=_GEMINI_CALL_TYPES
-    )
-    if minute_count >= settings.llm_rpm_limit:
-        raise _limit_error(
-            "LLM rate limit exceeded",
-            "LLM_RATE_LIMIT_EXCEEDED",
-            _retry_after(None, _MINUTE_SECONDS, fixed=_MINUTE_SECONDS),
+    now = datetime.now(UTC)
+    minute_start = now - timedelta(seconds=_MINUTE_SECONDS)
+    in_minute = LlmUsageEvent.created_at >= minute_start
+    # One round trip for both windows.
+    minute_count, minute_tokens, day_count, day_oldest = (
+        await db.execute(
+            select(
+                func.count().filter(in_minute),
+                func.coalesce(func.sum(LlmUsageEvent.input_tokens).filter(in_minute), 0),
+                func.count(),
+                func.min(LlmUsageEvent.created_at),
+            ).where(
+                LlmUsageEvent.created_at >= now - timedelta(seconds=_DAY_SECONDS),
+                LlmUsageEvent.call_type.in_(_LLM_CALL_TYPES),
+            )
         )
-
-    day_count, _, day_oldest = await _window_stats(db, window_seconds=_DAY_SECONDS, call_types=_GEMINI_CALL_TYPES)
+    ).one()
+    if minute_count >= settings.llm_rpm_limit or minute_tokens + estimated_input_tokens > settings.llm_input_tpm_limit:
+        raise _limit_error("LLM rate limit exceeded", "LLM_RATE_LIMIT_EXCEEDED", _MINUTE_SECONDS)
     if day_count >= settings.llm_rpd_limit:
-        raise _limit_error(
-            "LLM rate limit exceeded",
-            "LLM_RATE_LIMIT_EXCEEDED",
-            _retry_after(day_oldest, _DAY_SECONDS),
-        )
-
-    if minute_tokens + estimated_input_tokens > settings.llm_input_tpm_limit:
-        raise _limit_error(
-            "LLM rate limit exceeded",
-            "LLM_RATE_LIMIT_EXCEEDED",
-            _retry_after(None, _MINUTE_SECONDS, fixed=_MINUTE_SECONDS),
-        )
+        raise _limit_error("LLM rate limit exceeded", "LLM_RATE_LIMIT_EXCEEDED", _retry_after(day_oldest, _DAY_SECONDS))
 
     return await _insert_event(
         db,
@@ -236,7 +235,7 @@ def _traced(fn: _F) -> _F:
 async def metered_structured_call(
     db: AsyncSession,
     user_id: uuid.UUID,
-    call_type: GeminiCallType,
+    call_type: LLMCallType,
     *,
     model_id: str,
     schema: type[T],
@@ -252,7 +251,7 @@ async def metered_structured_call(
     exception from the Gemini call completes it as `error`. Persistence of the
     model stays with the caller, so a later insert failure leaves the row `ok`.
     """
-    event = await reserve_gemini_call(
+    event = await reserve_llm_call(
         db,
         user_id,
         call_type,

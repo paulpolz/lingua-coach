@@ -7,23 +7,21 @@ accepted roadmap, profile, last five lesson summaries, and mistakes, never chat 
 from __future__ import annotations
 
 import json
-import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.enums import JobStatus, LearningPlanStatus, LessonStatus
 from app.models.job import Job
 from app.models.learning_plan import LearningPlan
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
-from app.models.profile import Profile
 from app.schemas.llm import LessonCurriculum
-from app.services.gemini import ChatTurn, GeminiError, public_detail
 from app.services.lesson_timing import target_minutes
 from app.services.llm_usage import metered_structured_call
 from app.services.memory import (
@@ -38,13 +36,10 @@ from app.services.prompt_assembly import (
     lesson_generation_system_instruction,
     log_context_tokens,
 )
+from app.services.queries import get_profile, stale_generation_cutoff
+from app.services.structured_llm import ChatTurn, LLMError, public_detail
 
-logger = logging.getLogger(__name__)
-
-
-def stale_generation_cutoff() -> datetime:
-    """A `generating` lesson older than this lost its job (the job runs in the web process)."""
-    return datetime.now(UTC) - timedelta(seconds=settings.gemini_timeout_seconds * 2)
+logger = get_logger(__name__)
 
 
 _STALE_JOB_ERROR = "Lesson generation did not finish. Please start a new lesson."
@@ -88,7 +83,7 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
             logger.warning("lesson_generation_failed", extra={"job_id": str(job_id), "error": str(exc)[:500]})
             job.status = JobStatus.failed
             # `job.error` is returned by GET /jobs/{id}; keep provider text out of it.
-            job.error = public_detail(exc.code) if isinstance(exc, GeminiError) else "Lesson generation failed."
+            job.error = public_detail(exc.code) if isinstance(exc, LLMError) else "Lesson generation failed."
             lesson.status = LessonStatus.failed
             await db.commit()
             return
@@ -124,7 +119,7 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         .scalars()
         .first()
     )
-    profile = (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one_or_none()
+    profile = await get_profile(db, user_id)
     prior = (
         (
             await db.execute(
@@ -197,7 +192,7 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         db,
         user_id,
         "lesson_json",
-        model_id=settings.gemini_model_lesson,
+        model_id=settings.llm_model_lesson,
         schema=LessonCurriculum,
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],

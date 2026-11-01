@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.schemas.llm import LessonCurriculum
-from app.services.gemini import ChatTurn, generate_structured
+from app.services.structured_llm import ChatTurn, generate_structured
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM
 from tests.samples import curriculum
 

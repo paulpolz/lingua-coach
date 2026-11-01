@@ -33,14 +33,14 @@ flowchart LR
 | PostgreSQL | Compose `postgres`, volume `lingua_pg_data` | This repo |
 | Monitoring | Compose `prometheus`, `loki`, `promtail`, `grafana` (started with the app) | This repo |
 | Authentication | Clerk (Development instance by default) | External, configured with Clerk keys |
-| LLM | Google Gemini API | External, configured with `GEMINI_API_KEY` |
+| LLM | Google Gemini API | External, configured with `LLM_API_KEY` (`LLM_PROVIDER=google`) |
 | LLM tracing and evals | LangSmith (smith.langchain.com) | External, local and staging only, configured with `LANGSMITH_*` |
 
 ## External accounts needed
 
 - **Clerk**: an application with email sign-in. Copy the publishable key and secret key into both env files. With a Development instance, leaving `CLERK_JWT_ISSUER` empty is enough.
-- **Google AI Studio**: a Gemini API key. Set the global backend limits (`LLM_RPM_LIMIT`, `LLM_INPUT_TPM_LIMIT`, `LLM_RPD_LIMIT`) to match the key's quota.
-- **LangSmith** (optional): an API key and one project per environment (`lingua-coach-local`, `lingua-coach-staging`). The free Developer plan is enough at staging volume. Production never traces. CI evals need the `LANGSMITH_API_KEY` and `GEMINI_API_KEY` repository secrets.
+- **Google AI Studio**: a Gemini API key (`LLM_API_KEY`; the old `GEMINI_API_KEY` name still works for one release). Set the global backend limits (`LLM_RPM_LIMIT`, `LLM_INPUT_TPM_LIMIT`, `LLM_RPD_LIMIT`) to match the key's quota.
+- **LangSmith** (optional): an API key and one project per environment (`lingua-coach-local`, `lingua-coach-staging`). The free Developer plan is enough at staging volume. Production never traces. CI evals need the `LANGSMITH_API_KEY` and `LLM_API_KEY` repository secrets.
 
 ## Moving off Compose
 

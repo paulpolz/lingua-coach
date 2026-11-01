@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,7 +11,7 @@ from app.schemas.llm import Correction, CourseRoadmap, PracticeResult
 
 class ChatSessionCreateRequest(BaseModel):
     type: Literal["onboarding", "lesson"]
-    lesson_id: str | None = None
+    lesson_id: uuid.UUID | None = None
 
 
 class ChatSessionResponse(BaseModel):

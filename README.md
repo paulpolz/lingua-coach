@@ -18,7 +18,7 @@ flowchart LR
 ## Run it
 
 ```bash
-cp apps/backend/.env.example apps/backend/.env          # add Clerk keys and GEMINI_API_KEY
+cp apps/backend/.env.example apps/backend/.env          # add Clerk keys and LLM_API_KEY
 cp apps/frontend/.env.example apps/frontend/.env.local  # add Clerk keys
 docker compose up                                       # app + monitoring (Grafana on :3001)
 ```
@@ -29,7 +29,7 @@ Open http://localhost:3000. More options are in [`apps/README.md`](./apps/README
 
 ```
 apps/frontend/        Next.js app: sign-in, onboarding, dashboard, lesson chat, reports
-apps/backend/         FastAPI API, Postgres models, Alembic, Gemini integration
+apps/backend/         FastAPI API, Postgres models, Alembic, LLM integration (Gemini), evals/
 apps/backend/skills/  Coach pedagogy as markdown, loaded at runtime
 infra/monitoring/     Prometheus, Loki, Promtail, Grafana provisioning
 docs/                 Business and technical requirements

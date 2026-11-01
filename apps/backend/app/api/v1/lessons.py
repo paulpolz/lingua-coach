@@ -6,11 +6,11 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_onboarding_complete
+from app.api.deps import get_owned, require_onboarding_complete
 from app.config import settings
 from app.core.errors import APIError
 from app.db.session import get_db
@@ -24,38 +24,14 @@ from app.models.profile import Profile
 from app.models.progress_event import ProgressEvent
 from app.models.user import User
 from app.schemas.lesson import FinishLessonRequest, FinishLessonResponse, LessonOut, LessonStartResponse
-from app.services.lesson_generation import reap_stale_generation, run_lesson_generation_job, stale_generation_cutoff
+from app.services.lesson_generation import reap_stale_generation, run_lesson_generation_job
 from app.services.lesson_timing import TimeBudgetRequired, active_minutes, lesson_target_minutes, target_minutes
 from app.services.llm_usage import check_and_record_user_limit
-from app.services.pace import compute_lesson_pace_status, compute_projected_completion
+from app.services.pace import compute_lesson_pace_status, compute_projected_completion, pace_window
+from app.services.queries import accomplished_count, active_lesson, get_profile
 from app.services.report_writer import run_report_update
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
-
-
-async def _active_lesson(db: AsyncSession, user_id: uuid.UUID) -> Lesson | None:
-    """The active lesson, or a generating one that is not stale (see reap_stale_generation)."""
-    return (
-        await db.execute(
-            select(Lesson).where(
-                Lesson.user_id == user_id,
-                or_(
-                    Lesson.status == LessonStatus.active,
-                    and_(Lesson.status == LessonStatus.generating, Lesson.created_at >= stale_generation_cutoff()),
-                ),
-            )
-        )
-    ).scalar_one_or_none()
-
-
-async def _owned_lesson(db: AsyncSession, lesson_id: str, user_id: uuid.UUID) -> Lesson:
-    try:
-        lesson = await db.get(Lesson, uuid.UUID(lesson_id))
-    except ValueError:
-        lesson = None
-    if lesson is None or lesson.user_id != user_id:
-        raise APIError(404, "Lesson not found", "NOT_FOUND")
-    return lesson
 
 
 def _active_lesson_exists(existing: Lesson | None) -> APIError:
@@ -79,28 +55,13 @@ def _lesson_out(lesson: Lesson) -> LessonOut:
     )
 
 
-async def _accomplished_count(db: AsyncSession, user_id: uuid.UUID) -> int:
-    return (
-        await db.scalar(
-            select(func.count())
-            .select_from(Lesson)
-            .where(Lesson.user_id == user_id, Lesson.status == LessonStatus.accomplished)
-        )
-        or 0
-    )
-
-
-async def _profile(db: AsyncSession, user_id: uuid.UUID) -> Profile | None:
-    return (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one_or_none()
-
-
 @router.post("/start", status_code=202, response_model=LessonStartResponse)
 async def start_lesson(
     background_tasks: BackgroundTasks,
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> LessonStartResponse:
-    profile = await _profile(db, user.id)
+    profile = await get_profile(db, user.id)
     try:
         target_minutes(profile)
     except TimeBudgetRequired:
@@ -109,7 +70,7 @@ async def start_lesson(
             409, "Set how many minutes each lesson should last before starting one.", "TIME_BUDGET_REQUIRED"
         ) from None
     await reap_stale_generation(db, user.id)
-    existing = await _active_lesson(db, user.id)
+    existing = await active_lesson(db, user.id)
     if existing is not None:
         raise _active_lesson_exists(existing)
     await check_and_record_user_limit(db, user.id, kind="lesson_start")
@@ -141,7 +102,7 @@ async def start_lesson(
     except IntegrityError:
         # A concurrent start won the unique active-lesson index (or the same lesson_number).
         await db.rollback()
-        raise _active_lesson_exists(await _active_lesson(db, user_id)) from None
+        raise _active_lesson_exists(await active_lesson(db, user_id)) from None
 
     background_tasks.add_task(run_lesson_generation_job, job_id=job.id, lesson_id=lesson.id, user_id=user.id)
     return LessonStartResponse(job_id=str(job.id), lesson_id=str(lesson.id), lesson_number=lesson_number)
@@ -152,27 +113,27 @@ async def get_active_lesson(
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> LessonOut | None:
-    lesson = await _active_lesson(db, user.id)
+    lesson = await active_lesson(db, user.id)
     return _lesson_out(lesson) if lesson else None
 
 
 @router.get("/{lesson_id}", response_model=LessonOut)
 async def get_lesson(
-    lesson_id: str,
+    lesson_id: uuid.UUID,
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> LessonOut:
-    return _lesson_out(await _owned_lesson(db, lesson_id, user.id))
+    return _lesson_out(await get_owned(db, Lesson, lesson_id, user, "Lesson"))
 
 
 @router.post("/{lesson_id}/stop", status_code=204)
 async def stop_lesson(
-    lesson_id: str,
+    lesson_id: uuid.UUID,
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Leaving the chat. The lesson stays active and the pace clock keeps running."""
-    lesson = await _owned_lesson(db, lesson_id, user.id)
+    lesson = await get_owned(db, Lesson, lesson_id, user, "Lesson")
     db.add(ProgressEvent(user_id=user.id, lesson_id=lesson.id, event_type="lesson_chat_stopped"))
     await db.commit()
 
@@ -252,21 +213,21 @@ async def _session_summary(
 
 @router.post("/{lesson_id}/finish", response_model=FinishLessonResponse)
 async def finish_lesson(
-    lesson_id: str,
+    lesson_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     body: FinishLessonRequest | None = None,
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> FinishLessonResponse:
-    lesson = await _owned_lesson(db, lesson_id, user.id)
+    lesson = await get_owned(db, Lesson, lesson_id, user, "Lesson")
     if lesson.status != LessonStatus.active:
         raise APIError(
             409, f"Lesson is {lesson.status.value}; only an active lesson can be finished", "LESSON_NOT_ACTIVE"
         )
 
     now = datetime.now(UTC)
-    profile = await _profile(db, user.id)
-    window = (profile.pace_window_hours if profile else None) or settings.pace_window_hours
+    profile = await get_profile(db, user.id)
+    window = pace_window(profile)
     session = (
         await db.execute(
             select(ChatSession).where(ChatSession.type == ChatSessionType.lesson, ChatSession.lesson_id == lesson.id)
@@ -294,7 +255,7 @@ async def finish_lesson(
     if pace_status == PaceStatus.slipped and profile is not None:
         schedule_updated = True
         profile.plan_slip_days = (profile.plan_slip_days or 0) + 1
-        remaining = (profile.target_plan_days or 0) - await _accomplished_count(db, user.id)
+        remaining = (profile.target_plan_days or 0) - await accomplished_count(db, user.id)
         profile.projected_completion_at = compute_projected_completion(now, remaining, window)
         db.add(
             ProgressEvent(

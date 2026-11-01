@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
 from app.models.enums import PaceStatus
 from app.models.lesson import Lesson
 from app.models.profile import Profile
+from app.services import queries
+
+
+def pace_window(profile: Profile | None) -> int:
+    return (profile.pace_window_hours if profile else None) or settings.pace_window_hours
 
 
 def compute_lesson_pace_status(
@@ -41,7 +51,7 @@ def compute_profile_pace_summary(
     on_pace otherwise; not_started before any lesson."""
     if active_lesson is None and last_accomplished is None:
         return "not_started"
-    window = (profile.pace_window_hours if profile else None) or 24
+    window = pace_window(profile)
     if active_lesson is not None and active_lesson.started_at is not None:
         if hours_remaining_in_pace_window(active_lesson.started_at, window) < 0:
             return "behind"
@@ -53,3 +63,26 @@ def compute_profile_pace_summary(
         if start and end and (end - start).total_seconds() / 3600 <= window / 2 and slip_days == 0:
             return "ahead"
     return "on_pace"
+
+
+@dataclass(frozen=True)
+class PaceSnapshot:
+    profile: Profile | None
+    plan_days_done: int
+    active_lesson: Lesson | None
+    last_accomplished: Lesson | None
+    summary: PaceSummary
+
+
+async def pace_snapshot(db: AsyncSession, user_id: uuid.UUID) -> PaceSnapshot:
+    """What `GET /progress` and `GET /profile` both report about the schedule."""
+    profile = await queries.get_profile(db, user_id)
+    active = await queries.active_lesson(db, user_id)
+    last = await queries.last_accomplished(db, user_id)
+    return PaceSnapshot(
+        profile=profile,
+        plan_days_done=await queries.accomplished_count(db, user_id),
+        active_lesson=active,
+        last_accomplished=last,
+        summary=compute_profile_pace_summary(profile, active, last),
+    )

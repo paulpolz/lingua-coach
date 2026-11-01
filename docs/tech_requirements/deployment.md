@@ -39,14 +39,14 @@ Grafana dashboards in `infra/monitoring/grafana/provisioning/dashboards/json/`:
 
 - **API Overview**: request rate, 4xx/5xx error rate, response codes, P95/P99 latency.
 - **Errors & Correlation** (Loki): recent backend errors and warnings, failed `llm_call` lines, `db_persist_failed` lines, and a trace of every log line for one `request_id`.
-- **LLM & Token Burn**: Gemini request rate, token burn rate, cumulative tokens, P95 latency, and errors by status.
+- **LLM & Token Burn**: LLM request rate, token burn rate, cumulative tokens, P95 latency, and errors by status.
 
 ## Run it
 
 ```bash
 cp apps/backend/.env.example apps/backend/.env
 cp apps/frontend/.env.example apps/frontend/.env.local
-# fill in Clerk keys and GEMINI_API_KEY
+# fill in Clerk keys and LLM_API_KEY
 
 docker compose up                         # app + monitoring, all services
 ```
@@ -70,24 +70,27 @@ cd apps/frontend && npm install && npm run dev
 | `DATABASE_URL` | local Postgres | `postgresql+asyncpg://…`; Compose overrides it with the `postgres` host |
 | `CLERK_SECRET_KEY` | empty | Clerk backend key |
 | `CLERK_JWT_ISSUER` | empty | Exact issuer. Required unless `APP_ENV=local`; locally, empty accepts `https://*.clerk.accounts.dev` |
-| `GEMINI_API_KEY` | empty | Required for any coach reply |
-| `GEMINI_MODEL_CHAT` | `gemini-3.5-flash-lite` | Chat model |
-| `GEMINI_MODEL_LESSON` | `gemini-3.5-flash-lite` | Lesson and report JSON model |
-| `GEMINI_TIMEOUT_SECONDS` | `120` | Per-call timeout; twice this marks a stuck generation as failed |
+| `LLM_PROVIDER` | `google` | The only implemented provider (Gemini via `langchain-google-genai`) |
+| `LLM_API_KEY` | empty | Required for any coach reply (was `GEMINI_API_KEY`) |
+| `LLM_MODEL_CHAT` | `gemini-3.5-flash-lite` | Chat model (was `GEMINI_MODEL_CHAT`) |
+| `LLM_MODEL_LESSON` | `gemini-3.5-flash-lite` | Lesson and report JSON model (was `GEMINI_MODEL_LESSON`) |
+| `LLM_TIMEOUT_SECONDS` | `120` | Per-call timeout; twice this marks a stuck generation as failed (was `GEMINI_TIMEOUT_SECONDS`) |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins; also the allowed values of a token's `azp` claim |
 | `CHAT_RATE_LIMIT_PER_HOUR` | `60` | Per-user chat messages |
 | `LESSON_START_RATE_LIMIT_PER_DAY` | `2` | Per-user lesson starts |
-| `LLM_RPM_LIMIT` | `15` | Global Gemini requests per minute |
-| `LLM_INPUT_TPM_LIMIT` | `250000` | Global Gemini input tokens per minute |
-| `LLM_RPD_LIMIT` | `500` | Global Gemini requests per day |
+| `LLM_RPM_LIMIT` | `15` | Global LLM requests per minute |
+| `LLM_INPUT_TPM_LIMIT` | `250000` | Global LLM input tokens per minute |
+| `LLM_RPD_LIMIT` | `500` | Global LLM requests per day |
 | `MAX_MESSAGE_CHARS` | `4000` | Longest learner message |
-| `CHAT_CONTEXT_MESSAGES` | `10` | Turns sent to Gemini per chat call |
+| `CHAT_CONTEXT_MESSAGES` | `10` | Turns sent to the LLM per chat call |
 | `PACE_WINDOW_HOURS` | `24` | Pace window for new profiles |
 | `LESSON_IDLE_CAP_MINUTES` | `5` | Longest gap between lesson messages that counts as practice time |
 | `SKILLS_DIR` | `apps/backend/skills` | Skill markdown location |
 | `LANGSMITH_TRACING` | `false` | Trace every LLM call to LangSmith. `local`/`staging` only: the app refuses to start with `true` and `APP_ENV=production`. The legacy `LANGCHAIN_TRACING_V2=true` is refused there too |
 | `LANGSMITH_API_KEY` | empty | LangSmith key (read by the SDK) |
 | `LANGSMITH_PROJECT` | empty | `lingua-coach-local` or `lingua-coach-staging` |
+
+**Renamed variables.** The four `GEMINI_*` variables above were renamed to `LLM_*`. For one release both names are read (the new one wins) and the app logs `deprecated_env_var` at startup for each old name it finds in the environment or `.env`. Rename them in every environment's secrets now; the old names stop working in the next release.
 
 ## Frontend environment (`apps/frontend/.env.local`)
 
@@ -114,7 +117,7 @@ Staging is a second deployment of the same images with its own data, used for QA
 | Clerk | A Clerk **development** instance; `CLERK_JWT_ISSUER` set to its issuer (required outside `local`) |
 | `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, `API_URL` | The staging URLs |
 | `LANGSMITH_TRACING` / `LANGSMITH_PROJECT` | `true` / `lingua-coach-staging` |
-| `GEMINI_API_KEY` | A key with its own quota, so staging traffic cannot exhaust production's |
+| `LLM_API_KEY` | A key with its own quota, so staging traffic cannot exhaust production's |
 
 Production uses `APP_ENV=production`, a Clerk production instance, and `LANGSMITH_TRACING=false` (enforced at startup).
 
@@ -127,7 +130,7 @@ Production uses `APP_ENV=production`, a Clerk production instance, and `LANGSMIT
 | `backend-check` | Postgres 16 service; `uv sync --frozen`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app`, `uv run pytest -m "not eval" --cov=app --cov-fail-under=70` (tests use `TEST_DATABASE_URL`) |
 | `frontend-check` | `npm ci`, `npm run lint`, `npm run typecheck` |
 
-[`.github/workflows/evals.yml`](../../.github/workflows/evals.yml) runs the LangSmith evals nightly and on `workflow_dispatch` (choose a dataset and a minimum score). It needs the `GEMINI_API_KEY` and `LANGSMITH_API_KEY` repository secrets and is never a PR gate. See [evals.md](./evals.md).
+[`.github/workflows/evals.yml`](../../.github/workflows/evals.yml) runs the LangSmith evals nightly and on `workflow_dispatch` (choose a dataset and a minimum score). It needs the `LLM_API_KEY` and `LANGSMITH_API_KEY` repository secrets and is never a PR gate. See [evals.md](./evals.md).
 
 ### Running backend checks locally
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -11,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.enums import UserReportType
 from app.models.lesson import Lesson
@@ -19,13 +19,14 @@ from app.models.profile import Profile
 from app.models.user import User
 from app.models.user_report import UserReport
 from app.schemas.llm import ReportPatch
-from app.services.gemini import ChatTurn
 from app.services.llm_usage import metered_structured_call
 from app.services.prompt_assembly import report_system_instruction, report_user_prompt
+from app.services.queries import get_profile
 from app.services.report_ops import apply_report_op, is_log_section
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
+from app.services.structured_llm import ChatTurn
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _BLANK = {
     UserReportType.progress: blank_progress_markdown,
@@ -44,7 +45,7 @@ async def run_report_update(*, user_id: uuid.UUID, lesson_id: uuid.UUID, session
             lesson = await db.get(Lesson, lesson_id)
             if user is None or lesson is None:
                 return
-            profile = (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one_or_none()
+            profile = await get_profile(db, user_id)
             now = lesson.accomplished_at or datetime.now(UTC)
             await _update(db, user=user, lesson=lesson, session_summary=session_summary, profile=profile, now=now)
             await db.commit()
@@ -116,7 +117,7 @@ async def _update(
         db,
         user.id,
         "report",
-        model_id=settings.gemini_model_lesson,
+        model_id=settings.llm_model_lesson,
         schema=ReportPatch,
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],
