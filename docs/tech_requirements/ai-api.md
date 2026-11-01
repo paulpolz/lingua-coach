@@ -1,6 +1,6 @@
 # AI integration
 
-The coach is Google Gemini called through LangChain (`langchain-google-genai`). Its behavior is the markdown in [`apps/backend/skills/`](../../../../apps/backend/skills/README.md); the backend adds Pydantic response schemas, a language policy, and per-call context.
+The coach is Google Gemini called through LangChain (`langchain-google-genai`). Its behavior is the markdown in [`apps/backend/skills/`](../../apps/backend/skills/README.md); the backend adds Pydantic response schemas, a language policy, and per-call context. Identifiers and settings are provider-agnostic (`LLM_*`); `LLM_PROVIDER=google` is the only provider implemented.
 
 ## Call types
 
@@ -24,7 +24,7 @@ Failures become `GeminiError` with a code:
 | `LLM_SCHEMA_ERROR` | A finished call did not yield a valid model, including a blank reply |
 | `LLM_API_ERROR` | Anything else |
 
-Chat maps those codes onto HTTP status. See [backend.md](./backend.md#chat-turn).
+Chat maps those codes onto HTTP status with a fixed, learner-safe `detail` per code (`public_detail`); the provider's raw error text is only logged (`chat_llm_failed`). See [backend.md](./backend.md#chat-turn).
 
 ## System instruction assembly
 
@@ -50,6 +50,8 @@ flowchart LR
 - **Language policy.** During onboarding, before both languages are known, the coach starts in English, asks for the native and then the target language, and then switches. Everywhere else all learner-facing text is in the target language (default `en`), the native language is used only to anticipate interference, and JSON keys stay English.
 
 ## Context per call
+
+Selection follows [rag.md](./rag.md) stage 1: each call gets the memory that fits it, not everything.
 
 | Call | Messages sent after the system instruction |
 |------|---------------------------------------------|

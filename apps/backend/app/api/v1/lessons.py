@@ -6,7 +6,8 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_onboarding_complete
@@ -23,19 +24,24 @@ from app.models.profile import Profile
 from app.models.progress_event import ProgressEvent
 from app.models.user import User
 from app.schemas.lesson import FinishLessonRequest, FinishLessonResponse, LessonOut, LessonStartResponse
-from app.services.lesson_generation import run_lesson_generation_job
+from app.services.lesson_generation import reap_stale_generation, run_lesson_generation_job, stale_generation_cutoff
 from app.services.llm_usage import check_and_record_user_limit
 from app.services.pace import compute_lesson_pace_status, compute_projected_completion
-from app.services.report_writer import update_reports_after_lesson
+from app.services.report_writer import run_report_update
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
 
 async def _active_lesson(db: AsyncSession, user_id: uuid.UUID) -> Lesson | None:
+    """The active lesson, or a generating one that is not stale (see reap_stale_generation)."""
     return (
         await db.execute(
             select(Lesson).where(
-                Lesson.user_id == user_id, Lesson.status.in_((LessonStatus.generating, LessonStatus.active))
+                Lesson.user_id == user_id,
+                or_(
+                    Lesson.status == LessonStatus.active,
+                    and_(Lesson.status == LessonStatus.generating, Lesson.created_at >= stale_generation_cutoff()),
+                ),
             )
         )
     ).scalar_one_or_none()
@@ -49,6 +55,15 @@ async def _owned_lesson(db: AsyncSession, lesson_id: str, user_id: uuid.UUID) ->
     if lesson is None or lesson.user_id != user_id:
         raise APIError(404, "Lesson not found", "NOT_FOUND")
     return lesson
+
+
+def _active_lesson_exists(existing: Lesson | None) -> APIError:
+    return APIError(
+        409,
+        "An active or generating lesson already exists",
+        "ACTIVE_LESSON_EXISTS",
+        active_lesson_id=str(existing.id) if existing else None,
+    )
 
 
 def _lesson_out(lesson: Lesson) -> LessonOut:
@@ -74,26 +89,26 @@ async def _accomplished_count(db: AsyncSession, user_id: uuid.UUID) -> int:
     )
 
 
+async def _profile(db: AsyncSession, user_id: uuid.UUID) -> Profile | None:
+    return (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one_or_none()
+
+
 @router.post("/start", status_code=202, response_model=LessonStartResponse)
 async def start_lesson(
     background_tasks: BackgroundTasks,
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
 ) -> LessonStartResponse:
+    await reap_stale_generation(db, user.id)
     existing = await _active_lesson(db, user.id)
     if existing is not None:
-        raise APIError(
-            409,
-            "An active or generating lesson already exists",
-            "ACTIVE_LESSON_EXISTS",
-            active_lesson_id=str(existing.id),
-        )
+        raise _active_lesson_exists(existing)
     await check_and_record_user_limit(db, user.id, kind="lesson_start")
 
     lesson_number = (
         await db.scalar(select(func.coalesce(func.max(Lesson.lesson_number), 0)).where(Lesson.user_id == user.id)) or 0
     ) + 1
-    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
+    profile = await _profile(db, user.id)
     goal = (
         await db.execute(
             select(LearningGoal).where(
@@ -112,7 +127,13 @@ async def start_lesson(
     )
     job = Job(user_id=user.id, type="lesson_generate", status=JobStatus.pending)
     db.add_all([lesson, job])
-    await db.commit()
+    user_id = user.id  # rollback expires ORM attributes
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent start won the unique active-lesson index (or the same lesson_number).
+        await db.rollback()
+        raise _active_lesson_exists(await _active_lesson(db, user_id)) from None
 
     background_tasks.add_task(run_lesson_generation_job, job_id=job.id, lesson_id=lesson.id, user_id=user.id)
     return LessonStartResponse(job_id=str(job.id), lesson_id=str(lesson.id), lesson_number=lesson_number)
@@ -194,6 +215,7 @@ async def _session_summary(
 @router.post("/{lesson_id}/finish", response_model=FinishLessonResponse)
 async def finish_lesson(
     lesson_id: str,
+    background_tasks: BackgroundTasks,
     body: FinishLessonRequest | None = None,
     user: User = Depends(require_onboarding_complete),
     db: AsyncSession = Depends(get_db),
@@ -205,15 +227,15 @@ async def finish_lesson(
         )
 
     now = datetime.now(UTC)
-    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
-    pace_window = (profile.pace_window_hours if profile else None) or settings.pace_window_hours
+    profile = await _profile(db, user.id)
+    window = (profile.pace_window_hours if profile else None) or settings.pace_window_hours
     session = (
         await db.execute(
             select(ChatSession).where(ChatSession.type == ChatSessionType.lesson, ChatSession.lesson_id == lesson.id)
         )
     ).scalar_one_or_none()
 
-    pace_status = compute_lesson_pace_status(lesson.started_at, now, pace_window)
+    pace_status = compute_lesson_pace_status(lesson.started_at, now, window)
     summary = await _session_summary(db, lesson, session, now, body)
     lesson.payload = {**(lesson.payload or {}), "session_summary": summary}
     lesson.status = LessonStatus.accomplished
@@ -235,7 +257,7 @@ async def finish_lesson(
         schedule_updated = True
         profile.plan_slip_days = (profile.plan_slip_days or 0) + 1
         remaining = (profile.target_plan_days or 0) - await _accomplished_count(db, user.id)
-        profile.projected_completion_at = compute_projected_completion(now, remaining, pace_window)
+        profile.projected_completion_at = compute_projected_completion(now, remaining, window)
         db.add(
             ProgressEvent(
                 user_id=user.id,
@@ -245,11 +267,13 @@ async def finish_lesson(
             )
         )
 
-    await update_reports_after_lesson(db, user=user, lesson=lesson, session_summary=summary, profile=profile, now=now)
-
     if session is not None:
         await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session.id))
         await db.execute(delete(ChatSession).where(ChatSession.id == session.id))
     await db.commit()
+
+    # The report LLM call (up to the LLM timeout) runs after the response, in its own
+    # session, so finish holds no transaction or connection open while it waits.
+    background_tasks.add_task(run_report_update, user_id=user.id, lesson_id=lesson.id, session_summary=summary)
 
     return FinishLessonResponse(accomplished_at=now, pace_status=pace_status.value, schedule_updated=schedule_updated)

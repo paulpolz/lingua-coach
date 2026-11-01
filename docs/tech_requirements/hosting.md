@@ -46,5 +46,6 @@ The containers are dev-oriented: both mount the source and run with reload. A ho
 - the backend image without `--reload` (its default `CMD` already serves on `${PORT:-8000}`);
 - a managed Postgres reachable through `DATABASE_URL`, with `alembic upgrade head` run on deploy;
 - `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, and `API_URL` set to the public URLs;
-- a Clerk Production instance with `CLERK_JWT_ISSUER` set to its issuer;
+- `APP_ENV=production` and a Clerk Production instance with `CLERK_JWT_ISSUER` set to its issuer (the app refuses to start outside `local` without it);
+- `LANGSMITH_TRACING` unset or `false` (enforced in production);
 - Prometheus able to reach `/metrics`, or `METRICS_ENABLED=false`.

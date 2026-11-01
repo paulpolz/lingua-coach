@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.job import Job
 from app.models.user import User
 from app.schemas.job import JobResponse
+from app.services.lesson_generation import reap_stale_generation
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -21,6 +22,8 @@ async def get_job(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> JobResponse:
+    await reap_stale_generation(db, user.id)
+    await db.commit()
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:

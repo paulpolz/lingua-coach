@@ -28,6 +28,18 @@ class GeminiError(RuntimeError):
         self.code = code
 
 
+_PUBLIC_DETAIL = {
+    "LLM_TIMEOUT": "The coach took too long to answer. Please try again.",
+    "LLM_QUOTA_EXCEEDED": "The coach is over its usage limit right now. Please try again later.",
+    "LLM_SCHEMA_ERROR": "The coach sent an answer we could not read. Please try again.",
+}
+
+
+def public_detail(code: str) -> str:
+    """A learner-safe message for an LLM error code. Raw provider text stays in the logs."""
+    return _PUBLIC_DETAIL.get(code, "The coach is unavailable right now. Please try again.")
+
+
 @dataclass(frozen=True)
 class ChatTurn:
     role: Literal["user", "model"]

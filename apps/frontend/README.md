@@ -1,6 +1,6 @@
 # Frontend
 
-Next.js 16 App Router app for Lingua Coach. See [frontend.md](../../docs/mvp/init/tech_requirements/frontend.md) for routes, screens, and API clients.
+Next.js 16 App Router app for Lingua Coach. See [frontend.md](../../docs/tech_requirements/frontend.md) for routes, screens, and API clients.
 
 ## Environment
 

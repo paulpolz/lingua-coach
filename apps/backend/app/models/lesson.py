@@ -16,9 +16,11 @@ class Lesson(Base, TimestampMixin):
     __tablename__ = "lessons"
     __table_args__ = (
         UniqueConstraint("user_id", "lesson_number", name="uq_lessons_user_id_lesson_number"),
+        # At most one generating/active lesson per user; concurrent starts get a 409.
         Index(
-            "ix_lessons_user_id_active",
+            "uq_lessons_user_id_active",
             "user_id",
+            unique=True,
             postgresql_where=text("status IN ('generating', 'active')"),
         ),
     )

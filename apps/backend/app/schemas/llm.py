@@ -6,9 +6,14 @@ the response; there is no second validation pass after it returns the model.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+
+
+def normalize_pattern(label: str) -> str:
+    """The one canonical form of a mistake label: collapsed whitespace, case-folded, ≤255 chars."""
+    return " ".join(label.split()).casefold()[:255]
 
 
 class _Schema(BaseModel):
@@ -73,7 +78,10 @@ class LessonCurriculum(_Schema):
 class ReportOp(_Schema):
     report_type: Literal["progress", "errors_log", "roadmap", "four_week_plan"]
     op: Literal["append_entry", "patch_section"] = Field(
-        description="append_entry adds a dated log line; patch_section replaces the section."
+        description=(
+            "append_entry adds a dated log entry; patch_section replaces the section. "
+            "Log sections (update_log, daily_log) accept append_entry only."
+        )
     )
     section_id: str = Field(description="Must match an existing <!-- section:ID --> marker.")
     markdown: str
@@ -244,7 +252,9 @@ class Correction(_Schema):
 
 
 class MistakeEntry(_Schema):
-    pattern_type: str = Field(description="Short stable label for a recurring error.")
+    pattern_type: Annotated[str, BeforeValidator(_strip_string), AfterValidator(normalize_pattern)] = Field(
+        min_length=1, description="Short stable label for a recurring error, e.g. 'missing articles'."
+    )
     example_text: str
     correction: str
 
