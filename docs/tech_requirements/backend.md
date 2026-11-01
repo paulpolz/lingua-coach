@@ -248,7 +248,7 @@ Each LLM call is reserved before it runs (input tokens estimated at 4 characters
 | `RATE_LIMIT_EXCEEDED`, `LLM_RATE_LIMIT_EXCEEDED` | 429 | Limits, with `Retry-After` |
 | LLM codes, `PERSIST_FAILED` | 429/502/504/500 | See [Chat turn](#chat-turn) |
 - The request-id middleware reads or creates `X-Request-ID`, echoes it on responses, and logs one JSON access line per request (`/metrics` and `/health` are skipped).
-- LLM calls log `llm_call` with call type, model, status, latency, and tokens; prompt builders log `prompt_context` with `context_tokens` per block; rejected report ops log `report_op_rejected`; renamed env vars log `deprecated_env_var` at startup.
+- LLM calls log `llm_call` with call type, model, status, latency, and tokens; prompt builders log `prompt_context` with `context_tokens` per block; rejected report ops log `report_op_rejected`.
 
 ## Metrics
 

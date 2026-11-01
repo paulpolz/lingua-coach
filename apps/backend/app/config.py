@@ -1,34 +1,19 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
-from dotenv import dotenv_values
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/backend/app/config.py → backend root is always parents[1] (local or /app in Docker).
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
-# Renamed env vars (D13). Each old name is still read for one release, with a startup
-# warning; remove the aliases in the next release.
-DEPRECATED_ENV_NAMES = {
-    "GEMINI_API_KEY": "LLM_API_KEY",
-    "GEMINI_MODEL_CHAT": "LLM_MODEL_CHAT",
-    "GEMINI_MODEL_LESSON": "LLM_MODEL_LESSON",
-    "GEMINI_TIMEOUT_SECONDS": "LLM_TIMEOUT_SECONDS",
-}
-
-
-def _env(new: str) -> AliasChoices:
-    old = next(o for o, n in DEPRECATED_ENV_NAMES.items() if n == new)
-    return AliasChoices(new, old)
-
-
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", populate_by_name=True)
+    # extra="ignore": .env also holds variables for other libraries (e.g. LANGSMITH_API_KEY
+    # for the LangSmith SDK); pydantic-settings would otherwise refuse to start on them.
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # A typo (e.g. "prod") fails at startup instead of silently skipping the production checks.
     app_env: Literal["local", "staging", "production"] = "local"
@@ -41,10 +26,10 @@ class Settings(BaseSettings):
     clerk_jwt_issuer: str = ""
     # Only Google (Gemini via langchain-google-genai) is implemented; see services/structured_llm.py.
     llm_provider: Literal["google"] = "google"
-    llm_api_key: str = Field(default="", validation_alias=_env("LLM_API_KEY"))
-    llm_model_chat: str = Field(default="gemini-3.5-flash-lite", validation_alias=_env("LLM_MODEL_CHAT"))
-    llm_model_lesson: str = Field(default="gemini-3.5-flash-lite", validation_alias=_env("LLM_MODEL_LESSON"))
-    llm_timeout_seconds: int = Field(default=120, validation_alias=_env("LLM_TIMEOUT_SECONDS"))
+    llm_api_key: str = ""
+    llm_model_chat: str = "gemini-3.5-flash-lite"
+    llm_model_lesson: str = "gemini-3.5-flash-lite"
+    llm_timeout_seconds: int = 120
     cors_origins: str = "http://localhost:3000"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -79,14 +64,6 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-
-def deprecated_env_names(env_file: str | None = ".env") -> list[str]:
-    """Old env var names set in the environment or the env file (logged at startup)."""
-    present = {name.upper() for name in os.environ}
-    if env_file and Path(env_file).is_file():
-        present |= {name.upper() for name in dotenv_values(env_file)}
-    return sorted(name for name in DEPRECATED_ENV_NAMES if name in present)
 
 
 settings = Settings()

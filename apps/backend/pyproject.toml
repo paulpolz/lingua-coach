@@ -22,7 +22,6 @@ dependencies = [
     "langchain-core>=1.2,<2",
     "langchain-google-genai>=4.2.3,<4.4",
     "langsmith>=0.14,<1",
-    "python-dotenv>=1.0",
 ]
 
 [build-system]

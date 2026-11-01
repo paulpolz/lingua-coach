@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -37,3 +39,14 @@ def test_legacy_langchain_tracing_var_is_refused_in_production(monkeypatch: pyte
 def test_unknown_app_env_fails_at_startup() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, app_env="prod", clerk_jwt_issuer=ISSUER)  # type: ignore[arg-type]
+
+
+def test_only_google_is_a_valid_provider() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, llm_provider="openai")  # type: ignore[arg-type]
+
+
+def test_env_file_keys_for_other_libraries_are_ignored(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("LANGSMITH_API_KEY=lsv2_test\nLANGSMITH_PROJECT=lingua-coach-local\nLLM_MODEL_CHAT=m\n")
+    assert Settings(_env_file=str(env_file)).llm_model_chat == "m"
