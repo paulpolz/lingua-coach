@@ -9,14 +9,14 @@ apps/backend/
   app/
     main.py            app, middleware, exception handlers, /metrics
     config.py          settings from environment / .env
-    api/deps.py        Clerk principal, current user, onboarding gate
+    api/deps.py        Clerk principal, current user, onboarding gate, get_owned
     api/v1/            routers: health, auth, chat, onboarding, profile, progress, reports, lessons, jobs
     core/              clerk_auth (JWKS), errors, logging (JSON), metrics, request-id middleware
     db/                engine and AsyncSession factory
     models/            SQLAlchemy tables (see database.md)
-    schemas/           HTTP models, plus Gemini response models in llm.py
+    schemas/           HTTP models, plus LLM response models in llm.py
     services/
-      gemini.py            generate_structured over LangChain
+      structured_llm.py    generate_structured: one structured-output LLM call (Gemini via LangChain)
       skills.py            loads skills/*.md
       prompt_assembly.py   joins skill markdown, the language policy and per-call context
       memory.py            stage-1 retrieval: rank_mistakes, prior-lesson one-liners
@@ -24,16 +24,17 @@ apps/backend/
       lesson_generation.py background job that writes a curriculum; stale-generation reaper
       report_writer.py     background job that patches the markdown reports after a lesson
       report_seed.py       initial report markdown
-      report_ops.py        append_entry / patch_section on section markers
-      pace.py              pace status, projection, pace summary
-      llm_usage.py         per-user and global Gemini limits
+      report_ops.py        append_entry / patch_section, log tails, log-section guard
+      pace.py              pace status, projection, pace window, pace snapshot
+      queries.py           shared reads: profile, active lesson, accomplished count
+      llm_usage.py         per-user and global LLM limits, @traceable metered call
   skills/              coach pedagogy as markdown (loaded at runtime)
   evals/               LangSmith datasets, deterministic evaluators, runner (see evals.md)
   tests/               pytest: unit/, integration/, api/, contract/, eval/
   alembic/             migrations
 ```
 
-Routers hold the orchestration for their flow. Services hold anything shared between routers or anything that talks to Gemini.
+Routers hold the orchestration for their flow. Services hold anything shared between routers or anything that talks to the LLM.
 
 ## Endpoints
 
@@ -59,7 +60,9 @@ All routes are under `/api/v1` and, except `health`, require `Authorization: Bea
 | GET | `/jobs/{id}` | owner | Generation job status: `pending`, `running`, `done`, `failed` |
 | GET | `/metrics` | none | Prometheus exposition (when `METRICS_ENABLED`) |
 
-"Synced user" means a `users` row exists (`401 USER_NOT_SYNCED` otherwise). "Onboarded" adds `users.onboarding_complete` (`403 ONBOARDING_INCOMPLETE` otherwise). Ownership failures return `404 NOT_FOUND`.
+"Synced user" means a `users` row exists (`401 USER_NOT_SYNCED` otherwise). "Onboarded" adds `users.onboarding_complete` (`403 ONBOARDING_INCOMPLETE` otherwise).
+
+Ids in paths (`/lessons/{id}`, `/chat/sessions/{id}`, `/jobs/{id}`) and in bodies (`lesson_id`, `session_id`) are typed `uuid.UUID`: a malformed id is FastAPI's `422` validation error (body `{"detail": [...]}`, no `code`). A well-formed id that does not exist or belongs to someone else is `404 NOT_FOUND` (`api/deps.get_owned`), so ownership is never revealed. Clients should treat both as "not found".
 
 ## Authentication
 
@@ -162,7 +165,7 @@ stateDiagram-v2
 **Start.** In order:
 
 1. `409 TIME_BUDGET_REQUIRED` when the profile has no `time_budget.minutes_per_session` (profiles from before lesson timing). The dashboard asks for the minutes, saves them with `PATCH /profile`, and retries.
-2. Stale generation is reaped: a `generating` lesson (and its `pending`/`running` job) older than `GEMINI_TIMEOUT_SECONDS × 2` lost its background task to a restart, so both become `failed`. `GET /jobs/{id}` reaps too, so a polling client sees `failed`, and active-lesson reads ignore stale rows.
+2. Stale generation is reaped: a `generating` lesson (and its `pending`/`running` job) older than `LLM_TIMEOUT_SECONDS × 2` lost its background task to a restart, so both become `failed`. `GET /jobs/{id}` reaps too, so a polling client sees `failed`, and active-lesson reads ignore stale rows.
 3. `409 ACTIVE_LESSON_EXISTS` (with `active_lesson_id`) when a lesson is generating or active.
 4. The per-user lesson-start limit.
 5. The lesson (`lesson_number = max + 1`) and a `jobs` row are inserted. A unique partial index allows one generating/active lesson per user, so a concurrent start that slips past step 3 fails on commit and is answered `409 ACTIVE_LESSON_EXISTS` too.
@@ -188,7 +191,7 @@ flowchart TD
   resp --> bg[background task, own session: report_writer, one LLM call, never raises]
 ```
 
-Two updates close together are serialized without holding a lock during the LLM call: after the call, the writer re-reads the user's report rows `SELECT … FOR UPDATE` and applies its ops to those fresh bodies, so the later update waits for the earlier commit instead of overwriting it. The report update runs after the response so finish holds no transaction or pooled connection open during an LLM call of up to `GEMINI_TIMEOUT_SECONDS`. If it fails, the lesson stays finished and the reports simply miss that lesson.
+Two updates close together are serialized without holding a lock during the LLM call: after the call, the writer re-reads the user's report rows `SELECT … FOR UPDATE` and applies its ops to those fresh bodies, so the later update waits for the earlier commit instead of overwriting it. The report update runs after the response so finish holds no transaction or pooled connection open during an LLM call of up to `LLM_TIMEOUT_SECONDS`. If it fails, the lesson stays finished and the reports simply miss that lesson.
 
 `session_summary` is built by the backend before the chat rows are deleted:
 
@@ -207,31 +210,45 @@ The response is `{status: "accomplished", accomplished_at, pace_status, schedule
 
 ## Pace
 
-[`services/pace.py`](../../../../apps/backend/app/services/pace.py) is shared by finish, `/progress`, and `/profile`.
+[`services/pace.py`](../../apps/backend/app/services/pace.py) is shared by finish, chat plan updates, accept, `/progress`, and `/profile` (`pace_snapshot` gives the last two the same profile, counts, active lesson and summary).
 
-- Lesson status: `slipped` when elapsed hours exceed `profiles.pace_window_hours` (default 24), else `on_pace`.
+- Pace window: `profiles.pace_window_hours`, falling back to `PACE_WINDOW_HOURS` (default 24).
+- Lesson status: `slipped` when elapsed hours exceed the pace window, else `on_pace`.
 - Projection: `now + remaining plan days × pace window`.
 - Summary: `not_started` before any lesson; `behind` if the active lesson is past its window or the last finished lesson slipped; `ahead` if the last lesson took at most half the window and `plan_slip_days == 0`; otherwise `on_pace`.
 
 ## Limits
 
-[`services/llm_usage.py`](../../../../apps/backend/app/services/llm_usage.py) counts rows in `llm_usage_events`, so limits hold across restarts and processes. Rows are written on a separate session so they commit even if the caller's transaction is still open.
+[`services/llm_usage.py`](../../apps/backend/app/services/llm_usage.py) counts rows in `llm_usage_events`, so limits hold across restarts and processes. Rows are written on a separate session so they commit even if the caller's transaction is still open. The global minute and day windows are read in one query. These are soft limits: the check and the insert are not atomic across processes, so concurrent requests can slightly overshoot a nearly full window.
 
 | Limit | Default | Window | Error |
 |-------|---------|--------|-------|
 | Chat messages per user | 60 | rolling hour | `429 RATE_LIMIT_EXCEEDED` |
 | Lesson starts per user | 2 | rolling 24h | `429 RATE_LIMIT_EXCEEDED` |
-| Gemini requests (all users) | 15 | rolling minute | `429 LLM_RATE_LIMIT_EXCEEDED` |
-| Gemini input tokens (all users) | 250,000 | rolling minute | `429 LLM_RATE_LIMIT_EXCEEDED` |
-| Gemini requests (all users) | 500 | rolling 24h | `429 LLM_RATE_LIMIT_EXCEEDED` |
+| LLM requests (all users) | 15 | rolling minute | `429 LLM_RATE_LIMIT_EXCEEDED` |
+| LLM input tokens (all users) | 250,000 | rolling minute | `429 LLM_RATE_LIMIT_EXCEEDED` |
+| LLM requests (all users) | 500 | rolling 24h | `429 LLM_RATE_LIMIT_EXCEEDED` |
 
-Each Gemini call is reserved before it runs (input tokens estimated at 4 characters per token) and completed afterwards as `ok` or `error`. A known input count is stored for both statuses. The estimate remains only when usage never arrived. `max_retries=0`. A schema failure is not retried. All 429s from these limits carry `Retry-After`.
+Each LLM call is reserved before it runs (input tokens estimated at 4 characters per token) and completed afterwards as `ok` or `error`. A known input count is stored for both statuses. The estimate remains only when usage never arrived. `max_retries=0`. A schema failure is not retried. All 429s from these limits carry `Retry-After`.
 
 ## Errors and logging
 
-- Every error body is `{"detail": "...", "code": "MACHINE_CODE", ...extra}`. Unhandled exceptions become `500 INTERNAL_ERROR`.
+- Every error body is `{"detail": "...", "code": "MACHINE_CODE", ...extra}`, except FastAPI's own request-validation `422` (`{"detail": [...]}`). Unhandled exceptions become `500 INTERNAL_ERROR`.
+
+| Code | Status | When |
+|------|--------|------|
+| `UNAUTHORIZED`, `INVALID_TOKEN`, `USER_NOT_SYNCED` | 401 | Auth (see above) |
+| `ONBOARDING_INCOMPLETE` | 403 | Onboarded-only routes |
+| `NOT_FOUND` | 404 | Missing or someone else's resource (well-formed id) |
+| `ACTIVE_LESSON_EXISTS` | 409 | Start while a lesson is generating or active (`active_lesson_id`) |
+| `TIME_BUDGET_REQUIRED` | 409 | `POST /lessons/start` for a profile without a lesson length |
+| `TIME_BUDGET_REQUIRED` | 422 | `POST /onboarding/accept` for a profile without a lesson length |
+| `LESSON_NOT_ACTIVE` | 409 | Finish or open a chat for a lesson that is not active |
+| `ONBOARDING_INTERVIEW_INCOMPLETE`, `LESSON_ID_REQUIRED`, `EMPTY_MESSAGE`, `MESSAGE_TOO_LONG` | 422 | Business validation |
+| `RATE_LIMIT_EXCEEDED`, `LLM_RATE_LIMIT_EXCEEDED` | 429 | Limits, with `Retry-After` |
+| LLM codes, `PERSIST_FAILED` | 429/502/504/500 | See [Chat turn](#chat-turn) |
 - The request-id middleware reads or creates `X-Request-ID`, echoes it on responses, and logs one JSON access line per request (`/metrics` and `/health` are skipped).
-- Gemini calls log `llm_call` with call type, model, status, latency, and tokens.
+- LLM calls log `llm_call` with call type, model, status, latency, and tokens; prompt builders log `prompt_context` with `context_tokens` per block; rejected report ops log `report_op_rejected`; renamed env vars log `deprecated_env_var` at startup.
 
 ## Metrics
 

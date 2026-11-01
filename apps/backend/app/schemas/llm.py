@@ -1,4 +1,4 @@
-"""Pydantic models for Gemini structured output.
+"""Pydantic models for LLM structured output.
 
 Unknown keys are ignored. Callers persist ``model_dump()``. LangChain parses
 the response; there is no second validation pass after it returns the model.
@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, field_validator
+
+# Non-empty after trimming surrounding whitespace.
+Stripped = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 LESSON_MINUTES_RANGE = (5, 180)
 
@@ -32,21 +35,8 @@ class _Schema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-def _strip_string(value: object) -> object:
-    if isinstance(value, str):
-        return value.strip()
-    return value
-
-
 class _Reply(_Schema):
-    content: str = Field(min_length=1, description="Learner-facing reply for this turn.")
-
-    @field_validator("content", mode="before")
-    @classmethod
-    def _strip_content(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+    content: Stripped = Field(description="Learner-facing reply for this turn.")
 
 
 # --- Lesson curriculum -------------------------------------------------------
@@ -99,13 +89,8 @@ class ReportPatch(_Schema):
 
 
 class LearnerLanguages(_Schema):
-    native: str = Field(min_length=1)
-    target: str = Field(min_length=1)
-
-    @field_validator("native", "target", mode="before")
-    @classmethod
-    def _strip_language(cls, value: object) -> object:
-        return _strip_string(value)
+    native: Stripped
+    target: Stripped
 
 
 class LearnerGoal(_Schema):
@@ -254,8 +239,8 @@ class Correction(_Schema):
 
 
 class MistakeEntry(_Schema):
-    pattern_type: Annotated[str, BeforeValidator(_strip_string), AfterValidator(normalize_pattern)] = Field(
-        min_length=1, description="Short stable label for a recurring error, e.g. 'missing articles'."
+    pattern_type: Annotated[Stripped, AfterValidator(normalize_pattern)] = Field(
+        description="Short stable label for a recurring error, e.g. 'missing articles'."
     )
     example_text: str
     correction: str

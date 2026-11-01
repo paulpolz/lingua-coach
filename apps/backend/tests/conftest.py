@@ -15,14 +15,14 @@ import os
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "postgresql+asyncpg://lingua:lingua@localhost:5432/lingua_test")
 # Live evals (`-m eval`) need the real key; everything else runs on a fake one, so an
 # accidental unmocked call fails fast instead of spending money.
-os.environ["EVAL_GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY") or ""
+os.environ["EVAL_LLM_API_KEY"] = os.environ.get("LLM_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
 os.environ.update(
     {
         "DATABASE_URL": TEST_DATABASE_URL,
         "APP_ENV": "local",
         "CLERK_JWT_ISSUER": "",
         "CORS_ORIGINS": "http://localhost:3000",
-        "GEMINI_API_KEY": "test-key",
+        "LLM_API_KEY": "test-key",
         "LANGSMITH_TRACING": "false",
         "CHAT_RATE_LIMIT_PER_HOUR": "1000",
         "LESSON_START_RATE_LIMIT_PER_DAY": "1000",

@@ -15,7 +15,6 @@ from pydantic import BaseModel
 from app.config import settings
 from app.schemas.chat import TurnTiming
 from app.schemas.llm import LessonCurriculum, LessonReply, OnboardingReply, ReportPatch
-from app.services.gemini import ChatTurn, GeminiError, generate_structured
 from app.services.prompt_assembly import (
     generation_user_prompt,
     lesson_context_block,
@@ -25,6 +24,7 @@ from app.services.prompt_assembly import (
     report_system_instruction,
     report_user_prompt,
 )
+from app.services.structured_llm import ChatTurn, LLMError, generate_structured
 
 Target = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -45,14 +45,14 @@ async def _call(
             call_type=call_type,
             trace_metadata={"eval": True},
         )
-    except GeminiError as exc:
+    except LLMError as exc:
         return {"parsed": None, "error": exc.code}
     return {"parsed": parsed.model_dump(mode="json"), "error": None}
 
 
 async def onboarding_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     system = onboarding_system_instruction(inputs.get("native"), inputs.get("target"))
-    return await _call(OnboardingReply, system, _history(inputs), "chat", settings.gemini_model_chat)
+    return await _call(OnboardingReply, system, _history(inputs), "chat", settings.llm_model_chat)
 
 
 async def lesson_turn(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -61,14 +61,14 @@ async def lesson_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     context = lesson_context_block(inputs["curriculum"], None, mistakes or "  (none)", timing)
     system = lesson_system_instruction(inputs.get("native"), inputs["target"])
     history = [ChatTurn(role="user", text=context), *_history(inputs)]
-    return await _call(LessonReply, system, history, "chat", settings.gemini_model_chat)
+    return await _call(LessonReply, system, history, "chat", settings.llm_model_chat)
 
 
 async def curriculum(inputs: dict[str, Any]) -> dict[str, Any]:
     system = lesson_generation_system_instruction(inputs.get("native"), inputs.get("target"))
     prompt = generation_user_prompt(inputs["context"])
     return await _call(
-        LessonCurriculum, system, [ChatTurn(role="user", text=prompt)], "lesson_json", settings.gemini_model_lesson
+        LessonCurriculum, system, [ChatTurn(role="user", text=prompt)], "lesson_json", settings.llm_model_lesson
     )
 
 
@@ -82,9 +82,7 @@ async def report_patch(inputs: dict[str, Any]) -> dict[str, Any]:
         pace_status=inputs.get("pace_status"),
         reports=inputs["reports"],
     )
-    return await _call(
-        ReportPatch, system, [ChatTurn(role="user", text=prompt)], "report", settings.gemini_model_lesson
-    )
+    return await _call(ReportPatch, system, [ChatTurn(role="user", text=prompt)], "report", settings.llm_model_lesson)
 
 
 TARGETS: dict[str, Target] = {

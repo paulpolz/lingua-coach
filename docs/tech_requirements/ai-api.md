@@ -6,21 +6,21 @@ The coach is Google Gemini called through LangChain (`langchain-google-genai`). 
 
 | Call type | Trigger | Function | Model setting | Output |
 |-----------|---------|----------|---------------|--------|
-| `chat` | Every chat message (onboarding and lesson) | `generate_structured` | `GEMINI_MODEL_CHAT` | `OnboardingReply` or `LessonReply` |
-| `lesson_json` | Lesson generation job | `generate_structured` | `GEMINI_MODEL_LESSON` | `LessonCurriculum` |
-| `report` | Lesson finish | `generate_structured` | `GEMINI_MODEL_LESSON` | `ReportPatch` |
+| `chat` | Every chat message (onboarding and lesson) | `generate_structured` | `LLM_MODEL_CHAT` | `OnboardingReply` or `LessonReply` |
+| `lesson_json` | Lesson generation job | `generate_structured` | `LLM_MODEL_LESSON` | `LessonCurriculum` |
+| `report` | Background task after lesson finish | `generate_structured` | `LLM_MODEL_LESSON` | `ReportPatch` |
 
-Lesson, report, and chat go through [`metered_structured_call`](../../../../apps/backend/app/services/llm_usage.py). That reserves one Gemini call, then [`generate_structured`](../../../../apps/backend/app/services/gemini.py) builds a `ChatGoogleGenerativeAI` client with `max_retries=0` and `GEMINI_TIMEOUT_SECONDS` (default 120). The client kwargs do not set a JSON mime type. The call is `with_structured_output(Model, method="json_schema", include_raw=True)`. LangChain owns the schema and the parse. Callers persist `model_dump()`. A schema failure is not retried.
+Every call goes through [`metered_structured_call`](../../apps/backend/app/services/llm_usage.py). That reserves one LLM call, then [`generate_structured`](../../apps/backend/app/services/structured_llm.py) gets the cached `ChatGoogleGenerativeAI` client for the model id (`max_retries=0`) and calls `with_structured_output(Model, method="json_schema", include_raw=True)` inside one `asyncio.timeout(LLM_TIMEOUT_SECONDS)` (default 120). LangChain owns the schema and the parse. Callers persist `model_dump()`. A schema failure is not retried.
 
 `_tokens` reads `usage_metadata` on the raw `AIMessage` for a success and for a failed parse. A finished call reports that input count, then returns the model or raises `LLM_SCHEMA_ERROR`. Transport failures are recorded with zero tokens and do not report usage. The quota row stays on the reserve estimate only in that case.
 
-Failures become `GeminiError` with a code:
+Failures become `LLMError` with a code:
 
 | Code | Cause |
 |------|-------|
-| `LLM_CONFIG_ERROR` | `GEMINI_API_KEY` is empty |
+| `LLM_CONFIG_ERROR` | `LLM_API_KEY` is empty |
 | `LLM_TIMEOUT` | No response within the timeout |
-| `LLM_QUOTA_EXCEEDED` | Gemini returned `RESOURCE_EXHAUSTED` |
+| `LLM_QUOTA_EXCEEDED` | The provider returned `RESOURCE_EXHAUSTED` |
 | `LLM_SCHEMA_ERROR` | A finished call did not yield a valid model, including a blank reply |
 | `LLM_API_ERROR` | Anything else |
 
@@ -65,7 +65,7 @@ Closed mistakes (`resolved_at` set) are not candidates for either list.
 
 ## Response models
 
-Models are in [`schemas/llm.py`](../../../../apps/backend/app/schemas/llm.py). `content` on a chat reply is stripped, and a blank reply fails validation (`LLM_SCHEMA_ERROR`). There is no second `task_update` object: `completed_task_ids` on `LessonReply` is the only source.
+Models are in [`schemas/llm.py`](../../apps/backend/app/schemas/llm.py). `content` on a chat reply is `Stripped` (trimmed, non-empty), so a blank reply fails validation (`LLM_SCHEMA_ERROR`).
 
 | Model | Required | Defaults |
 |-------|----------|----------|
@@ -98,4 +98,4 @@ With `LANGSMITH_TRACING=true` (local and staging only; the app refuses to start 
 
 ## Limits around every call
 
-Each call is reserved in `llm_usage_events` before it starts (`len` of the system instruction and history `// 4`) and completed afterwards (see [backend.md](./backend.md#limits)). A known input count is stored for both `ok` and `error`. The estimate remains only when usage never arrived. Chat messages also count against the per-user hourly chat limit, and lesson starts against the per-user daily start limit. One chat turn is one reserved Gemini request. The hourly check stays in front of the reserve.
+Each call is reserved in `llm_usage_events` before it starts (`len` of the system instruction and history `// 4`) and completed afterwards (see [backend.md](./backend.md#limits)). A known input count is stored for both `ok` and `error`. The estimate remains only when usage never arrived. Chat messages also count against the per-user hourly chat limit, and lesson starts against the per-user daily start limit. One chat turn is one reserved LLM request. The hourly check stays in front of the reserve.

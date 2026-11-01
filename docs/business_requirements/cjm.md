@@ -122,7 +122,7 @@ After each finished lesson the coach appends dated entries or rewrites whole sec
 - One lesson in flight at a time.
 - Plan changes happen in chat.
 - Transcripts are temporary. The onboarding transcript is deleted on accept and a lesson transcript on finish.
-- Usage is capped: 60 chat messages per hour and 2 lesson starts per 24 hours per learner, plus global Gemini limits. When a cap is hit the app shows a "try again later" message.
+- Usage is capped: 60 chat messages per hour and 2 lesson starts per 24 hours per learner, plus global LLM limits. When a cap is hit the app shows a "try again later" message.
 
 ## What the product leaves out
 

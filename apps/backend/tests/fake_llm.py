@@ -6,6 +6,7 @@ the fake through `install_fake_llm`, so a module rename changes one constant.
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -15,7 +16,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-LLM_PATCH_TARGET = "app.services.gemini.ChatGoogleGenerativeAI"
+LLM_PATCH_TARGET = "app.services.structured_llm.ChatGoogleGenerativeAI"
 RAW_INPUT_TOKENS = 42
 
 
@@ -84,5 +85,8 @@ def _fake_chat_model_class(fake: FakeLLM) -> Callable[..., Any]:
 
 @contextmanager
 def install_fake_llm(fake: FakeLLM, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeLLM]:
+    llm_module = importlib.import_module(LLM_PATCH_TARGET.rsplit(".", 1)[0])
     monkeypatch.setattr(LLM_PATCH_TARGET, _fake_chat_model_class(fake))
+    llm_module._chat_model.cache_clear()  # the client is cached per model id
     yield fake
+    llm_module._chat_model.cache_clear()

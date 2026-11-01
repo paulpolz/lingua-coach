@@ -262,7 +262,7 @@ sequenceDiagram
 
 | File | Holds |
 |------|-------|
-| `app/services/embeddings.py` | `embed(texts) -> list[list[float]]` over `GoogleGenerativeAIEmbeddings` (already in `langchain-google-genai`), with the same timeout, metrics and error codes as [`gemini.py`](../../apps/backend/app/services/gemini.py) |
+| `app/services/embeddings.py` | `embed(texts) -> list[list[float]]` over `GoogleGenerativeAIEmbeddings` (already in `langchain-google-genai`), with the same timeout, metrics and error codes as [`structured_llm.py`](../../apps/backend/app/services/structured_llm.py) |
 | `app/services/memory.py` | `rank_mistakes` (stage 1), `upsert_chunks(db, user_id, items)`, `search(db, user_id, query, kinds, k) -> list[MemoryHit]` |
 | `app/services/prompt_assembly.py` | `memory_block(hits) -> str` (the format above) |
 | `app/models/memory_chunk.py` | the SQLAlchemy model, using the `pgvector` package's `Vector(768)` type |

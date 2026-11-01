@@ -32,7 +32,7 @@ jobs:
         working-directory: apps/backend
     env:
       APP_ENV: local
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGSMITH_TRACING: "true"
       LANGSMITH_PROJECT: lingua-coach-evals

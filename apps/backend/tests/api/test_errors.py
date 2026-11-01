@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import JobStatus
 from app.models.job import Job
 from app.schemas.llm import LessonReply
-from app.services.gemini import GeminiError
+from app.services.structured_llm import LLMError
 from tests.conftest import Auth
 from tests.factories import make_chat_session, make_lesson, make_profile, make_user, roadmap_dict
 from tests.fake_llm import FakeLLM, SchemaMismatch
@@ -26,7 +26,7 @@ RAW_SECRET = "upstream said: key=AIza-secret-123 project=internal"
         (TimeoutError(RAW_SECRET), 504, "LLM_TIMEOUT"),
         (RuntimeError(f"RESOURCE_EXHAUSTED {RAW_SECRET}"), 429, "LLM_QUOTA_EXCEEDED"),
         (RuntimeError(RAW_SECRET), 502, "LLM_API_ERROR"),
-        (GeminiError(RAW_SECRET, code="LLM_CONFIG_ERROR"), 502, "LLM_CONFIG_ERROR"),
+        (LLMError(RAW_SECRET, code="LLM_CONFIG_ERROR"), 502, "LLM_CONFIG_ERROR"),
         (SchemaMismatch(), 502, "LLM_SCHEMA_ERROR"),
     ],
 )
@@ -58,23 +58,24 @@ MALFORMED = [
 
 
 @pytest.mark.parametrize(("method", "path"), MALFORMED)
-async def test_malformed_ids_are_404(client: httpx.AsyncClient, db: AsyncSession, method: str, path: str) -> None:
+async def test_malformed_ids_are_422(client: httpx.AsyncClient, db: AsyncSession, method: str, path: str) -> None:
     await make_user(db)
     response = await client.request(method, path, json={"content": "hi"} if method == "post" else None)
-    assert response.status_code == 404
-    assert response.json()["code"] == "NOT_FOUND"
+    assert response.status_code == 422
+    assert "code" not in response.json()  # FastAPI's validation body; clients treat it as "not found"
 
 
-async def test_malformed_ids_in_bodies_are_404(client: httpx.AsyncClient, db: AsyncSession) -> None:
+async def test_malformed_ids_in_bodies_are_422(client: httpx.AsyncClient, db: AsyncSession) -> None:
     await make_user(db)
     chat = await client.post("/api/v1/chat/sessions", json={"type": "lesson", "lesson_id": "nope"})
-    # A valid roadmap, so only the malformed id can cause the 404.
+    # A valid roadmap, so only the malformed id can cause the 422.
     accept = await client.post(
         "/api/v1/onboarding/accept", json={"session_id": "nope", "course_roadmap": roadmap_dict()}
     )
     for response in (chat, accept):
-        assert response.status_code == 404
-        assert response.json()["code"] == "NOT_FOUND"
+        assert response.status_code == 422
+        assert "code" not in response.json()
+        assert response.json()["detail"][0]["loc"][-1] in ("lesson_id", "session_id")
 
 
 async def test_someone_elses_resources_are_404(client: httpx.AsyncClient, db: AsyncSession, auth: Auth) -> None:

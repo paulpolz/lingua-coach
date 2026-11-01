@@ -52,7 +52,7 @@ The seeds are a handful of hand-written cases per dataset. Grow each to 20–50,
 
 ```bash
 cd apps/backend
-export LANGSMITH_API_KEY=… GEMINI_API_KEY=… LANGSMITH_TRACING=true LANGSMITH_PROJECT=lingua-coach-evals
+export LANGSMITH_API_KEY=… LLM_API_KEY=… LANGSMITH_TRACING=true LANGSMITH_PROJECT=lingua-coach-evals
 uv run python -m evals.run --dataset lesson_turns            # experiment prefix: git sha
 uv run python -m evals.run --dataset report_patch --min-score 0.8
 uv run pytest -m eval                                        # the same, as a pytest (skipped without keys)

@@ -2,25 +2,25 @@
 
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_owned
 from app.core.errors import APIError
 from app.db.session import get_db
 from app.models.chat import ChatMessage, ChatSession
 from app.models.enums import ChatSessionType, LearningGoalStatus, LearningPlanStatus, UserReportType
 from app.models.learning_goal import LearningGoal
 from app.models.learning_plan import LearningPlan
-from app.models.profile import Profile
 from app.models.user import User
 from app.models.user_report import UserReport
 from app.schemas.onboarding import OnboardingAcceptRequest, OnboardingAcceptResponse
 from app.services.lesson_timing import TimeBudgetRequired, target_minutes
+from app.services.pace import compute_projected_completion, pace_window
+from app.services.queries import get_profile
 from app.services.report_seed import seed_four_week_plan_markdown, seed_roadmap_markdown
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -32,11 +32,8 @@ async def accept_onboarding(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> OnboardingAcceptResponse:
-    try:
-        session = await db.get(ChatSession, uuid.UUID(body.session_id))
-    except ValueError:
-        session = None
-    if session is None or session.user_id != user.id or session.type != ChatSessionType.onboarding:
+    session = await get_owned(db, ChatSession, body.session_id, user, "Onboarding chat session")
+    if session.type != ChatSessionType.onboarding:
         raise APIError(404, "Onboarding chat session not found", "NOT_FOUND")
 
     goal = (
@@ -57,7 +54,7 @@ async def accept_onboarding(
             "ONBOARDING_INTERVIEW_INCOMPLETE",
         )
 
-    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
+    profile = await get_profile(db, user.id)
     try:
         target_minutes(profile)
     except TimeBudgetRequired:
@@ -85,7 +82,7 @@ async def accept_onboarding(
 
     profile.active_learning_plan_id = plan.id
     profile.target_plan_days = plan_days or None
-    profile.projected_completion_at = now + timedelta(hours=plan_days * (profile.pace_window_hours or 24))
+    profile.projected_completion_at = compute_projected_completion(now, plan_days, pace_window(profile))
 
     goal.status = LearningGoalStatus.active
     user.onboarding_complete = True

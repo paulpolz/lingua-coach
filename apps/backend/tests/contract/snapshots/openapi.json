@@ -145,6 +145,7 @@
           "lesson_id": {
             "anyOf": [
               {
+                "format": "uuid",
                 "type": "string"
               },
               {
@@ -893,6 +894,7 @@
             "$ref": "#/components/schemas/CourseRoadmap"
           },
           "session_id": {
+            "format": "uuid",
             "title": "Session Id",
             "type": "string"
           }
@@ -1463,6 +1465,7 @@
             "name": "session_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Session Id",
               "type": "string"
             }
@@ -1508,6 +1511,7 @@
             "name": "session_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Session Id",
               "type": "string"
             }
@@ -1587,6 +1591,7 @@
             "name": "job_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Job Id",
               "type": "string"
             }
@@ -1694,6 +1699,7 @@
             "name": "lesson_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Lesson Id",
               "type": "string"
             }
@@ -1741,6 +1747,7 @@
             "name": "lesson_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Lesson Id",
               "type": "string"
             }
@@ -1806,6 +1813,7 @@
             "name": "lesson_id",
             "required": true,
             "schema": {
+              "format": "uuid",
               "title": "Lesson Id",
               "type": "string"
             }

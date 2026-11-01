@@ -1,8 +1,15 @@
-"""Gemini via LangChain structured output. One schema, one parse, no repair call."""
+"""One structured-output LLM call: one schema, one parse, no repair call.
+
+Builds messages from `ChatTurn` history, calls `with_structured_output`, enforces the
+timeout, records metrics and logs, maps failures to error codes, and returns a validated
+Pydantic object. Provider: Gemini via `langchain-google-genai`; `_chat_model()` is the
+only provider-specific seam (LangChain's `BaseChatModel` is the abstraction).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -23,7 +30,7 @@ T = TypeVar("T", bound=BaseModel)
 OnUsage = Callable[[int], Awaitable[None]] | None
 
 
-class GeminiError(RuntimeError):
+class LLMError(RuntimeError):
     def __init__(self, message: str, *, code: str = "LLM_ERROR") -> None:
         super().__init__(message)
         self.code = code
@@ -47,18 +54,15 @@ class ChatTurn:
     text: str
 
 
-def _model(model_id: str) -> ChatGoogleGenerativeAI:
-    if not settings.gemini_api_key:
-        raise GeminiError("GEMINI_API_KEY is not configured", code="LLM_CONFIG_ERROR")
+@functools.cache
+def _chat_model(model_id: str) -> ChatGoogleGenerativeAI:
+    """One client per model id, reused across calls."""
+    if not settings.llm_api_key:
+        raise LLMError("LLM_API_KEY is not configured", code="LLM_CONFIG_ERROR")
     # max_retries=0 so a quota failure surfaces instead of being retried away.
     # No response_mime_type here; with_structured_output supplies the schema.
-    return ChatGoogleGenerativeAI(
-        model=model_id,
-        api_key=settings.gemini_api_key,
-        temperature=None,
-        max_retries=0,
-        timeout=settings.gemini_timeout_seconds,
-    )
+    # No client timeout: asyncio.timeout in generate_structured is the single limit.
+    return ChatGoogleGenerativeAI(model=model_id, api_key=settings.llm_api_key, temperature=None, max_retries=0)
 
 
 def _messages(system_instruction: str, history: list[ChatTurn]) -> list:
@@ -96,14 +100,14 @@ def _record(call_type: str, model: str, status: str, started: float, tokens: tup
     )
 
 
-def _error(exc: Exception) -> GeminiError:
-    if isinstance(exc, GeminiError):
+def _error(exc: Exception) -> LLMError:
+    if isinstance(exc, LLMError):
         return exc
     if isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower():
-        return GeminiError(f"Gemini request timed out after {settings.gemini_timeout_seconds}s", code="LLM_TIMEOUT")
+        return LLMError(f"Gemini request timed out after {settings.llm_timeout_seconds}s", code="LLM_TIMEOUT")
     if "RESOURCE_EXHAUSTED" in str(exc):
-        return GeminiError(f"Gemini quota exceeded: {exc}", code="LLM_QUOTA_EXCEEDED")
-    return GeminiError(f"Gemini API error: {exc}", code="LLM_API_ERROR")
+        return LLMError(f"Gemini quota exceeded: {exc}", code="LLM_QUOTA_EXCEEDED")
+    return LLMError(f"Gemini API error: {exc}", code="LLM_API_ERROR")
 
 
 async def generate_structured(
@@ -124,14 +128,15 @@ async def generate_structured(
     """
     started = time.perf_counter()
     try:
-        chat = _model(model_id).with_structured_output(schema, method="json_schema", include_raw=True)
+        chat = _chat_model(model_id).with_structured_output(schema, method="json_schema", include_raw=True)
         # Picked up by LangSmith when LANGSMITH_TRACING is on; inert otherwise.
         config: RunnableConfig = {
             "run_name": call_type,
             "tags": [call_type, f"env:{settings.app_env}"],
             "metadata": {"call_type": call_type, "model": model_id, **(trace_metadata or {})},
         }
-        async with asyncio.timeout(settings.gemini_timeout_seconds):
+        # The only timeout: it bounds the whole call, whatever the transport does.
+        async with asyncio.timeout(settings.llm_timeout_seconds):
             result = await chat.ainvoke(_messages(system_instruction, history), config=config)
     except Exception as exc:  # noqa: BLE001
         _record(call_type, model_id, "error", started)
@@ -158,6 +163,6 @@ async def generate_structured(
                 "error": (str(parsing_error)[:500] if parsing_error else "parsed output was not the schema"),
             },
         )
-        raise GeminiError("Gemini response did not match the schema", code="LLM_SCHEMA_ERROR")
+        raise LLMError("Gemini response did not match the schema", code="LLM_SCHEMA_ERROR")
     _record(call_type, model_id, "ok", started, tokens)
     return parsed

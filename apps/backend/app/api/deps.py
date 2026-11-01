@@ -1,3 +1,6 @@
+import uuid
+from typing import TypeVar
+
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -7,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clerk_auth import verify_clerk_jwt
 from app.core.errors import APIError
 from app.db.session import get_db
+from app.models.chat import ChatSession
+from app.models.job import Job
+from app.models.lesson import Lesson
 from app.models.user import User
+
+Owned = TypeVar("Owned", Lesson, ChatSession, Job)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -53,3 +61,12 @@ async def require_onboarding_complete(user: User = Depends(get_current_user)) ->
     if not user.onboarding_complete:
         raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
     return user
+
+
+async def get_owned(db: AsyncSession, model: type[Owned], ident: uuid.UUID, user: User, what: str) -> Owned:
+    """Load a row the caller owns. Path ids are typed `uuid.UUID`, so a malformed id is already
+    a 422; a well-formed id that is missing or someone else's is a 404 (no existence leak)."""
+    row = await db.get(model, ident)
+    if row is None or row.user_id != user.id:
+        raise APIError(404, f"{what} not found", "NOT_FOUND")
+    return row

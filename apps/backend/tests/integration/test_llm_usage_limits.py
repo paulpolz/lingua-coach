@@ -13,8 +13,8 @@ from app.config import settings
 from app.core.errors import APIError
 from app.models.llm_usage import LlmUsageEvent
 from app.schemas.llm import LessonCurriculum
-from app.services.gemini import ChatTurn
-from app.services.llm_usage import metered_structured_call, reserve_gemini_call
+from app.services.llm_usage import metered_structured_call, reserve_llm_call
+from app.services.structured_llm import ChatTurn
 from tests.factories import make_chat_session, make_user
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, SchemaMismatch
 from tests.samples import curriculum
@@ -103,7 +103,7 @@ async def test_global_limits_raise_429_with_retry_after(
     await _usage(db, user.id, "lesson_start", 50)  # not an LLM call; never counted
 
     with pytest.raises(APIError) as caught:
-        await reserve_gemini_call(db, user.id, "chat", estimated_input_tokens=20)
+        await reserve_llm_call(db, user.id, "chat", estimated_input_tokens=20)
 
     assert caught.value.status_code == 429
     assert caught.value.code == "LLM_RATE_LIMIT_EXCEEDED"
@@ -117,7 +117,7 @@ async def test_global_limits_raise_429_with_retry_after(
 async def test_reserve_under_limits_inserts_a_reserved_row(db: AsyncSession) -> None:
     user = await make_user(db)
     await _usage(db, user.id, "chat", 2, tokens=10)
-    event = await reserve_gemini_call(db, user.id, "report", estimated_input_tokens=7)
+    event = await reserve_llm_call(db, user.id, "report", estimated_input_tokens=7)
     assert event.status == "reserved" and event.input_tokens == 7
 
 
