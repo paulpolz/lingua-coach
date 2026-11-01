@@ -123,16 +123,14 @@ export default function PlanSummaryCard({
           </ol>
         ) : null}
 
-        {weeklyTemplate ? (
+        {weeklyTemplate?.minutes_per_session ? (
           <div className="mt-4">
-            <p className="text-xs text-muted">Weekly session ({weeklyTemplate.minutes_per_session} min)</p>
-            {weeklyTemplate.activities?.length ? (
-              <p className="mt-1 text-sm leading-5 text-foreground">
-                {weeklyTemplate.activities
-                  .map((activity) => `${activity.label} ${activity.minutes}m`)
-                  .join(" · ")}
-              </p>
-            ) : null}
+            <p className="text-xs text-muted">Each lesson</p>
+            <p className="mt-1 text-sm leading-5 text-foreground">
+              {weeklyTemplate.sessions_per_week
+                ? `${weeklyTemplate.minutes_per_session} min per lesson · ${weeklyTemplate.sessions_per_week} days/week`
+                : `${weeklyTemplate.minutes_per_session} min per lesson`}
+            </p>
           </div>
         ) : null}
       </div>

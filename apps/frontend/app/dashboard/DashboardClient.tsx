@@ -2,60 +2,41 @@
 
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   LessonConflictError,
   describeFinishResult,
   finishLesson,
   getActiveLesson,
-  getJob,
   getLesson,
+  isTimeBudgetRequired,
   readAndClearFinishHint,
   startLesson,
   stopLesson,
   type FinishLessonRequest,
-  type Lesson,
 } from "@/lib/lessons";
-import { getProgress, type Progress } from "@/lib/progress";
 import FinishLessonDialog from "@/components/FinishLessonDialog";
 import Button from "@/components/ui/Button";
+import ActiveLessonHero from "./ActiveLessonHero";
+import { stateForInFlightLesson, type DashboardState } from "./dashboard-state";
+import DeskHero from "./DeskHero";
+import GeneratingHero from "./GeneratingHero";
 import PaceSummary from "./PaceSummary";
+import TimeBudgetPrompt from "./TimeBudgetPrompt";
+import { useGenerationPoll } from "./use-generation-poll";
+import { useProgress } from "./use-progress";
 
-// Generation is one Gemini call; the ceiling (~150s) clears GEMINI_TIMEOUT_SECONDS (120s).
-const POLL_INTERVAL_MS = 1800;
-const MAX_POLL_ATTEMPTS = 85;
-
-type DashboardState =
-  | { phase: "loading" }
-  | { phase: "load-error"; message: string }
-  | { phase: "idle" }
-  | { phase: "starting" }
-  | {
-      phase: "generating";
-      lessonId: string;
-      lessonNumber: number;
-      /** `null` when resumed from `GET /lessons/active` — we only learn `job_id` from a fresh `startLesson()` call, so this case polls the lesson itself instead. */
-      jobId: string | null;
-      startedAt: number;
-      timedOut: boolean;
-    }
-  | { phase: "generation-failed"; message: string }
-  | { phase: "active"; lesson: Lesson };
-
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
+/**
+ * Dashboard state machine (see `DashboardState`): load the in-flight lesson,
+ * start / poll generation, and resume, stop or finish the active lesson.
+ * Sections render in their own components.
+ */
 export default function DashboardClient() {
   const { getToken } = useAuth();
   const router = useRouter();
 
   const [state, setState] = useState<DashboardState>({ phase: "loading" });
-  const [now, setNow] = useState(() => Date.now());
   // Bumped by the load-error retry button to re-run the initial-load effect
   // below without a full page reload.
   const [reloadCount, setReloadCount] = useState(0);
@@ -68,41 +49,8 @@ export default function DashboardClient() {
   // over from LessonChat's finish-then-redirect (readAndClearFinishHint).
   const [finishAckMessage, setFinishAckMessage] = useState<string | null>(() => readAndClearFinishHint());
 
-  // Pace summary never blocks Start/Resume; a failure just hides the section.
-  const [progress, setProgress] = useState<Progress | null>(null);
-  const [progressError, setProgressError] = useState<string | null>(null);
-
-  const loadProgress = useCallback(async () => {
-    try {
-      const token = await getToken();
-      const result = await getProgress(token);
-      setProgress(result);
-      setProgressError(null);
-    } catch (error) {
-      setProgress(null);
-      setProgressError(error instanceof Error ? error.message : "Failed to load progress.");
-    }
-  }, [getToken]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        const result = await getProgress(token);
-        if (cancelled) return;
-        setProgress(result);
-        setProgressError(null);
-      } catch (error) {
-        if (cancelled) return;
-        setProgress(null);
-        setProgressError(error instanceof Error ? error.message : "Failed to load progress.");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [getToken, reloadCount]);
+  const { progress, error: progressError, reload: reloadProgress } = useProgress(reloadCount);
+  useGenerationPoll(state, setState);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,30 +58,15 @@ export default function DashboardClient() {
     async function loadActiveLesson() {
       setState({ phase: "loading" });
       try {
-        const token = await getToken();
-        const lesson = await getActiveLesson(token);
+        const lesson = await getActiveLesson(await getToken());
         if (cancelled) return;
-        if (!lesson) {
-          setState({ phase: "idle" });
-        } else if (lesson.status === "active") {
-          setState({ phase: "active", lesson });
-        } else {
-          setState({
-            phase: "generating",
-            lessonId: lesson.id,
-            lessonNumber: lesson.lesson_number,
-            jobId: null,
-            startedAt: Date.now(),
-            timedOut: false,
-          });
-        }
+        setState(lesson ? stateForInFlightLesson(lesson) : { phase: "idle" });
       } catch (error) {
         if (cancelled) return;
-        const message =
-          error instanceof Error ? error.message : "Could not reach the server. Is the backend running?";
         setState({
           phase: "load-error",
-          message,
+          message:
+            error instanceof Error ? error.message : "Could not reach the server. Is the backend running?",
         });
       }
     }
@@ -147,8 +80,7 @@ export default function DashboardClient() {
   const handleStartLesson = useCallback(async () => {
     setState({ phase: "starting" });
     try {
-      const token = await getToken();
-      const result = await startLesson(token);
+      const result = await startLesson(await getToken());
       setState({
         phase: "generating",
         lessonId: result.lesson_id,
@@ -158,25 +90,17 @@ export default function DashboardClient() {
         timedOut: false,
       });
     } catch (error) {
+      if (isTimeBudgetRequired(error)) {
+        setState({ phase: "time-budget-required" });
+        return;
+      }
       if (error instanceof LessonConflictError) {
         // Not a UI bug — the backend already has an in-flight lesson for
         // this user. Fetch it and route into the matching state instead of
         // showing a generic error.
         try {
-          const token = await getToken();
-          const lesson = await getLesson(token, error.activeLessonId);
-          if (lesson.status === "active") {
-            setState({ phase: "active", lesson });
-          } else {
-            setState({
-              phase: "generating",
-              lessonId: lesson.id,
-              lessonNumber: lesson.lesson_number,
-              jobId: null,
-              startedAt: Date.now(),
-              timedOut: false,
-            });
-          }
+          const lesson = await getLesson(await getToken(), error.activeLessonId);
+          setState(stateForInFlightLesson(lesson));
         } catch (innerError) {
           setState({
             phase: "load-error",
@@ -195,79 +119,6 @@ export default function DashboardClient() {
     }
   }, [getToken]);
 
-  const generatingLessonId = state.phase === "generating" ? state.lessonId : null;
-  const generatingJobId = state.phase === "generating" ? state.jobId : null;
-  const generatingTimedOut = state.phase === "generating" ? state.timedOut : false;
-
-  // Poll the job (fresh start) or the lesson itself (resumed after reload,
-  // where we never received a job_id) until generation reaches a terminal
-  // state, then navigate into the placeholder lesson page.
-  useEffect(() => {
-    if (!generatingLessonId || generatingTimedOut) return;
-
-    let cancelled = false;
-    let attempts = 0;
-
-    const tick = async () => {
-      attempts += 1;
-      try {
-        const token = await getToken();
-        if (generatingJobId) {
-          const job = await getJob(token, generatingJobId);
-          if (cancelled) return;
-          if (job.status === "done") {
-            router.push(`/lesson/${generatingLessonId}`);
-            return;
-          }
-          if (job.status === "failed") {
-            setState({
-              phase: "generation-failed",
-              message: job.error || "Lesson generation failed. Please try again.",
-            });
-            return;
-          }
-        } else {
-          const lesson = await getLesson(token, generatingLessonId);
-          if (cancelled) return;
-          if (lesson.status === "active") {
-            router.push(`/lesson/${lesson.id}`);
-            return;
-          }
-          if (lesson.status === "failed") {
-            setState({
-              phase: "generation-failed",
-              message: "Lesson generation failed. Please try again.",
-            });
-            return;
-          }
-        }
-      } catch {
-        // Transient network hiccup while polling — stay in the generating
-        // state; the attempt-count guard below still applies.
-      }
-
-      if (cancelled) return;
-      if (attempts >= MAX_POLL_ATTEMPTS) {
-        setState((prev) => (prev.phase === "generating" ? { ...prev, timedOut: true } : prev));
-      }
-    };
-
-    const interval = setInterval(() => void tick(), POLL_INTERVAL_MS);
-    void tick();
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [generatingLessonId, generatingJobId, generatingTimedOut, getToken, router]);
-
-  // Elapsed-time ticker for the generation progress UI.
-  useEffect(() => {
-    if (state.phase !== "generating") return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [state.phase]);
-
   const handleCheckAgain = useCallback(() => {
     setState((prev) => (prev.phase === "generating" ? { ...prev, timedOut: false, startedAt: Date.now() } : prev));
   }, []);
@@ -280,8 +131,7 @@ export default function DashboardClient() {
     setIsStopping(true);
     setStopError(null);
     try {
-      const token = await getToken();
-      await stopLesson(token, state.lesson.id);
+      await stopLesson(await getToken(), state.lesson.id);
     } catch (error) {
       setStopError(error instanceof Error ? error.message : "Failed to stop the session.");
     } finally {
@@ -296,19 +146,18 @@ export default function DashboardClient() {
       setIsFinishing(true);
       setFinishError(null);
       try {
-        const token = await getToken();
-        const result = await finishLesson(token, state.lesson.id, feedback);
+        const result = await finishLesson(await getToken(), state.lesson.id, feedback);
         setFinishDialogOpen(false);
         setFinishAckMessage(describeFinishResult(result));
         setState({ phase: "idle" });
-        void loadProgress();
+        reloadProgress();
       } catch (error) {
         setFinishError(error instanceof Error ? error.message : "Failed to finish the lesson.");
       } finally {
         setIsFinishing(false);
       }
     },
-    [state, isFinishing, getToken, loadProgress]
+    [state, isFinishing, getToken, reloadProgress]
   );
 
   return (
@@ -346,23 +195,17 @@ export default function DashboardClient() {
         <DeskHero title="Ready for your next lesson?" helper="Starting…" helperClassName="text-[13px] text-muted" />
       ) : null}
 
+      {state.phase === "time-budget-required" ? (
+        <TimeBudgetPrompt onSaved={() => void handleStartLesson()} />
+      ) : null}
+
       {state.phase === "generating" ? (
-        <DeskHero
-          title={`Generating lesson ${state.lessonNumber}…`}
-          helper={formatElapsed(now - state.startedAt)}
-          helperClassName="text-[13px] text-muted"
-        >
-          {state.timedOut ? (
-            <div className="flex flex-col items-start gap-2">
-              <p className="max-w-sm text-sm text-warning">
-                This is taking longer than usual. It may still finish in the background.
-              </p>
-              <Button variant="ghost" onClick={handleCheckAgain}>
-                Check again
-              </Button>
-            </div>
-          ) : null}
-        </DeskHero>
+        <GeneratingHero
+          lessonNumber={state.lessonNumber}
+          startedAt={state.startedAt}
+          timedOut={state.timedOut}
+          onCheckAgain={handleCheckAgain}
+        />
       ) : null}
 
       {state.phase === "generation-failed" ? (
@@ -397,92 +240,6 @@ export default function DashboardClient() {
         }}
         onConfirm={(payload) => void handleFinishLesson(payload)}
       />
-    </div>
-  );
-}
-
-function DeskHero({
-  title,
-  helper,
-  helperClassName = "text-sm leading-[22px] text-muted",
-  children,
-}: {
-  title: string;
-  helper?: string;
-  helperClassName?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-start gap-4">
-      <h1 className="text-[22px] font-[590] leading-7 tracking-[-0.03em] text-foreground">{title}</h1>
-      {helper ? <p className={helperClassName}>{helper}</p> : null}
-      {children}
-    </div>
-  );
-}
-
-function ActiveLessonHero({
-  lesson,
-  onResume,
-  onStop,
-  isStopping,
-  stopError,
-  onFinish,
-  isFinishing,
-  finishError,
-}: {
-  lesson: Lesson;
-  onResume: () => void;
-  onStop: () => void;
-  isStopping: boolean;
-  stopError: string | null;
-  onFinish: () => void;
-  isFinishing: boolean;
-  finishError: string | null;
-}) {
-  const curriculum = lesson.payload?.curriculum;
-
-  return (
-    <div className="flex flex-col items-start gap-4">
-      <h1 className="text-[22px] font-[590] leading-7 tracking-[-0.03em] text-foreground">
-        Resume lesson {lesson.lesson_number}?
-      </h1>
-      {curriculum?.lesson_goal || curriculum?.grammar_focus || curriculum?.vocab_theme ? (
-        <div className="flex flex-col gap-1">
-          {curriculum?.lesson_goal ? (
-            <p className="text-sm leading-[22px] text-muted">{curriculum.lesson_goal}</p>
-          ) : null}
-          {curriculum?.grammar_focus ? (
-            <p className="text-sm leading-[22px] text-muted">Grammar: {curriculum.grammar_focus}</p>
-          ) : null}
-          {curriculum?.vocab_theme ? (
-            <p className="text-sm leading-[22px] text-muted">Vocab: {curriculum.vocab_theme}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {stopError ? <p className="text-sm text-danger">{stopError}</p> : null}
-      {finishError ? <p className="text-sm text-danger">{finishError}</p> : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={onResume}>Resume</Button>
-        <Button
-          variant="ghost"
-          onClick={onStop}
-          disabled={isStopping}
-          title="Leaves the session — the lesson stays active and you can resume anytime."
-        >
-          {isStopping ? "Stopping…" : "Stop session"}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={onFinish}
-          disabled={isFinishing}
-          title="Always available while the lesson is active — marks it accomplished and unlocks the next lesson."
-        >
-          {isFinishing ? "Finishing…" : "Finish lesson"}
-        </Button>
-      </div>
     </div>
   );
 }

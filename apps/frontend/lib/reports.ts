@@ -1,4 +1,4 @@
-import { apiFetch, toApiError } from "@/lib/api";
+import { apiJson } from "@/lib/api";
 
 export type ReportType = "progress" | "errors_log" | "roadmap" | "four_week_plan";
 
@@ -173,12 +173,8 @@ export function splitMarkdownBlocks(markdown: string): MarkdownBlock[] {
     .map((body) => ({ heading: null, body }));
 }
 
-export async function getReport(token: string | null, reportType: ReportType): Promise<UserReport> {
-  const response = await apiFetch(`/api/v1/reports/${reportType}`, token);
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to load report");
-  }
-  return response.json();
+export function getReport(token: string | null, reportType: ReportType): Promise<UserReport> {
+  return apiJson(`/api/v1/reports/${reportType}`, token, {}, "Failed to load report");
 }
 
 function splitRow(line: string): string[] {

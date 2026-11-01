@@ -2,7 +2,7 @@
  * Lesson and job client. Types mirror the backend by hand.
  */
 
-import { ApiError, apiFetch, toApiError } from "@/lib/api";
+import { ApiError, apiFetch, apiJson, apiRequest, toApiError } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Jobs
@@ -21,80 +21,53 @@ export interface Job {
 }
 
 /** `GET /api/v1/jobs/{job_id}`. */
-export async function getJob(token: string | null, jobId: string): Promise<Job> {
-  const response = await apiFetch(`/api/v1/jobs/${jobId}`, token);
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to load job status");
-  }
-
-  return response.json();
+export function getJob(token: string | null, jobId: string): Promise<Job> {
+  return apiJson(`/api/v1/jobs/${jobId}`, token, {}, "Failed to load job status");
 }
 
 // ---------------------------------------------------------------------------
 // lesson_record v1 (database.md "lessons.payload")
 // ---------------------------------------------------------------------------
 
-export interface LessonCurriculumSlot {
-  id: string;
-  label: string;
-  /** Brief description of planned drills — not full chat scripts. */
-  exercise_set: string;
-}
-
-export interface LessonInputTask {
-  type: string;
-  topic: string;
-  focus: string;
-}
-
-export interface LessonGoalSpecificTask {
-  label: string;
-  format: string;
-}
-
-/** Written when a lesson becomes `active` (after the generation job succeeds). */
+/**
+ * Written when a lesson becomes `active` (after the generation job succeeds).
+ * Lessons generated before time-boxing also carry `slots` etc.; the UI ignores them.
+ */
 export interface LessonCurriculum {
   lesson_goal: string;
   grammar_focus: string;
   vocab_theme: string;
   milestone_index: number;
-  slots: LessonCurriculumSlot[];
-  input_task: LessonInputTask;
-  goal_specific_task: LessonGoalSpecificTask;
-  exit_criteria: string[];
-  partner_session: unknown | null;
+  new_vocabulary?: string[];
+  review_patterns?: string[];
+  goal_context?: string;
+  practice_targets?: string[];
 }
 
-export interface LessonSessionSummaryDeferredItem {
-  slot_id: string;
-  reason: string;
-}
-
-export interface LessonSessionSummaryFocusPatternResult {
-  grammar_focus: string;
-  met: boolean;
-  note?: string;
-}
-
-/** Written on finish; `null` until then. */
+/** Written on finish; `null` until then. Older lessons have a different shape, so every new field is optional. */
 export interface LessonSessionSummary {
+  /** Active chat minutes (gaps capped by the backend's idle cap). */
   duration_minutes: number;
-  completed_slots: string[];
-  deferred_items: LessonSessionSummaryDeferredItem[];
-  exit_criteria_met: boolean;
-  performance_notes?: string;
-  focus_pattern_result?: LessonSessionSummaryFocusPatternResult;
+  target_minutes?: number | null;
+  shortfall_minutes?: number;
+  finished_early?: boolean;
+  grammar_focus?: string | null;
+  /** Item names the tutor reported `solid` / `shaky` (last result per item). */
+  practiced_solid?: string[];
+  practiced_shaky?: string[];
   resolved_pattern_types?: string[];
   new_pattern_types?: string[];
+  new_vocabulary?: string[];
   vocab_themes_covered?: string[];
-  learner_feedback?: string;
+  learner_feedback?: string | null;
 }
 
 export interface LessonPayload {
   version: number;
   /** Absent/`null` while the lesson is still `generating`. */
   curriculum?: LessonCurriculum | null;
+  /** Lesson length copied from the profile at generation; absent on older lessons. */
+  target_minutes?: number | null;
   session_summary?: LessonSessionSummary | null;
 }
 
@@ -117,25 +90,13 @@ export interface Lesson {
 
 /** `GET /api/v1/lessons/active` — lesson object or `null` (no in-flight lesson). */
 export async function getActiveLesson(token: string | null): Promise<Lesson | null> {
-  const response = await apiFetch("/api/v1/lessons/active", token);
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to load active lesson");
-  }
-
-  const body = await response.json();
-  return (body as Lesson | null) ?? null;
+  const body = await apiJson<Lesson | null>("/api/v1/lessons/active", token, {}, "Failed to load active lesson");
+  return body ?? null;
 }
 
-/** `GET /api/v1/lessons/{lesson_id}`. */
-export async function getLesson(token: string | null, lessonId: string): Promise<Lesson> {
-  const response = await apiFetch(`/api/v1/lessons/${lessonId}`, token);
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to load lesson");
-  }
-
-  return response.json();
+/** `GET /api/v1/lessons/{lesson_id}`. Not found (404, or 422 for a malformed id): see `isNotFoundError`. */
+export function getLesson(token: string | null, lessonId: string): Promise<Lesson> {
+  return apiJson(`/api/v1/lessons/${lessonId}`, token, {}, "Failed to load lesson");
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +109,16 @@ export interface StartLessonResponse {
   job_id: string;
   lesson_id: string;
   lesson_number: number;
+}
+
+/**
+ * Error code for a profile without `time_budget.minutes_per_session`:
+ * `409` from `POST /lessons/start` (legacy profile), `422` from onboarding accept.
+ */
+export const TIME_BUDGET_REQUIRED = "TIME_BUDGET_REQUIRED";
+
+export function isTimeBudgetRequired(error: unknown): boolean {
+  return error instanceof ApiError && error.code === TIME_BUDGET_REQUIRED;
 }
 
 /**
@@ -165,39 +136,33 @@ export class LessonConflictError extends ApiError {
   }
 }
 
+async function readActiveLessonId(response: Response): Promise<string | null> {
+  try {
+    const body = await response.json();
+    return typeof body?.active_lesson_id === "string" ? body.active_lesson_id : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * `POST /api/v1/lessons/start`.
  *
- * Resolves with `{ job_id, lesson_id, lesson_number }` on `202`. Throws
- * `LessonConflictError` (not a plain `ApiError`) on `409` when the response
- * includes `active_lesson_id`, so callers can special-case it; falls back to
- * a plain `ApiError` if the body is missing that field (e.g. contract drift).
+ * Resolves with `{ job_id, lesson_id, lesson_number }` on `202`. On `409`:
+ * - `TIME_BUDGET_REQUIRED` → a plain `ApiError` with that code (see `isTimeBudgetRequired`);
+ * - otherwise `LessonConflictError` when the body includes `active_lesson_id`,
+ *   or a plain `ApiError` `ACTIVE_LESSON_EXISTS` if it's missing (contract drift).
  */
 export async function startLesson(token: string | null): Promise<StartLessonResponse> {
   const response = await apiFetch("/api/v1/lessons/start", token, { method: "POST" });
+  if (response.ok) return response.json();
 
-  if (response.status === 409) {
-    let detail = "An active lesson already exists.";
-    let activeLessonId: string | null = null;
-    try {
-      const body = await response.json();
-      if (typeof body?.detail === "string") detail = body.detail;
-      if (typeof body?.active_lesson_id === "string") activeLessonId = body.active_lesson_id;
-    } catch {
-      // Response body wasn't JSON — keep the default message.
-    }
+  const error = await toApiError(response.clone(), "Failed to start lesson");
+  if (response.status !== 409 || error.code === TIME_BUDGET_REQUIRED) throw error;
 
-    if (activeLessonId) {
-      throw new LessonConflictError(detail, activeLessonId);
-    }
-    throw new ApiError(409, detail, "ACTIVE_LESSON_EXISTS");
-  }
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to start lesson");
-  }
-
-  return response.json();
+  const activeLessonId = await readActiveLessonId(response);
+  if (activeLessonId) throw new LessonConflictError(error.message, activeLessonId);
+  throw new ApiError(409, error.message, "ACTIVE_LESSON_EXISTS", error.requestId);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,21 +178,17 @@ export async function startLesson(token: string | null): Promise<StartLessonResp
  * should not block navigation away from the lesson chat page.
  */
 export async function stopLesson(token: string | null, lessonId: string): Promise<void> {
-  const response = await apiFetch(`/api/v1/lessons/${lessonId}/stop`, token, { method: "POST" });
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to stop lesson session");
-  }
+  await apiRequest(`/api/v1/lessons/${lessonId}/stop`, token, { method: "POST" }, "Failed to stop lesson session");
 }
 
 // ---------------------------------------------------------------------------
-// Finish lesson — always available while active. Optional feedback and
-// completed slot ids; an empty body is allowed.
+// Finish lesson — always available while active, even before the time
+// budget is used (the backend records the shortfall). Optional feedback;
+// an empty body is allowed.
 // ---------------------------------------------------------------------------
 
 export interface FinishLessonRequest {
   learner_feedback?: string;
-  completed_slot_ids?: string[];
 }
 
 export interface FinishLessonResponse {
@@ -242,28 +203,21 @@ export function buildFinishLessonBody(input: FinishLessonRequest = {}): FinishLe
   const body: FinishLessonRequest = {};
   const feedback = input.learner_feedback?.trim();
   if (feedback) body.learner_feedback = feedback;
-  if (input.completed_slot_ids && input.completed_slot_ids.length > 0) {
-    body.completed_slot_ids = input.completed_slot_ids;
-  }
   return body;
 }
 
 /** `POST /api/v1/lessons/{lesson_id}/finish` — JSON body, may be `{}`. */
-export async function finishLesson(
+export function finishLesson(
   token: string | null,
   lessonId: string,
   input: FinishLessonRequest = {}
 ): Promise<FinishLessonResponse> {
-  const response = await apiFetch(`/api/v1/lessons/${lessonId}/finish`, token, {
-    method: "POST",
-    body: JSON.stringify(buildFinishLessonBody(input)),
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to finish lesson");
-  }
-
-  return response.json();
+  return apiJson(
+    `/api/v1/lessons/${lessonId}/finish`,
+    token,
+    { method: "POST", body: JSON.stringify(buildFinishLessonBody(input)) },
+    "Failed to finish lesson"
+  );
 }
 
 /** One-line pace acknowledgment shown right after a successful finish. */
@@ -272,8 +226,8 @@ export function describeFinishResult(result: FinishLessonResponse): string {
     return "Lesson complete! You're on pace 🎉";
   }
   return result.schedule_updated
-    ? "Lesson complete! This one slipped past the 24h window — plan adjusted."
-    : "Lesson complete! This one slipped past the 24h window.";
+    ? "Lesson complete! This one slipped past your pace window — plan adjusted."
+    : "Lesson complete! This one slipped past your pace window.";
 }
 
 // ---------------------------------------------------------------------------

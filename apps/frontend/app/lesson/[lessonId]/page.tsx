@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import AppHeader from "@/components/AppHeader";
 
+import { isNotFoundError } from "@/lib/api";
 import { getLesson, type Lesson } from "@/lib/lessons";
 import LessonChat, { BackToDashboardButton } from "./LessonChat";
 
@@ -23,8 +24,12 @@ export default async function LessonPage({
     const token = await getToken();
     lesson = await getLesson(token, lessonId);
   } catch (error) {
-    errorMessage =
-      error instanceof Error ? error.message : "Could not reach the server. Is the backend running?";
+    // 404 (missing or someone else's) and 422 (malformed id) both mean "not found".
+    errorMessage = isNotFoundError(error)
+      ? "Not found"
+      : error instanceof Error
+        ? error.message
+        : "Could not reach the server. Is the backend running?";
   }
 
   if (errorMessage || !lesson) {
