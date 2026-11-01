@@ -71,10 +71,10 @@ cd apps/frontend && npm install && npm run dev
 | `CLERK_SECRET_KEY` | empty | Clerk backend key |
 | `CLERK_JWT_ISSUER` | empty | Exact issuer. Required unless `APP_ENV=local`; locally, empty accepts `https://*.clerk.accounts.dev` |
 | `LLM_PROVIDER` | `google` | The only implemented provider (Gemini via `langchain-google-genai`) |
-| `LLM_API_KEY` | empty | Required for any coach reply (was `GEMINI_API_KEY`) |
-| `LLM_MODEL_CHAT` | `gemini-3.5-flash-lite` | Chat model (was `GEMINI_MODEL_CHAT`) |
-| `LLM_MODEL_LESSON` | `gemini-3.5-flash-lite` | Lesson and report JSON model (was `GEMINI_MODEL_LESSON`) |
-| `LLM_TIMEOUT_SECONDS` | `120` | Per-call timeout; twice this marks a stuck generation as failed (was `GEMINI_TIMEOUT_SECONDS`) |
+| `LLM_API_KEY` | empty | Required for any coach reply |
+| `LLM_MODEL_CHAT` | `gemini-3.5-flash-lite` | Chat model |
+| `LLM_MODEL_LESSON` | `gemini-3.5-flash-lite` | Lesson and report JSON model |
+| `LLM_TIMEOUT_SECONDS` | `120` | Per-call timeout; twice this marks a stuck generation as failed |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins; also the allowed values of a token's `azp` claim |
 | `CHAT_RATE_LIMIT_PER_HOUR` | `60` | Per-user chat messages |
 | `LESSON_START_RATE_LIMIT_PER_DAY` | `2` | Per-user lesson starts |
@@ -89,8 +89,6 @@ cd apps/frontend && npm install && npm run dev
 | `LANGSMITH_TRACING` | `false` | Trace every LLM call to LangSmith. `local`/`staging` only: the app refuses to start with `true` and `APP_ENV=production`. The legacy `LANGCHAIN_TRACING_V2=true` is refused there too |
 | `LANGSMITH_API_KEY` | empty | LangSmith key (read by the SDK) |
 | `LANGSMITH_PROJECT` | empty | `lingua-coach-local` or `lingua-coach-staging` |
-
-**Renamed variables.** The four `GEMINI_*` variables above were renamed to `LLM_*`. For one release both names are read (the new one wins) and the app logs `deprecated_env_var` at startup for each old name it finds in the environment or `.env`. Rename them in every environment's secrets now; the old names stop working in the next release.
 
 ## Frontend environment (`apps/frontend/.env.local`)
 

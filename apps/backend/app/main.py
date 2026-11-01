@@ -3,17 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1.router import api_router
-from app.config import DEPRECATED_ENV_NAMES, deprecated_env_names, settings
+from app.config import settings
 from app.core.errors import APIError, api_error_handler, unhandled_exception_handler
-from app.core.logging import get_logger, setup_logging
+from app.core.logging import setup_logging
 from app.core.middleware import RequestContextMiddleware
 
 setup_logging()
-for _old in deprecated_env_names():
-    get_logger(__name__).warning(
-        "deprecated_env_var",
-        extra={"event": "deprecated_env_var", "old": _old, "new": DEPRECATED_ENV_NAMES[_old]},
-    )
 
 app = FastAPI(title="Lingua Coach API", version="0.1.0")
 app.add_exception_handler(APIError, api_error_handler)
