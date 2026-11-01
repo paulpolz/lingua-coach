@@ -53,11 +53,11 @@ Written from the onboarding reply's `learner_profile`, then by plan accept, less
 | `target_level` | text | `level.self_assessed` |
 | `level_strengths`, `level_weaknesses` | JSONB list | `level.*` |
 | `diagnostic_notes` | text | `level.diagnostic_notes` |
-| `time_budget` | JSONB | e.g. `{minutes_per_session, sessions_per_week, intensity}` |
+| `time_budget` | JSONB | `{minutes_per_session, sessions_per_week, intensity}`. `minutes_per_session` (5–180) is the lesson length: required at accept and before a lesson starts; set by onboarding, chat `plan_updates` (merged), or `PATCH /profile` |
 | `focus` | JSONB | `{skill_priorities, topic_priorities, vocab_priorities, avoid}` |
 | `constraints`, `motivation` | JSONB | Interview answers |
 | `interview_completed_at` | timestamptz | Last `learner_profile` save |
-| `grammar_mastery` | JSONB | Merged from chat `plan_updates.grammar_mastery` |
+| `grammar_mastery` | JSONB | Merged from chat `plan_updates.grammar_mastery` and from `solid` grammar results in `practiced` (`{point: "solid"}`) |
 | `vocabulary_summary`, `confidence_flags` | JSONB | Passed into lesson generation |
 | `target_plan_days` | int | From the accepted roadmap or chat `plan_updates` |
 | `active_learning_plan_id` | FK → `learning_plans` | Set on accept |
@@ -79,7 +79,7 @@ Written from the onboarding reply's `learner_profile`, then by plan accept, less
 | `current_milestone_index` | int | From `roadmap.current_milestone_index` |
 | `accepted_at`, `superseded_at` | timestamptz | |
 
-Roadmap shape (written by the `course_composer` skill). A chat draft is `model_dump()` of `CourseRoadmap`, so omitted optional fields are null and unknown keys are dropped. Accept stores the object the client sends:
+Roadmap shape (written by the `course_composer` skill). Drafts and the accepted row are `model_dump()` of `CourseRoadmap`, so omitted optional fields are null and unknown keys are dropped. Rows accepted before the time-boxed lessons change may still hold `weekly_template.activities` and the old theme fields; readers ignore them (`extra="ignore"`, `.get()` with defaults):
 
 ```json
 {
@@ -91,8 +91,8 @@ Roadmap shape (written by the `course_composer` skill). A chat draft is `model_d
     "pace_description": "..."
   },
   "milestones": [{ "index": 0, "title": "...", "skill_developed": "...", "success_criteria": "...", "estimated_plan_days": 5 }],
-  "weekly_template": { "minutes_per_session": 60, "activities": [{ "id": "warmup", "label": "...", "minutes": 5 }] },
-  "current_block": { "milestone_index": 0, "weeks": 4, "themes": [{ "block_day": 1, "grammar_focus": "...", "vocab_theme": "..." }] },
+  "weekly_template": { "minutes_per_session": 15, "sessions_per_week": 5, "weekends": "light review" },
+  "current_block": { "milestone_index": 0, "weeks": 4, "focus_summary": "...", "themes": [{ "block_day": 1, "grammar_focus": "...", "vocab_theme": "...", "goal_context": "..." }] },
   "learning_principles": ["active_recall", "spaced_repetition"],
   "adaptation_rules": { "recurring_error_pattern": "inject_retrieval_drill" },
   "current_milestone_index": 0
@@ -116,28 +116,32 @@ Unique partial index `uq_lessons_user_id_active` on `user_id` where status is `g
 ```json
 {
   "version": 1,
+  "target_minutes": 15,
   "curriculum": {
     "lesson_goal": "...", "grammar_focus": "...", "vocab_theme": "...", "milestone_index": 0,
-    "slots": [{ "id": "warmup", "label": "...", "exercise_set": "..." }],
-    "input_task": { "type": "reading", "topic": "...", "focus": "..." },
-    "goal_specific_task": { "label": "...", "format": "email" },
-    "exit_criteria": ["..."],
-    "partner_session": null
+    "new_vocabulary": ["deadline", "blocker", "on track"],
+    "review_patterns": ["missing articles"],
+    "goal_context": "a status email to a client",
+    "practice_targets": ["..."]
   },
   "session_summary": {
-    "duration_minutes": 42,
-    "completed_slots": ["warmup"],
-    "deferred_items": [{ "slot_id": "production", "reason": "not_completed_before_finish" }],
-    "exit_criteria_met": false,
+    "duration_minutes": 8,
+    "target_minutes": 15,
+    "shortfall_minutes": 7,
+    "finished_early": true,
     "grammar_focus": "...",
+    "practiced_solid": ["present perfect"],
+    "practiced_shaky": ["missing articles"],
+    "resolved_pattern_types": ["word order"],
     "new_pattern_types": ["missing articles"],
+    "new_vocabulary": ["deadline", "blocker", "on track"],
     "vocab_themes_covered": ["..."],
     "learner_feedback": "..."
   }
 }
 ```
 
-`curriculum` is `LessonCurriculum.model_dump()` from the generation job, including `partner_session: null`. `session_summary` is `null` until finish. A curriculum without slots fails the job.
+`curriculum` is `LessonCurriculum.model_dump()` from the generation job; `target_minutes` is copied from the profile at generation. `session_summary` is `null` until finish. `duration_minutes` is active minutes (gaps between lesson-chat messages, each capped at `LESSON_IDLE_CAP_MINUTES`). Lessons created before this change may hold the old shape (`slots`, `input_task`, `exit_criteria`, `partner_session`, `completed_slots`, …); readers use `.get()` with defaults, a legacy active lesson keeps working, and its target falls back to the profile's lesson length. No data migration rewrites them.
 
 ### `jobs`
 
@@ -152,10 +156,13 @@ Unique partial index `uq_lessons_user_id_active` on `user_id` where status is `g
 | `example_text` | text | Latest example |
 | `correction` | text, nullable | |
 | `occurrence_count` | int | +1 per log |
-| `next_review_at` | timestamptz | `last_seen + 1, 3, 7` days for counts 1, 2, 3; then 14 days |
+| `next_review_at` | timestamptz, nullable | `last_seen + 1, 3, 7` days for counts 1, 2, 3; then 14 days. A `solid` practiced result pushes it one step further; null once resolved |
+| `solid_streak` | int, default 0 | Consecutive `solid` practiced results; reset by `shaky` or a new mistake |
+| `resolved_at` | timestamptz, nullable | Set when solid results in two different lessons accumulate; cleared when the pattern recurs |
+| `last_solid_lesson_id` | FK → `lessons`, nullable | Lesson of the last counted `solid`; the streak moves at most once per lesson |
 | `last_seen_at` | timestamptz | |
 
-Indexed on `(user_id, created_at)`. Lesson chat reads up to 10 rows with `next_review_at <= now`.
+Indexed on `(user_id, created_at)`. Written with `INSERT … ON CONFLICT (user_id, pattern_type) DO UPDATE`. Lesson chat sends the 10 best-ranked open (unresolved) mistakes, lesson generation the 15 best (see [ai-api.md](./ai-api.md#context-per-call)).
 
 ### `progress_events`
 
@@ -171,7 +178,7 @@ Indexed on `(user_id, created_at)`. Lesson chat reads up to 10 rows with `next_r
 ### `chat_sessions` and `chat_messages`
 
 - `chat_sessions`: `type` (`onboarding` | `lesson`), `lesson_id` (nullable). Unique partial indexes allow one onboarding session per user and one session per `(user_id, lesson_id)`; session creation is an `INSERT … ON CONFLICT DO NOTHING` against them.
-- `chat_messages`: `session_id`, `role` (`user` | `assistant`), `content` (the learner-facing reply), `metadata` JSONB (the seven chat-turn keys: `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `lesson_plan`, `task_update`). Indexed on `(session_id, created_at)`.
+- `chat_messages`: `session_id`, `role` (`user` | `assistant`), `content` (the learner-facing reply), `metadata` JSONB (`TurnMetadata`: `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `practiced`, `timing`; rows from before may carry the retired `lesson_plan` / `task_update`). Indexed on `(session_id, created_at)`. Message timestamps also measure active lesson minutes, and assistant `practiced` lists feed the session summary, so both are read at finish before the rows are deleted.
 
 ### `user_reports`
 
@@ -222,7 +229,7 @@ flowchart LR
 
 ## Migrations
 
-Applied in order: `c7be51ce9fe6` initial schema → `d8a4c2e91f0b` chat session uniqueness → `e3f9a1c82d4b` user reports → `f4a7b2c91e3d` profile languages → `a8f3c1d92e4b` quality events → `b1e7c4a92f30` LLM usage events → `c2d5e8f1a3b7` drops the quality events table. Run `uv run alembic upgrade head` from `apps/backend`; Compose does this on backend start.
+Applied in order: `c7be51ce9fe6` initial schema → `d8a4c2e91f0b` chat session uniqueness → `e3f9a1c82d4b` user reports → `f4a7b2c91e3d` profile languages → `a8f3c1d92e4b` quality events → `b1e7c4a92f30` LLM usage events → `c2d5e8f1a3b7` drops the quality events table (irreversible) → `9a1f3c5e7b2d` unique active lesson per user and unique `(user_id, pattern_type)` mistakes, after merging existing duplicates (extra in-flight lessons become `failed`; duplicate mistakes collapse into the latest row with summed counts; the merge is not undone on downgrade) → `b4c8d2e6f0a1` `mistakes.solid_streak`, `resolved_at` and `last_solid_lesson_id`. Run `uv run alembic upgrade head` from `apps/backend`; Compose does this on backend start. `tests/integration/test_migrations.py` checks the merge and a downgrade/upgrade round trip on a scratch database.
 
 ## Access rules
 

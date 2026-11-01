@@ -38,7 +38,7 @@ def rank_mistakes(mistakes: Sequence[Mistake], focus_text: str, now: datetime, k
 
 
 def prior_lesson_line(lesson: Lesson) -> str:
-    """One line per older lesson: `Lesson 9: grammar "x", vocab "y", 12 min`."""
+    """One line per older lesson: `Lesson 9: grammar "x", vocab "y", 12 of 15 min, solid: a; shaky: b`."""
     payload = lesson.payload or {}
     curriculum = payload.get("curriculum") or {}
     summary = payload.get("session_summary") or {}
@@ -47,5 +47,14 @@ def prior_lesson_line(lesson: Lesson) -> str:
         f'vocab "{curriculum.get("vocab_theme") or "?"}"',
     ]
     if summary.get("duration_minutes") is not None:
-        parts.append(f"{summary['duration_minutes']} min")
-    return ", ".join(parts)
+        target = summary.get("target_minutes")
+        parts.append(
+            f"{summary['duration_minutes']} of {target} min" if target else f"{summary['duration_minutes']} min"
+        )
+    line = ", ".join(parts)
+    results = [
+        f"{label}: {', '.join(summary[key])}"
+        for key, label in (("practiced_solid", "solid"), ("practiced_shaky", "shaky"))
+        if summary.get(key)
+    ]
+    return f"{line}, {'; '.join(results)}" if results else line

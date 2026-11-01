@@ -1,6 +1,7 @@
 {
   "$defs": {
     "CourseRoadmap": {
+      "description": "String values are in the learning language; keys stay English.",
       "properties": {
         "adaptation_rules": {
           "anyOf": [
@@ -90,29 +91,6 @@
       "title": "CourseRoadmap",
       "type": "object"
     },
-    "CourseRoadmapActivity": {
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "minutes": {
-          "title": "Minutes",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "label",
-        "minutes"
-      ],
-      "title": "CourseRoadmapActivity",
-      "type": "object"
-    },
     "CourseRoadmapCurrentBlock": {
       "properties": {
         "focus_summary": {
@@ -144,6 +122,7 @@
             }
           ],
           "default": null,
+          "description": "First 1-4 weeks. Themes only: no word lists, exercises or URLs.",
           "title": "Themes"
         },
         "weeks": {
@@ -342,7 +321,7 @@
           "title": "Block Day",
           "type": "integer"
         },
-        "goal_specific_focus": {
+        "goal_context": {
           "anyOf": [
             {
               "type": "string"
@@ -352,7 +331,8 @@
             }
           ],
           "default": null,
-          "title": "Goal Specific Focus"
+          "description": "The goal situation practiced in reading/writing.",
+          "title": "Goal Context"
         },
         "grammar_focus": {
           "anyOf": [
@@ -365,30 +345,6 @@
           ],
           "default": null,
           "title": "Grammar Focus"
-        },
-        "input_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Input Type"
-        },
-        "production_focus": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Production Focus"
         },
         "vocab_theme": {
           "anyOf": [
@@ -410,27 +366,24 @@
       "type": "object"
     },
     "CourseRoadmapWeeklyTemplate": {
+      "description": "Every lesson is `minutes_per_session` of mixed chat practice; there is no activity split.",
       "properties": {
-        "activities": {
-          "items": {
-            "$ref": "#/$defs/CourseRoadmapActivity"
-          },
-          "title": "Activities",
-          "type": "array"
-        },
         "minutes_per_session": {
+          "description": "The learner's lesson length in minutes.",
           "title": "Minutes Per Session",
           "type": "integer"
         },
-        "partner_session": {
+        "sessions_per_week": {
           "anyOf": [
-            {},
+            {
+              "type": "integer"
+            },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Partner Session"
+          "title": "Sessions Per Week"
         },
         "weekends": {
           "anyOf": [
@@ -446,8 +399,7 @@
         }
       },
       "required": [
-        "minutes_per_session",
-        "activities"
+        "minutes_per_session"
       ],
       "title": "CourseRoadmapWeeklyTemplate",
       "type": "object"
@@ -477,17 +429,6 @@
           ],
           "default": null,
           "title": "Learning Style"
-        },
-        "practice_partner": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PracticePartner"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "title": "LearnerConstraints",
@@ -583,6 +524,7 @@
             }
           ],
           "default": null,
+          "description": "A concrete real-world outcome.",
           "title": "Outcome"
         },
         "success_criteria": {
@@ -598,6 +540,7 @@
             }
           ],
           "default": null,
+          "description": "Observable behaviors, not CEFR labels alone.",
           "title": "Success Criteria"
         }
       },
@@ -795,48 +738,6 @@
       "title": "LearnerProfile",
       "type": "object"
     },
-    "PracticePartner": {
-      "properties": {
-        "available": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Available"
-        },
-        "minutes": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Minutes"
-        },
-        "relationship": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Relationship"
-        }
-      },
-      "title": "PracticePartner",
-      "type": "object"
-    },
     "TimeBudget": {
       "properties": {
         "intensity": {
@@ -861,19 +762,8 @@
             }
           ],
           "default": null,
+          "description": "Length of one lesson in minutes (5-180); every lesson is timed to this. Required before a roadmap is drafted.",
           "title": "Minutes Per Session"
-        },
-        "optional_partner_minutes": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Optional Partner Minutes"
         },
         "sessions_per_week": {
           "anyOf": [
@@ -909,7 +799,7 @@
         }
       ],
       "default": null,
-      "description": "The full object on a new or revised plan. Null on a clarifying question."
+      "description": "The full object on a new or revised plan; null on a clarifying question. String values in the learning language, keys in English."
     },
     "learner_profile": {
       "anyOf": [

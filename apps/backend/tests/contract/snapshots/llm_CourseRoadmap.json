@@ -1,28 +1,5 @@
 {
   "$defs": {
-    "CourseRoadmapActivity": {
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "minutes": {
-          "title": "Minutes",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id",
-        "label",
-        "minutes"
-      ],
-      "title": "CourseRoadmapActivity",
-      "type": "object"
-    },
     "CourseRoadmapCurrentBlock": {
       "properties": {
         "focus_summary": {
@@ -54,6 +31,7 @@
             }
           ],
           "default": null,
+          "description": "First 1-4 weeks. Themes only: no word lists, exercises or URLs.",
           "title": "Themes"
         },
         "weeks": {
@@ -252,7 +230,7 @@
           "title": "Block Day",
           "type": "integer"
         },
-        "goal_specific_focus": {
+        "goal_context": {
           "anyOf": [
             {
               "type": "string"
@@ -262,7 +240,8 @@
             }
           ],
           "default": null,
-          "title": "Goal Specific Focus"
+          "description": "The goal situation practiced in reading/writing.",
+          "title": "Goal Context"
         },
         "grammar_focus": {
           "anyOf": [
@@ -275,30 +254,6 @@
           ],
           "default": null,
           "title": "Grammar Focus"
-        },
-        "input_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Input Type"
-        },
-        "production_focus": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Production Focus"
         },
         "vocab_theme": {
           "anyOf": [
@@ -320,27 +275,24 @@
       "type": "object"
     },
     "CourseRoadmapWeeklyTemplate": {
+      "description": "Every lesson is `minutes_per_session` of mixed chat practice; there is no activity split.",
       "properties": {
-        "activities": {
-          "items": {
-            "$ref": "#/$defs/CourseRoadmapActivity"
-          },
-          "title": "Activities",
-          "type": "array"
-        },
         "minutes_per_session": {
+          "description": "The learner's lesson length in minutes.",
           "title": "Minutes Per Session",
           "type": "integer"
         },
-        "partner_session": {
+        "sessions_per_week": {
           "anyOf": [
-            {},
+            {
+              "type": "integer"
+            },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Partner Session"
+          "title": "Sessions Per Week"
         },
         "weekends": {
           "anyOf": [
@@ -356,8 +308,7 @@
         }
       },
       "required": [
-        "minutes_per_session",
-        "activities"
+        "minutes_per_session"
       ],
       "title": "CourseRoadmapWeeklyTemplate",
       "type": "object"
@@ -383,6 +334,7 @@
       "type": "object"
     }
   },
+  "description": "String values are in the learning language; keys stay English.",
   "properties": {
     "adaptation_rules": {
       "anyOf": [

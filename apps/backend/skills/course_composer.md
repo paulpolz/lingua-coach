@@ -2,37 +2,22 @@
 
 **When:** After onboarding interview, plan refinement, milestone completion, or `feedback_giver` replan trigger (replan trigger post-MVP).  
 **Input:** `learner_profile` including required `languages.native` and `languages.target` (+ optional progress snapshot).  
-**Output:** Descriptive **course roadmap** (chat) → user may **modify in chat** → on accept, persist as JSON → `learning_plans.roadmap` ([database.md](../docs/tech_requirements/database.md)).
+**Output:** A descriptive **course roadmap** in chat, which the learner may modify in chat, plus the structured `course_roadmap` object the reply schema defines.
 
 ## Purpose
 
 Turn a learner profile into a **goal-driven course roadmap** — not a generic curriculum. The roadmap is descriptive (milestones, rhythm, focus areas); lesson content is generated later by `exercise_tutor`.
 
-Do not draft a plan until `learner_profile.languages.native` and `languages.target` are present.
+Do not draft a plan until `learner_profile.languages.native` and `languages.target` are present **and** the learner has given a lesson length (`time_budget.minutes_per_session`). If it is missing, ask for it first.
 
 ## Language of the plan
 
 - Present the **entire** learner-facing roadmap in the **learning language** (`languages.target`), including markdown headings, table headers, and the invite to modify.
-- JSON **keys** stay exactly as in this schema (English identifiers). JSON **string values** — `goal_outcome`, milestone `title` / `skill_developed` / `why_now` / `success_criteria`, activity `label`s, `focus_summary`, theme fields, `pace_description`, `weekends` — are in the learning language.
-- `summary.target_language` is required (same language as `languages.target`). `summary.native_language` is optional.
-- English markdown and JSON below are **one example** (`target_language: "en"`). Copy must match the actual target — Spanish plan in Spanish, Japanese plan in Japanese, etc.
+- JSON keys stay English; every string value is in the learning language.
+- Set `summary.target_language` to the learning language. `summary.native_language` is optional.
+- English markdown below is **one example**. Copy must match the actual target — Spanish plan in Spanish, Japanese plan in Japanese, etc.
 - The destination is the learner's stated **goal**, not a hardcoded English B2 (do not aim everything “toward B2 simulation” unless that is their outcome).
 - User refinements may arrive in any language; the composer still replies in the learning language.
-
-## Flow
-
-```
-learner_profile
-    → course_composer drafts roadmap (markdown in chat)
-    → user refines in same onboarding chat ("more writing", "drop reading", etc.)
-    → user accepts plan (product action)
-    → backend persists course_roadmap JSON → learning_plans
-    → exercise_tutor reads accepted roadmap for lesson generation
-```
-
-**Draft lives in chat** until acceptance. Chat transcript is not the source of truth — the accepted JSON row is.
-
----
 
 ## Step 1: Estimate plan length
 
@@ -77,33 +62,17 @@ Foundation (self/topic fluency)
           → Consolidation & integration
 ```
 
-Add **Milestone 0 — Diagnostic & system setup** when baseline is unknown: first week establishes error logging, warm-up habits, and honest level data.
+Add **Milestone 0 — Diagnostic & system setup** when baseline is unknown: first week establishes error logging, the review habit, and honest level data.
 
 **Gate advancement on performance**, not calendar: pass the milestone exit criteria (see `feedback_giver` weekly tests) before new grammar/topics unlock.
 
 ---
 
-## Step 3: Build the weekly template
+## Step 3: Weekly template
 
-Fixed **shape**, variable **content**. Rescale minutes if time budget differs; keep the activity categories.
+Every lesson is **`minutes_per_session` of mixed chat practice**: new grammar, new vocabulary, review of past mistakes, and reading/writing in the context of the learner's goal. There is no activity split; the tutor mixes the aspects inside one conversation and keeps practicing until the time is used.
 
-### Default daily solo block
-
-| # | Activity | % of session | Purpose |
-|---|----------|--------------|---------|
-| 1 | Warm-up & spaced repetition | ~8% | Active recall of due items (1/3/7/14-day intervals) |
-| 2 | Grammar | ~14% | One point: explain → examples → common mistakes → mini production |
-| 3 | Vocabulary | ~11% | 6–10 items, full format (see `exercise_tutor`) |
-| 4 | Input (reading) | ~17% | Comprehensible input at i+1 |
-| 5 | Writing | ~28% | Real-format task → correct → rewrite; includes written dialogue |
-| 6 | Goal-specific practice | ~8% | Domain writing aligned to learner goal (not a generic filler) |
-| 7 | Review & log | ~3% | Log errors, new words, one hard thing — feeds next session |
-
-**Scale example:** 60 min/day → proportionally shorter slots; 180 min/day → use reference minutes from a full block.
-
-### Optional partner (out of app)
-
-Lingua Coach has no speaking practice. If the profile names a practice partner, do **not** schedule a partner_session block. You may note that they can exchange written messages outside the app. `weekly_template.partner_session` is `null`.
+The weekly template is therefore just `minutes_per_session` (the learner's lesson length), `sessions_per_week`, and `weekends`.
 
 ### Weekends
 
@@ -115,12 +84,13 @@ Optional light review (spaced repetition only). Weekly test replaces a normal se
 
 Write the **first 1–4 weeks** in topic/grammar/skill focus — not a script for every word and article.
 
-| Day | Grammar focus | Vocab theme | Input | Writing | Goal-specific |
-|-----|---------------|-------------|-------|------------|---------------|
+| Day | Grammar focus | Vocab theme | Goal context |
+|-----|---------------|-------------|--------------|
 
 **Rules:**
+
 - Week 1 includes diagnostic if Milestone 0 applies.
-- Exact words, links, and questions are generated **live** by `exercise_tutor` — do not freeze content weeks ahead.
+- Exact words and questions are generated **live** by `exercise_tutor` — do not freeze content weeks ahead.
 - Pull goal-specific topics from `learner_profile.focus.topic_priorities`.
 - If urgent real-world need exists (e.g. application deadline), **pull forward** relevant units without dropping the final goal.
 
@@ -144,7 +114,7 @@ Write the **first 1–4 weeks** in topic/grammar/skill focus — not a script fo
 | Signal | Action |
 |--------|--------|
 | Failed weekly test | Repeat milestone content with new examples; do not advance topics |
-| Recurring error pattern (3+ times) | Inject retrieval drill in warm-up; fold into writing tasks |
+| Recurring error pattern (3+ times) | Retest it at the start of the next lesson; fold it into writing tasks |
 | Strong performance, ahead of schedule | Increase difficulty (follow-ups, faster input, harder prompts) — not shorter path to goal |
 | User feedback "too hard/easy/wrong topic" | Adjust next 1–2 weeks' focus; update topic priorities in profile |
 | Missed sessions | No guilt stack; resume from active lesson; schedule projection slips (`feedback_giver`) |
@@ -173,11 +143,7 @@ Present the roadmap in chat as readable markdown **in the learning language**. T
 ### Milestone 1 — [Title]
 …
 
-## Your weekly rhythm
-| Activity | Minutes |
-|----------|---------|
-| Warm-up & spaced repetition | … |
-| … | … |
+Each lesson: ~[N] minutes of chat practice mixing grammar, vocabulary and writing for your goal; past mistakes come back until they stick.
 
 ## First block (Weeks 1–[X])
 [Milestone title + grammar/skill/topic themes — not word-level scripts]
@@ -187,124 +153,10 @@ Present the roadmap in chat as readable markdown **in the learning language**. T
 - Error log + spaced repetition
 - Pace adapts; goal does not
 
-**Does this roadmap work for you?** You can ask to change milestones, pace, topics, or weekly balance. When you're ready, accept the plan to start lesson 1.
+**Does this roadmap work for you?** You can ask to change milestones, pace, topics, or lesson length. When you're ready, accept the plan to start lesson 1.
 ```
 
-On each refinement turn, regenerate the relevant roadmap sections and keep the full `course_roadmap` object internally consistent for eventual persistence.
-
-Once a roadmap has been presented, any reply that applies the learner's plan feedback must set `course_roadmap` to the full updated object in the same turn, and keep the markdown roadmap in `content`. Leave `course_roadmap` null on a clarifying question.
-
----
-
-## Output: `course_roadmap` (JSON)
-
-Set `course_roadmap` to this object on a new or revised plan. Leave it null on a clarifying question. When the user **accepts**, this structure is what gets persisted (validate with Pydantic before write):
-
-```json
-{
-  "version": 1,
-  "summary": {
-    "goal_outcome": "Confident B2 English for daily work communication",
-    "goal_horizon": "6 months",
-    "starting_level": "B1",
-    "target_language": "en",
-    "native_language": "es",
-    "target_plan_days": 90,
-    "target_plan_days_range": [80, 100],
-    "pace_description": "60 min/day, 5 days/week → ~90 plan days on pace"
-  },
-  "milestones": [
-    {
-      "index": 0,
-      "title": "Diagnostic & System Setup",
-      "skill_developed": "Honest baseline, error logging, warm-up habits",
-      "why_now": "Calibrate difficulty before building on assumptions",
-      "connects_to": [],
-      "success_criteria": "Progress dashboard started; 5 weekday sessions completed",
-      "estimated_plan_days": 5
-    },
-    {
-      "index": 1,
-      "title": "Foundation Fluency",
-      "skill_developed": "Automatic self-description and daily-life talk",
-      "why_now": "Every real conversation starts here",
-      "connects_to": [0],
-      "success_criteria": "Write a short self-intro with follow-up answers in writing",
-      "estimated_plan_days": 20
-    }
-  ],
-  "weekly_template": {
-    "minutes_per_session": 60,
-    "activities": [
-      { "id": "warmup", "label": "Warm-up & spaced repetition", "minutes": 5 },
-      { "id": "grammar", "label": "Grammar", "minutes": 8 },
-      { "id": "vocabulary", "label": "Vocabulary", "minutes": 7 },
-      { "id": "input", "label": "Reading", "minutes": 10 },
-      { "id": "writing", "label": "Writing", "minutes": 16 },
-      { "id": "goal_specific", "label": "Goal-specific practice", "minutes": 5 },
-      { "id": "review", "label": "Review & log", "minutes": 2 }
-    ],
-    "partner_session": null,
-    "weekends": "optional spaced-repetition review only; weekly test replaces one weekday session"
-  },
-  "current_block": {
-    "milestone_index": 0,
-    "weeks": 1,
-    "focus_summary": "Diagnostic + present/past foundations for self-description",
-    "themes": [
-      {
-        "block_day": 1,
-        "grammar_focus": "Present simple vs continuous",
-        "vocab_theme": "Self-intro & role vocabulary",
-        "input_type": "reading",
-        "production_focus": "Write a short self-intro paragraph",
-        "goal_specific_focus": "Opening technique for stated goal"
-      }
-    ]
-  },
-  "learning_principles": [
-    "active_recall",
-    "spaced_repetition",
-    "interleaving",
-    "output_first",
-    "error_correction_logged"
-  ],
-  "adaptation_rules": {
-    "failed_weekly_test": "repeat_milestone_content",
-    "recurring_error_pattern": "inject_retrieval_drill",
-    "strong_performance": "increase_difficulty_not_shorten_goal",
-    "user_feedback": "adjust_next_1_2_weeks_focus"
-  },
-  "current_milestone_index": 0
-}
-```
-
-The example JSON is English (`target_language: "en"`). If `languages.target` is Spanish, write `goal_outcome`, milestone titles, activity labels, and theme strings in Spanish — **keys unchanged**. Same for any other target.
-
-### Field notes
-
-| Section | Purpose |
-|---------|---------|
-| `summary` | Goal, level, schedule headline, `target_language` (required) and optional `native_language`; `target_plan_days` denormalized to `profiles` on accept |
-| `milestones` | Ordered roadmap; advancement gated by `feedback_giver` weekly tests |
-| `weekly_template` | Fixed session shape; `exercise_tutor` maps slots to lesson JSON |
-| `current_block` | Active 1–4 week focus — **themes only**, not frozen word lists or URLs |
-| `current_milestone_index` | Pointer updated by `feedback_giver` on milestone pass |
-
-**Not in roadmap JSON:** per-lesson exercises, vocabulary lists, external links — those are generated live by `exercise_tutor`.
-
-### Acceptance
-
-On `POST /onboarding/accept` the client sends `{ "session_id", "course_roadmap" }` — the structured plan the user accepted in chat (not inferred from transcript):
-
-1. Backend receives final `course_roadmap` JSON (from accept payload or last validated AI emission).
-2. Insert `learning_plans` row (`status = accepted`, `roadmap = course_roadmap`).
-3. Set `profiles.target_plan_days` from `summary.target_plan_days`; compute `projected_completion_at`.
-4. Set `users.onboarding_complete = true`.
-5. Delete onboarding `chat_messages` and `chat_session`.
-6. Route to **exercise_tutor** for lesson 1.
-
-Structural replans (`feedback_giver` trigger) update `learning_plans.roadmap` in place or supersede with a new row; emit `plan_updated` progress event.
+Emit `course_roadmap` (the full object) on every new or revised plan, with the markdown roadmap in `content`; leave it null on a clarifying question.
 
 ---
 

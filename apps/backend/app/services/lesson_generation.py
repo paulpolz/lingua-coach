@@ -24,6 +24,7 @@ from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.schemas.llm import LessonCurriculum
 from app.services.gemini import ChatTurn, GeminiError, public_detail
+from app.services.lesson_timing import target_minutes
 from app.services.llm_usage import metered_structured_call
 from app.services.memory import (
     CONDENSED_PRIOR_LESSONS,
@@ -82,7 +83,7 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
         await db.commit()
 
         try:
-            curriculum = await _generate(db, user_id=user_id, lesson_number=lesson.lesson_number)
+            curriculum, minutes = await _generate(db, user_id=user_id, lesson_number=lesson.lesson_number)
         except Exception as exc:  # noqa: BLE001 - any failure fails the job; the client sees it by polling
             logger.warning("lesson_generation_failed", extra={"job_id": str(job_id), "error": str(exc)[:500]})
             job.status = JobStatus.failed
@@ -92,7 +93,8 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
             await db.commit()
             return
 
-        lesson.payload = {"version": 1, "curriculum": curriculum, "session_summary": None}
+        # target_minutes is copied here so a mid-lesson plan change does not move the goal.
+        lesson.payload = {"version": 1, "curriculum": curriculum, "session_summary": None, "target_minutes": minutes}
         lesson.status = LessonStatus.active
         lesson.started_at = datetime.now(UTC)
         job.status = JobStatus.done
@@ -110,7 +112,7 @@ def _plan_focus(plan: LearningPlan | None) -> str:
     return " ".join(str(part) for part in parts if part)
 
 
-async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> dict:
+async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> tuple[dict, int]:
     plan = (
         (
             await db.execute(
@@ -135,11 +137,17 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         .scalars()
         .all()
     )
-    open_mistakes = (await db.execute(select(Mistake).where(Mistake.user_id == user_id))).scalars().all()
+    open_mistakes = (
+        (await db.execute(select(Mistake).where(Mistake.user_id == user_id, Mistake.resolved_at.is_(None))))
+        .scalars()
+        .all()
+    )
     mistakes = rank_mistakes(open_mistakes, _plan_focus(plan), datetime.now(UTC), k=GENERATION_MISTAKES)
 
+    minutes = target_minutes(profile)
     context = {
         "lesson_number": lesson_number,
+        "target_minutes": minutes,
         "roadmap": plan.roadmap if plan else None,
         "current_milestone_index": plan.current_milestone_index if plan else 0,
         "learner_profile": {
@@ -194,4 +202,4 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],
     )
-    return curriculum.model_dump()
+    return curriculum.model_dump(), minutes

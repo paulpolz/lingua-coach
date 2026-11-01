@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import JobStatus, LessonStatus
@@ -34,8 +36,9 @@ async def test_lesson_job_stores_model_dump(db: AsyncSession, fake_llm: FakeLLM,
     assert lesson.payload["version"] == 1
     assert lesson.payload["session_summary"] is None
     assert lesson.payload["curriculum"] == dumped
-    assert "partner_session" in dumped
-    assert dumped["partner_session"] is None
+    # D9: the always-null partner_session field is gone from the schema.
+    assert "partner_session" not in dumped
+    assert lesson.payload["target_minutes"] == 15
 
 
 async def test_failed_job_stores_a_generic_error(
@@ -64,7 +67,7 @@ async def test_generation_context_is_budgeted(db: AsyncSession, fake_llm: FakeLL
     await make_profile(db, user)
     await make_plan(db, user)
     for n in range(1, 7):
-        summary = {"duration_minutes": 15}
+        summary = {"duration_minutes": 15, "target_minutes": 15, "practiced_solid": [f"solid-{n}"]}
         payload = {
             "curriculum": {"grammar_focus": f"grammar-{n}", "vocab_theme": f"theme-{n}"},
             "session_summary": summary,
@@ -72,6 +75,7 @@ async def test_generation_context_is_budgeted(db: AsyncSession, fake_llm: FakeLL
         await make_lesson(db, user, status=LessonStatus.accomplished, lesson_number=n, payload=payload)
     for i in range(20):
         await make_mistake(db, user, f"pattern-{i:02d}", occurrence_count=1 + i % 5)
+    await make_mistake(db, user, "closed pattern", resolved_at=datetime.now(UTC), next_review_at=None)
     lesson = await make_lesson(db, user, status=LessonStatus.generating, lesson_number=7, payload={})
     job = Job(user_id=user.id, type="lesson_generate", status=JobStatus.pending)
     db.add(job)
@@ -85,3 +89,4 @@ async def test_generation_context_is_budgeted(db: AsyncSession, fake_llm: FakeLL
     assert 'Lesson 4: grammar \\"grammar-4\\"' in prompt and "Lesson 2: grammar" in prompt
     assert "grammar-1" not in prompt
     assert prompt.count('"pattern_type": "pattern-') == 15
+    assert "closed pattern" not in prompt

@@ -10,14 +10,32 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
+LESSON_MINUTES_RANGE = (5, 180)
+
 
 def normalize_pattern(label: str) -> str:
     """The one canonical form of a mistake label: collapsed whitespace, case-folded, ≤255 chars."""
     return " ".join(label.split()).casefold()[:255]
 
 
+def _lesson_minutes_or_none(value: object) -> object:
+    # The model echoes what the learner said. Rejecting "3 minutes" would fail the whole turn
+    # (a 502 on every retry); unknown makes the interviewer ask again. PATCH /profile and
+    # accept keep the hard bound.
+    if isinstance(value, int) and not isinstance(value, bool):
+        low, high = LESSON_MINUTES_RANGE
+        return value if low <= value <= high else None
+    return value
+
+
 class _Schema(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
+
+def _strip_string(value: object) -> object:
+    if isinstance(value, str):
+        return value.strip()
+    return value
 
 
 class _Reply(_Schema):
@@ -31,44 +49,30 @@ class _Reply(_Schema):
         return value
 
 
-def _strip_string(value: object) -> object:
-    if isinstance(value, str):
-        return value.strip()
-    return value
-
-
 # --- Lesson curriculum -------------------------------------------------------
 
 
-class CurriculumSlot(_Schema):
-    id: str
-    label: str
-    exercise_set: str
-
-
-class InputTask(_Schema):
-    type: str
-    topic: str
-    focus: str
-
-
-class GoalSpecificTask(_Schema):
-    label: str
-    format: str
-
-
 class LessonCurriculum(_Schema):
-    lesson_goal: str = Field(description="One sentence.")
-    grammar_focus: str = Field(description="The grammar point and why it matters.")
-    vocab_theme: str = Field(description="Theme label.")
+    """One timed lesson of mixed chat practice. The backend stores `target_minutes` beside it."""
+
+    lesson_goal: str = Field(description="One sentence: what the learner can do after this lesson.")
+    grammar_focus: str = Field(description="One grammar point and why it matters for the learner's goal.")
+    vocab_theme: str = Field(description="Theme label for today's words.")
     milestone_index: int
-    slots: list[CurriculumSlot] = Field(min_length=1)
-    input_task: InputTask
-    goal_specific_task: GoalSpecificTask
-    exit_criteria: list[str]
-    partner_session: Any | None = Field(
-        default=None,
-        description="Null. This product has no speaking practice.",
+    new_vocabulary: list[str] = Field(
+        description=(
+            "Words or phrases to teach today, in the target language: about 3-4 for a 10-minute lesson, "
+            "6-10 for 30 minutes or more. Later lessons review them."
+        )
+    )
+    review_patterns: list[str] = Field(
+        description="pattern_type values of due mistakes to retest today, copied exactly. Empty if none are due."
+    )
+    goal_context: str = Field(
+        description="The real reading/writing situation from the learner's goal used today, e.g. 'a status email'."
+    )
+    practice_targets: list[str] = Field(
+        description="2-4 observable things to get right today. Used for praise and checks, not to end the lesson."
     )
 
 
@@ -105,9 +109,9 @@ class LearnerLanguages(_Schema):
 
 
 class LearnerGoal(_Schema):
-    outcome: str | None = None
+    outcome: str | None = Field(default=None, description="A concrete real-world outcome.")
     horizon: str | None = None
-    success_criteria: list[str] | None = None
+    success_criteria: list[str] | None = Field(default=None, description="Observable behaviors, not CEFR labels alone.")
 
 
 class LearnerLevel(_Schema):
@@ -118,10 +122,15 @@ class LearnerLevel(_Schema):
 
 
 class TimeBudget(_Schema):
-    minutes_per_session: int | None = None
+    minutes_per_session: Annotated[int | None, BeforeValidator(_lesson_minutes_or_none)] = Field(
+        default=None,
+        description=(
+            "Length of one lesson in minutes (5-180); every lesson is timed to this. "
+            "Required before a roadmap is drafted."
+        ),
+    )
     sessions_per_week: int | None = None
     intensity: str | None = None
-    optional_partner_minutes: int | None = None
 
 
 class LearnerFocus(_Schema):
@@ -131,15 +140,8 @@ class LearnerFocus(_Schema):
     avoid: list[str] | None = None
 
 
-class PracticePartner(_Schema):
-    available: bool | None = None
-    minutes: int | None = None
-    relationship: str | None = None
-
-
 class LearnerConstraints(_Schema):
     budget: str | None = None
-    practice_partner: PracticePartner | None = None
     learning_style: str | None = None
 
 
@@ -190,16 +192,11 @@ class CourseRoadmapMilestone(_Schema):
     estimated_plan_days: int | None = None
 
 
-class CourseRoadmapActivity(_Schema):
-    id: str
-    label: str
-    minutes: int
-
-
 class CourseRoadmapWeeklyTemplate(_Schema):
-    minutes_per_session: int
-    activities: list[CourseRoadmapActivity]
-    partner_session: Any | None = None
+    """Every lesson is `minutes_per_session` of mixed chat practice; there is no activity split."""
+
+    minutes_per_session: int = Field(description="The learner's lesson length in minutes.")
+    sessions_per_week: int | None = None
     weekends: str | None = None
 
 
@@ -207,19 +204,21 @@ class CourseRoadmapThemeDay(_Schema):
     block_day: int
     grammar_focus: str | None = None
     vocab_theme: str | None = None
-    input_type: str | None = None
-    production_focus: str | None = None
-    goal_specific_focus: str | None = None
+    goal_context: str | None = Field(default=None, description="The goal situation practiced in reading/writing.")
 
 
 class CourseRoadmapCurrentBlock(_Schema):
     milestone_index: int
     weeks: int | None = None
     focus_summary: str | None = None
-    themes: list[CourseRoadmapThemeDay] | None = None
+    themes: list[CourseRoadmapThemeDay] | None = Field(
+        default=None, description="First 1-4 weeks. Themes only: no word lists, exercises or URLs."
+    )
 
 
 class CourseRoadmap(_Schema):
+    """String values are in the learning language; keys stay English."""
+
     version: int
     summary: CourseRoadmapSummary
     milestones: list[CourseRoadmapMilestone] = Field(min_length=1)
@@ -237,7 +236,10 @@ class OnboardingReply(_Reply):
     )
     course_roadmap: CourseRoadmap | None = Field(
         default=None,
-        description=("The full object on a new or revised plan. Null on a clarifying question."),
+        description=(
+            "The full object on a new or revised plan; null on a clarifying question. "
+            "String values in the learning language, keys in English."
+        ),
     )
 
 
@@ -259,14 +261,14 @@ class MistakeEntry(_Schema):
     correction: str
 
 
-class LessonPlanTask(_Schema):
-    id: str
-    label: str
-    minutes: int
-
-
-class LessonPlan(_Schema):
-    tasks: list[LessonPlanTask] = Field(min_length=1)
+class PracticeResult(_Schema):
+    aspect: Literal["grammar", "vocabulary", "review"]
+    item: str = Field(
+        description="review: the mistake pattern_type exactly as listed; grammar: the point; vocabulary: the word."
+    )
+    result: Literal["solid", "shaky"] = Field(
+        description="solid: done correctly, ideally without help; shaky: wrong or needed help."
+    )
 
 
 class PlanUpdates(_Schema):
@@ -289,13 +291,13 @@ class LessonReply(_Reply):
         default_factory=list,
         description="One entry per recurring error pattern.",
     )
-    completed_task_ids: list[str] = Field(
+    practiced: list[PracticeResult] = Field(
         default_factory=list,
-        description="Ids of tasks marked done this turn.",
+        description="Items the learner practiced this turn and how it went.",
     )
     suggest_finish: bool = Field(
         default=False,
-        description="Set only when every slot and exit criterion is done.",
+        description="True only in the closing recap, once the Time line shows the time budget is used.",
     )
     plan_updates: PlanUpdates | None = Field(
         default=None,
@@ -304,8 +306,4 @@ class LessonReply(_Reply):
             "Then include only the changed fields among goal_summary, level, time_budget, "
             "topics, vocab_priorities, target_plan_days, and grammar_mastery."
         ),
-    )
-    lesson_plan: LessonPlan | None = Field(
-        default=None,
-        description="Include on the first coaching turn and when the agenda changes.",
     )

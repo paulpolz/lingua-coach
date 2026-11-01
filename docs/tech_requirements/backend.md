@@ -18,9 +18,11 @@ apps/backend/
     services/
       gemini.py            generate_structured over LangChain
       skills.py            loads skills/*.md
-      prompt_assembly.py   joins skill markdown and the language policy
-      lesson_generation.py background job that writes a curriculum
-      report_writer.py     patches the markdown reports after a lesson
+      prompt_assembly.py   joins skill markdown, the language policy and per-call context
+      memory.py            stage-1 retrieval: rank_mistakes, prior-lesson one-liners
+      lesson_timing.py     active minutes, lesson target (TIME_BUDGET_REQUIRED)
+      lesson_generation.py background job that writes a curriculum; stale-generation reaper
+      report_writer.py     background job that patches the markdown reports after a lesson
       report_seed.py       initial report markdown
       report_ops.py        append_entry / patch_section on section markers
       pace.py              pace status, projection, pace summary
@@ -45,13 +47,14 @@ All routes are under `/api/v1` and, except `health`, require `Authorization: Bea
 | POST | `/chat/sessions/{id}/messages` | owner | Send a message; `200` `ChatTurnResponse` |
 | POST | `/onboarding/accept` | synced user | Accept a roadmap (`{session_id, course_roadmap}`, roadmap validated as `CourseRoadmap`) |
 | GET | `/profile` | synced user | Profile summary plus schedule and pace |
+| PATCH | `/profile` | synced user | Set the lesson length: `{"time_budget": {"minutes_per_session": 5..180}}`, merged into `time_budget`; returns the profile (`404 NOT_FOUND` without a profile) |
 | GET | `/progress` | onboarded | Plan days done, target, slip, projection, pace summary, active lesson |
 | GET | `/reports/{report_type}` | onboarded | One markdown report (`progress`, `errors_log`, `roadmap`, `four_week_plan`) |
 | POST | `/lessons/start` | onboarded | Create lesson N+1 and a generation job; `202 {job_id, lesson_id, lesson_number}` |
 | GET | `/lessons/active` | onboarded | The generating or active lesson, or `null` |
 | GET | `/lessons/{id}` | onboarded, owner | One lesson with its payload |
 | POST | `/lessons/{id}/stop` | onboarded, owner | Leave the chat; logs `lesson_chat_stopped` |
-| POST | `/lessons/{id}/finish` | onboarded, owner | Finish an active lesson (`{completed_slot_ids?, learner_feedback?}`) |
+| POST | `/lessons/{id}/finish` | onboarded, owner | Finish an active lesson (`{learner_feedback?}`) |
 | GET | `/jobs/{id}` | owner | Generation job status: `pending`, `running`, `done`, `failed` |
 | GET | `/metrics` | none | Prometheus exposition (when `METRICS_ENABLED`) |
 
@@ -91,7 +94,8 @@ sequenceDiagram
   A->>A: validate length (MAX_MESSAGE_CHARS)
   A->>L: per-user chat limit
   A->>D: last CHAT_CONTEXT_MESSAGES-1 messages
-  A->>A: build system instruction + context
+  A->>D: lesson only: message times (active minutes), open mistakes
+  A->>A: build system instruction + context (Time line, ranked mistakes)
   A->>L: reserve global RPM / TPM / RPD
   A->>D: save user message and commit
   A->>G: generate_structured
@@ -103,12 +107,24 @@ The body is `ChatTurnResponse`: `message_id`, `content`, and `metadata`. History
 
 Artifacts saved per session type:
 
-- **Onboarding**: a present `learner_profile` upserts `profiles` and the draft `learning_goals` row. `metadata.course_roadmap_draft` is `model_dump()` of a present `course_roadmap` and is not stored until accept. Onboarding metadata has empty `corrections` and `tips`, `suggest_finish: false`, and `plan_updates` of `goal_summary` and `level` only when a profile was saved.
-- **Lesson**: `LessonReply` carries corrections, tips, mistakes, plan updates, `suggest_finish`, `lesson_plan`, and `completed_task_ids`. Mistakes are upserted by `pattern_type`. Plan updates patch the profile and write a `plan_updated` event. `task_update` is `{completed_task_ids}` when that list is non-empty, otherwise null.
+- **Onboarding**: a present `learner_profile` upserts `profiles` and the draft `learning_goals` row. `metadata.course_roadmap_draft` is the present `course_roadmap` and is not stored until accept. `plan_updates` holds `goal_summary` and `level` only when a profile was saved.
+- **Lesson**: `practiced` results are applied first (see [ai-api.md](./ai-api.md#lesson-chat-time-and-practice)), then mistakes are upserted with `INSERT … ON CONFLICT (user_id, pattern_type) DO UPDATE` after deduping the reply by `pattern_type`, then plan updates patch the profile and write a `plan_updated` event. `suggest_finish` is forced to `false` while `active_minutes < target_minutes - 1`.
 
-`metadata` always has the keys `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `lesson_plan`, and `task_update`. It is stored on the assistant message so the transcript reloads with the same state. A blank `content` fails schema validation and never reaches persist.
+`metadata` is the typed `TurnMetadata` and always has these keys (each defaults as shown):
 
-The user row is committed before Gemini. Gemini failures use the `{detail, code}` body and save no assistant row:
+| Key | Type | Default |
+|-----|------|---------|
+| `corrections` | list of `{span, correction, type, note}` | `[]` |
+| `tips` | list of strings | `[]` |
+| `plan_updates` | object or null | `null` |
+| `suggest_finish` | bool | `false` |
+| `course_roadmap_draft` | `CourseRoadmap` or null | `null` (onboarding only) |
+| `practiced` | list of `{aspect, item, result}` | `[]` (lesson only) |
+| `timing` | `{active_minutes, target_minutes}` or null | `null` (lesson only; null for a legacy lesson whose learner has no lesson length). Measured right before the reply is saved |
+
+It is stored on the assistant message so the transcript reloads with the same state; the UI restores `timing` from the latest assistant message. Messages written before this change may still carry the retired `lesson_plan` and `task_update` keys; `GET …/messages` returns stored metadata as-is. A blank `content` fails schema validation and never reaches persist.
+
+The user row is committed before the LLM call. LLM failures use the `{detail, code}` body with a fixed learner-safe `detail` per code (the provider's error text is logged, never returned) and save no assistant row:
 
 | Code | Status |
 |------|--------|
@@ -121,7 +137,7 @@ The user row is committed before Gemini. Gemini failures use the `{detail, code}
 
 ## Onboarding accept
 
-`POST /onboarding/accept` requires the onboarding session and a draft goal. In one transaction it:
+`POST /onboarding/accept` validates `course_roadmap` as `CourseRoadmap` (a malformed roadmap is `422`; unknown keys are dropped, because the stored roadmap feeds later prompts). It requires the onboarding session, a draft goal (`422 ONBOARDING_INTERVIEW_INCOMPLETE`), and a lesson length in `profiles.time_budget.minutes_per_session` (`422 TIME_BUDGET_REQUIRED`). In one transaction it:
 
 1. inserts an `accepted` `learning_plans` row with the validated roadmap's `model_dump()`;
 2. points `profiles.active_learning_plan_id` at it, sets `target_plan_days` from `roadmap.summary.target_plan_days`, and sets `projected_completion_at = now + target × pace window`;
@@ -142,20 +158,27 @@ stateDiagram-v2
   failed --> [*]
 ```
 
-**Start.** Rejected with `409 ACTIVE_LESSON_EXISTS` (and `active_lesson_id`) when a lesson is generating or active. The rule is enforced in the app; a partial index on in-flight lessons keeps the lookup fast. Counts against the per-user lesson-start limit. Creates the lesson with `lesson_number = max + 1` and a `jobs` row, then schedules `run_lesson_generation_job` with FastAPI `BackgroundTasks`.
+**Start.** In order:
 
-**Generation job.** Runs after the response, in its own DB session. It marks the job `running`, reads the accepted roadmap, profile, last five accomplished lessons, and all mistakes, and makes one structured Gemini call. Success stores `payload = {version: 1, curriculum, session_summary: null}` from `LessonCurriculum.model_dump()` (including `partner_session: null`), sets the lesson `active` with `started_at = now`, and marks the job `done` with `result_ref = lesson_id`. A curriculum without slots fails validation and fails the job. Any exception marks both the job and the lesson `failed` with the error text.
+1. `409 TIME_BUDGET_REQUIRED` when the profile has no `time_budget.minutes_per_session` (profiles from before lesson timing). The dashboard asks for the minutes, saves them with `PATCH /profile`, and retries.
+2. Stale generation is reaped: a `generating` lesson (and its `pending`/`running` job) older than `GEMINI_TIMEOUT_SECONDS × 2` lost its background task to a restart, so both become `failed`. `GET /jobs/{id}` reaps too, so a polling client sees `failed`, and active-lesson reads ignore stale rows.
+3. `409 ACTIVE_LESSON_EXISTS` (with `active_lesson_id`) when a lesson is generating or active.
+4. The per-user lesson-start limit.
+5. The lesson (`lesson_number = max + 1`) and a `jobs` row are inserted. A unique partial index allows one generating/active lesson per user, so a concurrent start that slips past step 3 fails on commit and is answered `409 ACTIVE_LESSON_EXISTS` too.
+6. `run_lesson_generation_job` is scheduled with FastAPI `BackgroundTasks`.
+
+**Generation job.** Runs after the response, in its own DB session. It marks the job `running`, reads the accepted roadmap, profile, prior lessons and ranked mistakes (see [ai-api.md](./ai-api.md#context-per-call)), and makes one structured LLM call. Success stores `payload = {version: 1, curriculum, session_summary: null, target_minutes}`, sets the lesson `active` with `started_at = now`, and marks the job `done` with `result_ref = lesson_id`. Any exception marks both the job and the lesson `failed`; `job.error` is a generic message (the raw error is logged).
 
 **Stop.** Writes a `lesson_chat_stopped` event. The lesson, session, and transcript stay.
 
-**Finish.** Only from `active`.
+**Finish.** Only from `active`. The learner can finish at any time; an early finish still counts as an accomplished plan day.
 
 ```mermaid
 flowchart TD
   f[POST finish] --> pace{finished - started > pace window?}
   pace -- no --> on[pace_status on_pace]
   pace -- yes --> slip[pace_status slipped, plan_slip_days + 1, recompute projection, plan_rescheduled event]
-  on --> sum[session_summary]
+  on --> sum[session_summary from message times and turn metadata]
   slip --> sum
   sum --> ev[lesson_completed event]
   ev --> del[delete lesson chat messages + session]
@@ -164,7 +187,22 @@ flowchart TD
   resp --> bg[background task, own session: report_writer, one LLM call, never raises]
 ```
 
-Completed slots come from `completed_slot_ids` when the client sends them; otherwise all slots count as done if any assistant turn set `suggest_finish`; otherwise none. The response is `{accomplished_at, pace_status, schedule_updated}`.
+Two updates close together are serialized without holding a lock during the LLM call: after the call, the writer re-reads the user's report rows `SELECT … FOR UPDATE` and applies its ops to those fresh bodies, so the later update waits for the earlier commit instead of overwriting it. The report update runs after the response so finish holds no transaction or pooled connection open during an LLM call of up to `GEMINI_TIMEOUT_SECONDS`. If it fails, the lesson stays finished and the reports simply miss that lesson.
+
+`session_summary` is built by the backend before the chat rows are deleted:
+
+| Field | Value |
+|-------|-------|
+| `duration_minutes` | Active minutes (idle gaps capped), not wall time |
+| `target_minutes` | `payload.target_minutes`, or the profile's lesson length for a legacy lesson |
+| `shortfall_minutes`, `finished_early` | `max(target - active, 0)` and `shortfall > 1` (the guard's one-minute tolerance: 14 of 15 is a full lesson) |
+| `practiced_solid`, `practiced_shaky` | The last reported result per practiced item across the lesson's turns |
+| `resolved_pattern_types` | Mistake patterns closed since the lesson started |
+| `new_pattern_types` | Patterns first created in this lesson (a pattern that only recurred is not new) |
+| `new_vocabulary` | `curriculum.new_vocabulary` |
+| `grammar_focus`, `vocab_themes_covered`, `learner_feedback` | From the curriculum and the request |
+
+The response is `{status: "accomplished", accomplished_at, pace_status, schedule_updated}`.
 
 ## Pace
 

@@ -5,12 +5,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.errors import APIError
 from app.db.session import get_db
 from app.models.enums import LessonStatus
 from app.models.lesson import Lesson
 from app.models.profile import Profile
 from app.models.user import User
-from app.schemas.profile import ProfileResponse, ScheduleOut
+from app.schemas.profile import ProfileResponse, ProfileUpdateRequest, ScheduleOut
 from app.services.pace import compute_profile_pace_summary
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -59,3 +60,19 @@ async def get_profile(
             pace_summary=compute_profile_pace_summary(profile, active, last_done),
         ),
     )
+
+
+@router.patch("", response_model=ProfileResponse)
+async def update_profile(
+    body: ProfileUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ProfileResponse:
+    """Set the lesson length (merged into `time_budget`). Profiles from before lesson timing
+    have none, and `POST /lessons/start` answers 409 TIME_BUDGET_REQUIRED until it is set."""
+    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
+    if profile is None:
+        raise APIError(404, "Profile not found", "NOT_FOUND")
+    profile.time_budget = {**(profile.time_budget or {}), **body.time_budget.model_dump()}
+    await db.commit()
+    return await get_profile(user, db)

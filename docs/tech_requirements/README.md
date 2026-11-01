@@ -6,7 +6,7 @@ How Lingua Coach is built. The learner-facing behavior is in [business_requireme
 |-----|--------|
 | [backend.md](./backend.md) | FastAPI service, endpoints, request flows, limits, errors |
 | [frontend.md](./frontend.md) | Next.js routes, screens, API clients |
-| [ai-api.md](./ai-api.md) | Gemini calls, skill loading, prompt context |
+| [ai-api.md](./ai-api.md) | LLM calls, skill loading, prompt context, time-boxed lessons |
 | [database.md](./database.md) | Postgres tables, JSON shapes, lifecycles |
 | [deployment.md](./deployment.md) | Docker Compose, environment variables, migrations, CI |
 | [hosting.md](./hosting.md) | Where each piece runs and what is external |

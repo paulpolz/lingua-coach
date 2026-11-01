@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import ChatMessage
 from app.models.enums import ChatMessageRole
+from app.models.profile import Profile
 from app.schemas.llm import OnboardingReply
 from tests.factories import make_chat_session, make_user
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, SchemaMismatch
@@ -57,3 +58,22 @@ async def test_schema_error_completes_usage_as_error_and_skips_assistant_row(
     assert events[0].status == "error"
     assert events[0].input_tokens == RAW_INPUT_TOKENS
     assert [m.role for m in await _messages(db)] == [ChatMessageRole.user]
+
+
+async def test_out_of_range_minutes_from_the_model_are_saved_as_unknown(
+    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM
+) -> None:
+    user = await make_user(db, onboarding_complete=False)
+    user_id = user.id
+    session = await make_chat_session(db, user)
+    profile = {"languages": {"native": "ru", "target": "en"}, "time_budget": {"minutes_per_session": 3}}
+    fake_llm.push(
+        OnboardingReply.model_validate({"content": "How many minutes per lesson?", "learner_profile": profile})
+    )
+
+    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "3 minutes"})
+
+    assert response.status_code == 200
+    db.expire_all()
+    saved = (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one()
+    assert saved.time_budget == {"minutes_per_session": None, "sessions_per_week": None, "intensity": None}
