@@ -36,7 +36,8 @@ def _with_request_id(request: Request, response: JSONResponse) -> JSONResponse:
     return response
 
 
-async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
+async def api_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, APIError)  # registered for APIError only
     content = {"detail": exc.detail, "code": exc.code, **exc.extra}
     if exc.status_code >= 500:
         logger.error(
@@ -50,9 +51,7 @@ async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
                 "code": exc.code,
             },
         )
-    response = JSONResponse(
-        status_code=exc.status_code, content=content, headers=exc.headers or None
-    )
+    response = JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers or None)
     return _with_request_id(request, response)
 
 

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.api.deps import get_current_user
 from app.config import settings
@@ -89,22 +90,26 @@ async def _get_or_create_session(db: AsyncSession, user: User, lesson: Lesson | 
     `index_where` must repeat the index predicate as literal SQL; a bound enum does not match.
     """
     if lesson is None:
-        values = {"user_id": user.id, "type": ChatSessionType.onboarding, "lesson_id": None}
-        conflict = {"index_elements": ["user_id"], "index_where": text("type = 'onboarding'")}
-        where = (ChatSession.type == ChatSessionType.onboarding,)
+        stmt = (
+            insert(ChatSession)
+            .values(user_id=user.id, type=ChatSessionType.onboarding, lesson_id=None)
+            .on_conflict_do_nothing(index_elements=["user_id"], index_where=text("type = 'onboarding'"))
+        )
+        where: tuple[ColumnElement[bool], ...] = (ChatSession.type == ChatSessionType.onboarding,)
     else:
-        values = {"user_id": user.id, "type": ChatSessionType.lesson, "lesson_id": lesson.id}
-        conflict = {
-            "index_elements": ["user_id", "lesson_id"],
-            "index_where": text("type = 'lesson' AND lesson_id IS NOT NULL"),
-        }
+        stmt = (
+            insert(ChatSession)
+            .values(user_id=user.id, type=ChatSessionType.lesson, lesson_id=lesson.id)
+            .on_conflict_do_nothing(
+                index_elements=["user_id", "lesson_id"],
+                index_where=text("type = 'lesson' AND lesson_id IS NOT NULL"),
+            )
+        )
         where = (ChatSession.type == ChatSessionType.lesson, ChatSession.lesson_id == lesson.id)
 
-    await db.execute(insert(ChatSession).values(**values).on_conflict_do_nothing(**conflict))
+    await db.execute(stmt)
     await db.commit()
-    return (
-        await db.execute(select(ChatSession).where(ChatSession.user_id == user.id, *where))
-    ).scalar_one()
+    return (await db.execute(select(ChatSession).where(ChatSession.user_id == user.id, *where))).scalar_one()
 
 
 @router.post("/sessions", status_code=201, response_model=ChatSessionResponse)
@@ -173,13 +178,11 @@ async def _save_learner_profile(db: AsyncSession, user: User, data: dict) -> Non
     profile.focus = data.get("focus")
     profile.constraints = data.get("constraints")
     profile.motivation = data.get("motivation")
-    profile.interview_completed_at = datetime.now(timezone.utc)
+    profile.interview_completed_at = datetime.now(UTC)
 
     draft = (
         await db.execute(
-            select(LearningGoal).where(
-                LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft
-            )
+            select(LearningGoal).where(LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft)
         )
     ).scalar_one_or_none()
     if draft is None:
@@ -195,7 +198,7 @@ async def _upsert_mistake(db: AsyncSession, user: User, lesson: Lesson, item: di
     pattern = str(item.get("pattern_type") or "")[:255]
     if not pattern:
         return
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     mistake = (
         await db.execute(select(Mistake).where(Mistake.user_id == user.id, Mistake.pattern_type == pattern))
     ).scalar_one_or_none()
@@ -234,7 +237,7 @@ async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> No
             .select_from(Lesson)
             .where(Lesson.user_id == user.id, Lesson.status == LessonStatus.accomplished)
         )
-        profile.projected_completion_at = datetime.now(timezone.utc) + timedelta(
+        profile.projected_completion_at = datetime.now(UTC) + timedelta(
             hours=max(target_days - (done or 0), 0) * profile.pace_window_hours
         )
     db.add(ProgressEvent(user_id=user.id, event_type="plan_updated", payload=updates))
@@ -251,13 +254,17 @@ async def _build_prompt(
 
     curriculum = (lesson.payload or {}).get("curriculum") or {}
     due = (
-        await db.execute(
-            select(Mistake)
-            .where(Mistake.user_id == user.id, Mistake.next_review_at <= datetime.now(timezone.utc))
-            .order_by(Mistake.next_review_at)
-            .limit(10)
+        (
+            await db.execute(
+                select(Mistake)
+                .where(Mistake.user_id == user.id, Mistake.next_review_at <= datetime.now(UTC))
+                .order_by(Mistake.next_review_at)
+                .limit(10)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     system = lesson_system_instruction(native, target, should_include_vocab_formats(curriculum))
     return system, [ChatTurn(role="user", text=lesson_context_block(curriculum, profile, due)), *history]
 
@@ -332,13 +339,17 @@ async def post_chat_message(
         lesson = await _owned_lesson(db, session.lesson_id, user)
 
     recent = (
-        await db.execute(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session.id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(max(settings.chat_context_messages - 1, 0))
+        (
+            await db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session.id)
+                .order_by(ChatMessage.created_at.desc())
+                .limit(max(settings.chat_context_messages - 1, 0))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     history = [
         ChatTurn(role="model" if m.role == ChatMessageRole.assistant else "user", text=m.content)
         for m in reversed(recent)
@@ -349,13 +360,14 @@ async def post_chat_message(
         db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
         await db.commit()
 
+    schema: type[OnboardingReply] | type[LessonReply] = OnboardingReply if lesson is None else LessonReply
     try:
         reply = await metered_structured_call(
             db,
             user.id,
             "chat",
             model_id=settings.gemini_model_chat,
-            schema=OnboardingReply if lesson is None else LessonReply,
+            schema=schema,
             system_instruction=system_instruction,
             history=contents,
             before_call=save_user_message,

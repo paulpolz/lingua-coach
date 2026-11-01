@@ -29,18 +29,14 @@ class ChatSession(Base, TimestampMixin):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     lesson_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), nullable=True
     )
-    type: Mapped[ChatSessionType] = mapped_column(
-        SAEnum(ChatSessionType, name="chat_session_type"), nullable=False
-    )
+    type: Mapped[ChatSessionType] = mapped_column(SAEnum(ChatSessionType, name="chat_session_type"), nullable=False)
 
 
 class ChatMessage(Base, TimestampMixin):
@@ -49,15 +45,11 @@ class ChatMessage(Base, TimestampMixin):
     __tablename__ = "chat_messages"
     __table_args__ = (Index("ix_chat_messages_session_id_created_at", "session_id", "created_at"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[ChatMessageRole] = mapped_column(
-        SAEnum(ChatMessageRole, name="chat_message_role"), nullable=False
-    )
+    role: Mapped[ChatMessageRole] = mapped_column(SAEnum(ChatMessageRole, name="chat_message_role"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # Python attribute is `metadata_json` because `metadata` is reserved by
     # the declarative Base; the underlying DB column is still named `metadata`.

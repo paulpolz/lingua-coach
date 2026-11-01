@@ -1,0 +1,328 @@
+{
+  "$defs": {
+    "Correction": {
+      "properties": {
+        "correction": {
+          "title": "Correction",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "span": {
+          "title": "Span",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span",
+        "correction",
+        "type"
+      ],
+      "title": "Correction",
+      "type": "object"
+    },
+    "LessonPlan": {
+      "properties": {
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/LessonPlanTask"
+          },
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "title": "LessonPlan",
+      "type": "object"
+    },
+    "LessonPlanTask": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "minutes": {
+          "title": "Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "minutes"
+      ],
+      "title": "LessonPlanTask",
+      "type": "object"
+    },
+    "MistakeEntry": {
+      "properties": {
+        "correction": {
+          "title": "Correction",
+          "type": "string"
+        },
+        "example_text": {
+          "title": "Example Text",
+          "type": "string"
+        },
+        "pattern_type": {
+          "description": "Short stable label for a recurring error.",
+          "title": "Pattern Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern_type",
+        "example_text",
+        "correction"
+      ],
+      "title": "MistakeEntry",
+      "type": "object"
+    },
+    "PlanUpdates": {
+      "properties": {
+        "goal_summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Goal Summary"
+        },
+        "grammar_mastery": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grammar Mastery"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Level"
+        },
+        "target_plan_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Plan Days"
+        },
+        "time_budget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeBudget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "topics": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topics"
+        },
+        "vocab_priorities": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vocab Priorities"
+        }
+      },
+      "title": "PlanUpdates",
+      "type": "object"
+    },
+    "TimeBudget": {
+      "properties": {
+        "intensity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intensity"
+        },
+        "minutes_per_session": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minutes Per Session"
+        },
+        "optional_partner_minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Optional Partner Minutes"
+        },
+        "sessions_per_week": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sessions Per Week"
+        }
+      },
+      "title": "TimeBudget",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "completed_task_ids": {
+      "description": "Ids of tasks marked done this turn.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Completed Task Ids",
+      "type": "array"
+    },
+    "content": {
+      "description": "Learner-facing reply for this turn.",
+      "minLength": 1,
+      "title": "Content",
+      "type": "string"
+    },
+    "corrections": {
+      "description": "Corrections for this turn only.",
+      "items": {
+        "$ref": "#/$defs/Correction"
+      },
+      "title": "Corrections",
+      "type": "array"
+    },
+    "lesson_plan": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LessonPlan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Include on the first coaching turn and when the agenda changes."
+    },
+    "mistakes": {
+      "description": "One entry per recurring error pattern.",
+      "items": {
+        "$ref": "#/$defs/MistakeEntry"
+      },
+      "title": "Mistakes",
+      "type": "array"
+    },
+    "plan_updates": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlanUpdates"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Null unless the learner asks for a concrete plan change. Then include only the changed fields among goal_summary, level, time_budget, topics, vocab_priorities, target_plan_days, and grammar_mastery."
+    },
+    "suggest_finish": {
+      "default": false,
+      "description": "Set only when every slot and exit criterion is done.",
+      "title": "Suggest Finish",
+      "type": "boolean"
+    },
+    "tips": {
+      "description": "Tips for this turn only.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tips",
+      "type": "array"
+    }
+  },
+  "required": [
+    "content"
+  ],
+  "title": "LessonReply",
+  "type": "object"
+}

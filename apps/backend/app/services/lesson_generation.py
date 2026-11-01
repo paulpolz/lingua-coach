@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,7 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
 
         lesson.payload = {"version": 1, "curriculum": curriculum, "session_summary": None}
         lesson.status = LessonStatus.active
-        lesson.started_at = datetime.now(timezone.utc)
+        lesson.started_at = datetime.now(UTC)
         job.status = JobStatus.done
         job.result_ref = str(lesson.id)
         await db.commit()
@@ -58,24 +58,34 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
 
 async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> dict:
     plan = (
-        await db.execute(
-            select(LearningPlan)
-            .where(LearningPlan.user_id == user_id, LearningPlan.status == LearningPlanStatus.accepted)
-            .order_by(LearningPlan.accepted_at.desc())
+        (
+            await db.execute(
+                select(LearningPlan)
+                .where(LearningPlan.user_id == user_id, LearningPlan.status == LearningPlanStatus.accepted)
+                .order_by(LearningPlan.accepted_at.desc())
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     profile = (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one_or_none()
     prior = (
-        await db.execute(
-            select(Lesson)
-            .where(Lesson.user_id == user_id, Lesson.status == LessonStatus.accomplished)
-            .order_by(Lesson.lesson_number.desc())
-            .limit(5)
+        (
+            await db.execute(
+                select(Lesson)
+                .where(Lesson.user_id == user_id, Lesson.status == LessonStatus.accomplished)
+                .order_by(Lesson.lesson_number.desc())
+                .limit(5)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     mistakes = (
-        await db.execute(select(Mistake).where(Mistake.user_id == user_id).order_by(Mistake.last_seen_at.desc()))
-    ).scalars().all()
+        (await db.execute(select(Mistake).where(Mistake.user_id == user_id).order_by(Mistake.last_seen_at.desc())))
+        .scalars()
+        .all()
+    )
 
     context = {
         "lesson_number": lesson_number,
@@ -84,13 +94,26 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         "learner_profile": {
             column: getattr(profile, column)
             for column in (
-                "goal_outcome", "native_language", "target_language", "target_level", "level_strengths",
-                "level_weaknesses", "time_budget", "focus", "constraints", "grammar_mastery",
+                "goal_outcome",
+                "native_language",
+                "target_language",
+                "target_level",
+                "level_strengths",
+                "level_weaknesses",
+                "time_budget",
+                "focus",
+                "constraints",
+                "grammar_mastery",
                 "vocabulary_summary",
             )
-        } if profile else None,
+        }
+        if profile
+        else None,
         "prior_lessons": [
-            {"lesson_number": p.lesson_number, **{k: (p.payload or {}).get(k) for k in ("curriculum", "session_summary")}}
+            {
+                "lesson_number": p.lesson_number,
+                **{k: (p.payload or {}).get(k) for k in ("curriculum", "session_summary")},
+            }
             for p in prior
         ],
         "open_mistakes": [

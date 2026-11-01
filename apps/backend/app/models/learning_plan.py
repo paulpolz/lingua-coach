@@ -1,9 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP
+from sqlalchemy import TIMESTAMP, ForeignKey, Integer
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,9 +15,7 @@ class LearningPlan(Base, TimestampMixin):
 
     __tablename__ = "learning_plans"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )

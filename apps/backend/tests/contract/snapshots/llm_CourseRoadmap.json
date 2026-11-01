@@ -1,0 +1,474 @@
+{
+  "$defs": {
+    "CourseRoadmapActivity": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "minutes": {
+          "title": "Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "minutes"
+      ],
+      "title": "CourseRoadmapActivity",
+      "type": "object"
+    },
+    "CourseRoadmapCurrentBlock": {
+      "properties": {
+        "focus_summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus Summary"
+        },
+        "milestone_index": {
+          "title": "Milestone Index",
+          "type": "integer"
+        },
+        "themes": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CourseRoadmapThemeDay"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Themes"
+        },
+        "weeks": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weeks"
+        }
+      },
+      "required": [
+        "milestone_index"
+      ],
+      "title": "CourseRoadmapCurrentBlock",
+      "type": "object"
+    },
+    "CourseRoadmapMilestone": {
+      "properties": {
+        "connects_to": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connects To"
+        },
+        "estimated_plan_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Plan Days"
+        },
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "skill_developed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skill Developed"
+        },
+        "success_criteria": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Success Criteria"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "why_now": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Why Now"
+        }
+      },
+      "required": [
+        "index",
+        "title"
+      ],
+      "title": "CourseRoadmapMilestone",
+      "type": "object"
+    },
+    "CourseRoadmapSummary": {
+      "properties": {
+        "goal_horizon": {
+          "title": "Goal Horizon",
+          "type": "string"
+        },
+        "goal_outcome": {
+          "title": "Goal Outcome",
+          "type": "string"
+        },
+        "languages": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LearnerLanguages"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "native_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Native Language"
+        },
+        "pace_description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pace Description"
+        },
+        "starting_level": {
+          "title": "Starting Level",
+          "type": "string"
+        },
+        "target_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Language"
+        },
+        "target_plan_days": {
+          "title": "Target Plan Days",
+          "type": "integer"
+        },
+        "target_plan_days_range": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Plan Days Range"
+        }
+      },
+      "required": [
+        "goal_outcome",
+        "goal_horizon",
+        "starting_level",
+        "target_plan_days"
+      ],
+      "title": "CourseRoadmapSummary",
+      "type": "object"
+    },
+    "CourseRoadmapThemeDay": {
+      "properties": {
+        "block_day": {
+          "title": "Block Day",
+          "type": "integer"
+        },
+        "goal_specific_focus": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Goal Specific Focus"
+        },
+        "grammar_focus": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grammar Focus"
+        },
+        "input_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Type"
+        },
+        "production_focus": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Focus"
+        },
+        "vocab_theme": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vocab Theme"
+        }
+      },
+      "required": [
+        "block_day"
+      ],
+      "title": "CourseRoadmapThemeDay",
+      "type": "object"
+    },
+    "CourseRoadmapWeeklyTemplate": {
+      "properties": {
+        "activities": {
+          "items": {
+            "$ref": "#/$defs/CourseRoadmapActivity"
+          },
+          "title": "Activities",
+          "type": "array"
+        },
+        "minutes_per_session": {
+          "title": "Minutes Per Session",
+          "type": "integer"
+        },
+        "partner_session": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Partner Session"
+        },
+        "weekends": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weekends"
+        }
+      },
+      "required": [
+        "minutes_per_session",
+        "activities"
+      ],
+      "title": "CourseRoadmapWeeklyTemplate",
+      "type": "object"
+    },
+    "LearnerLanguages": {
+      "properties": {
+        "native": {
+          "minLength": 1,
+          "title": "Native",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "native",
+        "target"
+      ],
+      "title": "LearnerLanguages",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "adaptation_rules": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Adaptation Rules"
+    },
+    "current_block": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CourseRoadmapCurrentBlock"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "current_milestone_index": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Milestone Index"
+    },
+    "learning_principles": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Learning Principles"
+    },
+    "milestones": {
+      "items": {
+        "$ref": "#/$defs/CourseRoadmapMilestone"
+      },
+      "minItems": 1,
+      "title": "Milestones",
+      "type": "array"
+    },
+    "summary": {
+      "$ref": "#/$defs/CourseRoadmapSummary"
+    },
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    },
+    "weekly_template": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CourseRoadmapWeeklyTemplate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "version",
+    "summary",
+    "milestones"
+  ],
+  "title": "CourseRoadmap",
+  "type": "object"
+}

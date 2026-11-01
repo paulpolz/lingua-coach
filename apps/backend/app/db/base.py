@@ -11,9 +11,7 @@ class Base(DeclarativeBase):
 class TimestampMixin:
     """Adds `created_at` / `updated_at` columns with server-side defaults."""
 
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),

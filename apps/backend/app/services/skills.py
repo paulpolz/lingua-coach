@@ -15,7 +15,7 @@ _MODE_SKILLS = {
 _VOCAB_REVIEW_MARKERS = ("vocab_review", "vocabulary_review", "weekend_vocab", "weekly_vocab", "vocab review")
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def load_skill(name: str) -> str:
     return (Path(settings.skills_dir) / f"{name}.md").read_text(encoding="utf-8")
 

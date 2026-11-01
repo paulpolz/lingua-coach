@@ -57,9 +57,7 @@ async def get_progress(
             id=str(active_lesson.id),
             lesson_number=active_lesson.lesson_number,
             started_at=active_lesson.started_at,
-            hours_remaining_in_pace_window=hours_remaining_in_pace_window(
-                active_lesson.started_at, pace_window_hours
-            ),
+            hours_remaining_in_pace_window=hours_remaining_in_pace_window(active_lesson.started_at, pace_window_hours),
         )
 
     return ProgressResponse(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import delete, select
@@ -40,12 +40,16 @@ async def accept_onboarding(
         raise APIError(404, "Onboarding chat session not found", "NOT_FOUND")
 
     goal = (
-        await db.execute(
-            select(LearningGoal)
-            .where(LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft)
-            .order_by(LearningGoal.created_at.desc())
+        (
+            await db.execute(
+                select(LearningGoal)
+                .where(LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft)
+                .order_by(LearningGoal.created_at.desc())
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if goal is None:
         raise APIError(
             422,
@@ -53,7 +57,7 @@ async def accept_onboarding(
             "ONBOARDING_INTERVIEW_INCOMPLETE",
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     roadmap = body.course_roadmap
     plan_days = int((roadmap.get("summary") or {}).get("target_plan_days") or 0)
 

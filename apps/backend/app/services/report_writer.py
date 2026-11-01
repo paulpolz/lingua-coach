@@ -71,8 +71,15 @@ async def _update(
         f"Session summary: {json.dumps(session_summary, ensure_ascii=False)}\n\n"
         "Mistakes this lesson: "
         + json.dumps(
-            [{"pattern_type": m.pattern_type, "example_text": m.example_text, "correction": m.correction,
-              "occurrence_count": m.occurrence_count} for m in mistakes],
+            [
+                {
+                    "pattern_type": m.pattern_type,
+                    "example_text": m.example_text,
+                    "correction": m.correction,
+                    "occurrence_count": m.occurrence_count,
+                }
+                for m in mistakes
+            ],
             ensure_ascii=False,
         )
         + f"\n\nPace status: {lesson.pace_status.value if lesson.pace_status else None}\n\n"

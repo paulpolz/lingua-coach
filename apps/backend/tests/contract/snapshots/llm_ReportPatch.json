@@ -1,0 +1,56 @@
+{
+  "$defs": {
+    "ReportOp": {
+      "properties": {
+        "markdown": {
+          "title": "Markdown",
+          "type": "string"
+        },
+        "op": {
+          "description": "append_entry adds a dated log line; patch_section replaces the section.",
+          "enum": [
+            "append_entry",
+            "patch_section"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "report_type": {
+          "enum": [
+            "progress",
+            "errors_log",
+            "roadmap",
+            "four_week_plan"
+          ],
+          "title": "Report Type",
+          "type": "string"
+        },
+        "section_id": {
+          "description": "Must match an existing <!-- section:ID --> marker.",
+          "title": "Section Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_type",
+        "op",
+        "section_id",
+        "markdown"
+      ],
+      "title": "ReportOp",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "ops": {
+      "description": "May be empty.",
+      "items": {
+        "$ref": "#/$defs/ReportOp"
+      },
+      "title": "Ops",
+      "type": "array"
+    }
+  },
+  "title": "ReportPatch",
+  "type": "object"
+}

@@ -26,6 +26,7 @@ apps/backend/
       pace.py              pace status, projection, pace summary
       llm_usage.py         per-user and global Gemini limits
   skills/              coach pedagogy as markdown (loaded at runtime)
+  tests/               pytest: unit/, integration/, api/, contract/, eval/
   alembic/             migrations
 ```
 
