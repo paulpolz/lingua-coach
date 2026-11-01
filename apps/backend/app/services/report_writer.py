@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
+import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.session import AsyncSessionLocal
 from app.models.enums import UserReportType
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
@@ -19,8 +21,8 @@ from app.models.user_report import UserReport
 from app.schemas.llm import ReportPatch
 from app.services.gemini import ChatTurn
 from app.services.llm_usage import metered_structured_call
-from app.services.prompt_assembly import report_system_instruction
-from app.services.report_ops import apply_report_op
+from app.services.prompt_assembly import report_system_instruction, report_user_prompt
+from app.services.report_ops import apply_report_op, is_log_section
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
 
 logger = logging.getLogger(__name__)
@@ -31,20 +33,50 @@ _BLANK = {
 }
 
 
-async def update_reports_after_lesson(
-    db: AsyncSession,
-    *,
-    user: User,
-    lesson: Lesson,
-    session_summary: dict,
-    profile: Profile | None,
-    now: datetime,
-) -> None:
-    """Never raises: finishing a lesson must succeed even if the report call fails."""
-    try:
-        await _update(db, user=user, lesson=lesson, session_summary=session_summary, profile=profile, now=now)
-    except Exception:  # noqa: BLE001
-        logger.warning("report_patch_failed", exc_info=True, extra={"lesson_id": str(lesson.id)})
+async def run_report_update(*, user_id: uuid.UUID, lesson_id: uuid.UUID, session_summary: dict) -> None:
+    """Background task after finish has committed. Own session; never raises.
+
+    A failed report call never undoes the finish; the reports just miss this lesson.
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            user = await db.get(User, user_id)
+            lesson = await db.get(Lesson, lesson_id)
+            if user is None or lesson is None:
+                return
+            profile = (await db.execute(select(Profile).where(Profile.user_id == user_id))).scalar_one_or_none()
+            now = lesson.accomplished_at or datetime.now(UTC)
+            await _update(db, user=user, lesson=lesson, session_summary=session_summary, profile=profile, now=now)
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "report_patch_failed",
+                exc_info=True,
+                extra={"event": "report_patch_failed", "lesson_id": str(lesson_id)},
+            )
+
+
+async def _locked_reports(db: AsyncSession, user_id: uuid.UUID) -> dict[UserReportType, UserReport]:
+    """The user's reports re-read after the LLM call and locked until commit.
+
+    Two finishes close together run two background updates. Re-reading `FOR UPDATE` makes the
+    second wait for the first commit and apply its ops to the fresh bodies instead of writing
+    back the bodies it read before its LLM call. No lock is held during the call itself.
+    """
+    await db.execute(
+        insert(UserReport)
+        .values([{"user_id": user_id, "report_type": t, "body": factory()} for t, factory in _BLANK.items()])
+        .on_conflict_do_nothing(index_elements=["user_id", "report_type"])
+    )
+    rows = (
+        await db.execute(
+            select(UserReport)
+            .where(UserReport.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalars()
+    return {row.report_type: row for row in rows}
 
 
 async def _update(
@@ -57,34 +89,26 @@ async def _update(
     now: datetime,
 ) -> None:
     rows = (await db.execute(select(UserReport).where(UserReport.user_id == user.id))).scalars().all()
-    reports = {row.report_type: row for row in rows}
-    for report_type, factory in _BLANK.items():
-        if report_type not in reports:
-            reports[report_type] = UserReport(user_id=user.id, report_type=report_type, body=factory())
-            db.add(reports[report_type])
+    bodies = {t.value: factory() for t, factory in _BLANK.items()} | {r.report_type.value: r.body for r in rows}
 
     mistakes = (await db.execute(select(Mistake).where(Mistake.lesson_id == lesson.id))).scalars().all()
     native = profile.native_language if profile else None
     target = profile.target_language if profile else None
-    prompt = (
-        f"Lesson {lesson.lesson_number} finished on {now.date().isoformat()}.\n\n"
-        f"Session summary: {json.dumps(session_summary, ensure_ascii=False)}\n\n"
-        "Mistakes this lesson: "
-        + json.dumps(
-            [
-                {
-                    "pattern_type": m.pattern_type,
-                    "example_text": m.example_text,
-                    "correction": m.correction,
-                    "occurrence_count": m.occurrence_count,
-                }
-                for m in mistakes
-            ],
-            ensure_ascii=False,
-        )
-        + f"\n\nPace status: {lesson.pace_status.value if lesson.pace_status else None}\n\n"
-        f"Current reports: {json.dumps({t.value: r.body for t, r in reports.items()}, ensure_ascii=False)}\n\n"
-        "Emit incremental ops only."
+    prompt = report_user_prompt(
+        lesson_number=lesson.lesson_number,
+        finished_on=now.date(),
+        session_summary=session_summary,
+        mistakes=[
+            {
+                "pattern_type": m.pattern_type,
+                "example_text": m.example_text,
+                "correction": m.correction,
+                "occurrence_count": m.occurrence_count,
+            }
+            for m in mistakes
+        ],
+        pace_status=lesson.pace_status.value if lesson.pace_status else None,
+        reports=bodies,
     )
     system_instruction = report_system_instruction(native, target)
 
@@ -97,7 +121,15 @@ async def _update(
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],
     )
+    reports = await _locked_reports(db, user.id)
     for op in patch.ops:
+        if op.op == "patch_section" and is_log_section(op.report_type, op.section_id):
+            # The model saw only the tail; a patch would replace the whole history with it.
+            logger.warning(
+                "report_op_rejected",
+                extra={"event": "report_op_rejected", "report_type": op.report_type, "section_id": op.section_id},
+            )
+            continue
         row = reports.get(UserReportType(op.report_type))
         if row is not None:
             row.body = apply_report_op(row.body, op.model_dump())

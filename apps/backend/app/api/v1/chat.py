@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,12 +34,15 @@ from app.schemas.chat import (
     ChatSessionResponse,
     ChatTurnResponse,
 )
-from app.schemas.llm import LessonReply, OnboardingReply
-from app.services.gemini import ChatTurn, GeminiError
+from app.schemas.llm import LessonReply, MistakeEntry, OnboardingReply
+from app.services.gemini import ChatTurn, GeminiError, public_detail
 from app.services.llm_usage import check_and_record_user_limit, metered_structured_call
+from app.services.memory import CHAT_MISTAKES, rank_mistakes
 from app.services.prompt_assembly import (
     lesson_context_block,
     lesson_system_instruction,
+    log_context_tokens,
+    mistake_lines,
     onboarding_system_instruction,
 )
 from app.services.skills import should_include_vocab_formats
@@ -193,24 +197,43 @@ async def _save_learner_profile(db: AsyncSession, user: User, data: dict) -> Non
     draft.success_criteria = goal.get("success_criteria")
 
 
-async def _upsert_mistake(db: AsyncSession, user: User, lesson: Lesson, item: dict) -> None:
-    """Same user + pattern_type bumps the count and reschedules review; otherwise insert."""
-    pattern = str(item.get("pattern_type") or "")[:255]
-    if not pattern:
-        return
+async def _upsert_mistakes(db: AsyncSession, user: User, lesson: Lesson, items: list[MistakeEntry]) -> None:
+    """One row per (user, pattern_type): a repeat bumps the count and reschedules review.
+
+    Patterns are deduped within the reply (first entry wins) and written with
+    INSERT ... ON CONFLICT, so a repeated pattern can never create a second row.
+    """
     now = datetime.now(UTC)
-    mistake = (
-        await db.execute(select(Mistake).where(Mistake.user_id == user.id, Mistake.pattern_type == pattern))
-    ).scalar_one_or_none()
-    if mistake is None:
-        mistake = Mistake(user_id=user.id, pattern_type=pattern, occurrence_count=0)
-        db.add(mistake)
-    mistake.occurrence_count += 1
-    mistake.example_text = item.get("example_text") or mistake.example_text or ""
-    mistake.correction = item.get("correction") or mistake.correction
-    mistake.lesson_id = lesson.id
-    mistake.last_seen_at = now
-    mistake.next_review_at = now + timedelta(days=_REVIEW_DAYS.get(mistake.occurrence_count, 14))
+    unique: dict[str, MistakeEntry] = {}
+    for item in items:
+        unique.setdefault(item.pattern_type, item)  # already normalize_pattern()-ed by the schema
+    for pattern, item in unique.items():
+        stmt = insert(Mistake).values(
+            user_id=user.id,
+            pattern_type=pattern,
+            example_text=item.example_text,
+            correction=item.correction or None,
+            lesson_id=lesson.id,
+            occurrence_count=1,
+            last_seen_at=now,
+            next_review_at=now + timedelta(days=_REVIEW_DAYS[1]),
+        )
+        count = Mistake.occurrence_count + 1
+        await db.execute(
+            stmt.on_conflict_do_update(
+                constraint="uq_mistakes_user_id_pattern_type",
+                set_={
+                    "occurrence_count": count,
+                    "example_text": func.coalesce(func.nullif(stmt.excluded.example_text, ""), Mistake.example_text),
+                    "correction": func.coalesce(stmt.excluded.correction, Mistake.correction),
+                    "lesson_id": stmt.excluded.lesson_id,
+                    "last_seen_at": stmt.excluded.last_seen_at,
+                    "next_review_at": stmt.excluded.last_seen_at
+                    + func.make_interval(0, 0, 0, case(_REVIEW_DAYS, value=count, else_=14)),
+                    "updated_at": func.now(),
+                },
+            )
+        )
 
 
 async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> None:
@@ -253,20 +276,21 @@ async def _build_prompt(
         return onboarding_system_instruction(native, target), history
 
     curriculum = (lesson.payload or {}).get("curriculum") or {}
-    due = (
-        (
-            await db.execute(
-                select(Mistake)
-                .where(Mistake.user_id == user.id, Mistake.next_review_at <= datetime.now(UTC))
-                .order_by(Mistake.next_review_at)
-                .limit(10)
-            )
-        )
-        .scalars()
-        .all()
+    now = datetime.now(UTC)
+    open_mistakes = (await db.execute(select(Mistake).where(Mistake.user_id == user.id))).scalars()
+    focus = f"{curriculum.get('grammar_focus') or ''} {curriculum.get('vocab_theme') or ''}"
+    mistakes = mistake_lines(rank_mistakes(list(open_mistakes), focus, now, k=CHAT_MISTAKES), now)
+    context = lesson_context_block(curriculum, profile, mistakes)
+    log_context_tokens(
+        "chat",
+        {
+            "curriculum": json.dumps(curriculum, ensure_ascii=False),
+            "mistakes": mistakes,
+            "history": "\n".join(turn.text for turn in history),
+        },
     )
     system = lesson_system_instruction(native, target, should_include_vocab_formats(curriculum))
-    return system, [ChatTurn(role="user", text=lesson_context_block(curriculum, profile, due)), *history]
+    return system, [ChatTurn(role="user", text=context), *history]
 
 
 async def _persist_turn(
@@ -297,11 +321,10 @@ async def _persist_turn(
             "task_update": None,
         }
 
-    if lesson is None or not isinstance(reply, LessonReply):
+    if lesson is None:
         raise RuntimeError("lesson reply requires a lesson")
 
-    for item in reply.mistakes:
-        await _upsert_mistake(db, user, lesson, item.model_dump())
+    await _upsert_mistakes(db, user, lesson, reply.mistakes)
     plan_updates = None if reply.plan_updates is None else reply.plan_updates.model_dump()
     if plan_updates is not None:
         await _apply_plan_updates(db, user, plan_updates)
@@ -373,7 +396,11 @@ async def post_chat_message(
             before_call=save_user_message,
         )
     except GeminiError as exc:
-        raise APIError(_GEMINI_STATUS.get(exc.code, 502), str(exc), exc.code) from exc
+        logger.warning(
+            "chat_llm_failed",
+            extra={"event": "chat_llm_failed", "code": exc.code, "error": str(exc)[:500], "user_id": str(user.id)},
+        )
+        raise APIError(_GEMINI_STATUS.get(exc.code, 502), public_detail(exc.code), exc.code) from exc
 
     try:
         metadata = await _persist_turn(db, user, lesson, reply)

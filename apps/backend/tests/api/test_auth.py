@@ -12,8 +12,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwk
 from jose import jwt as jose_jwt
+from pydantic import ValidationError
 
-from app.config import settings
+from app.config import Settings, settings
 from app.core import clerk_auth
 from app.main import app
 from tests.conftest import Auth
@@ -58,6 +59,18 @@ async def _sync(client: httpx.AsyncClient, token: str) -> httpx.Response:
     return await client.post("/api/v1/auth/sync", headers={"Authorization": f"Bearer {token}"})
 
 
+async def test_foreign_dev_issuer_rejected_in_production(
+    real_auth_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "clerk_jwt_issuer", "")
+
+    response = await _sync(real_auth_client, _token(FOREIGN_DEV_ISSUER))
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "INVALID_TOKEN"
+
+
 async def test_configured_issuer_accepted_in_production(
     real_auth_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -73,6 +86,15 @@ async def test_dev_issuer_pattern_still_accepted_locally(real_auth_client: httpx
     assert (await _sync(real_auth_client, _token(FOREIGN_DEV_ISSUER))).status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("azp", "status"),
+    [("http://localhost:3000", 200), ("https://evil.example", 401), (None, 200)],
+)
+async def test_azp_must_be_an_allowed_origin(real_auth_client: httpx.AsyncClient, azp: str | None, status: int) -> None:
+    claims = {"azp": azp} if azp else {}
+    assert (await _sync(real_auth_client, _token(FOREIGN_DEV_ISSUER, **claims))).status_code == status
+
+
 async def test_missing_bearer_token_is_401(real_auth_client: httpx.AsyncClient) -> None:
     response = await real_auth_client.post("/api/v1/auth/sync")
     assert response.status_code == 401
@@ -84,3 +106,10 @@ async def test_sync_is_idempotent(client: httpx.AsyncClient, auth: Auth) -> None
     second = await client.post("/api/v1/auth/sync")
     assert first.status_code == second.status_code == 200
     assert first.json()["user_id"] == second.json()["user_id"]
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_settings_require_issuer_outside_local(env: str) -> None:
+    with pytest.raises(ValidationError, match="CLERK_JWT_ISSUER"):
+        Settings(_env_file=None, app_env=env, clerk_jwt_issuer="")
+    assert Settings(_env_file=None, app_env=env, clerk_jwt_issuer=PROD_ISSUER).clerk_jwt_issuer == PROD_ISSUER

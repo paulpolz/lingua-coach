@@ -7,7 +7,7 @@
           "type": "string"
         },
         "op": {
-          "description": "append_entry adds a dated log line; patch_section replaces the section.",
+          "description": "append_entry adds a dated log entry; patch_section replaces the section. Log sections (update_log, daily_log) accept append_entry only.",
           "enum": [
             "append_entry",
             "patch_section"

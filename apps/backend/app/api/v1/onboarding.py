@@ -58,15 +58,15 @@ async def accept_onboarding(
         )
 
     now = datetime.now(UTC)
-    roadmap = body.course_roadmap
-    plan_days = int((roadmap.get("summary") or {}).get("target_plan_days") or 0)
+    roadmap = body.course_roadmap.model_dump()
+    plan_days = body.course_roadmap.summary.target_plan_days
 
     plan = LearningPlan(
         user_id=user.id,
         learning_goal_id=goal.id,
         status=LearningPlanStatus.accepted,
         roadmap=roadmap,
-        current_milestone_index=int(roadmap.get("current_milestone_index") or 0),
+        current_milestone_index=body.course_roadmap.current_milestone_index or 0,
         accepted_at=now,
     )
     db.add(plan)

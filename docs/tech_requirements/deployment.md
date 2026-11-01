@@ -1,6 +1,6 @@
 # Deployment
 
-The repository runs as one Docker Compose stack defined in [`docker-compose.yml`](../../../../docker-compose.yml).
+The repository runs as one Docker Compose stack defined in [`docker-compose.yml`](../../docker-compose.yml).
 
 ## Services
 
@@ -65,17 +65,17 @@ cd apps/frontend && npm install && npm run dev
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `APP_ENV` | `local` | Environment label |
+| `APP_ENV` | `local` | Exactly `local`, `staging` or `production` (anything else fails at startup). Outside `local`, `CLERK_JWT_ISSUER` is required and the app refuses to start without it |
 | `LOG_LEVEL` | `INFO` | JSON log level |
 | `METRICS_ENABLED` | `true` | Expose `/metrics` |
 | `DATABASE_URL` | local Postgres | `postgresql+asyncpg://…`; Compose overrides it with the `postgres` host |
 | `CLERK_SECRET_KEY` | empty | Clerk backend key |
-| `CLERK_JWT_ISSUER` | empty | Exact issuer; empty accepts `https://*.clerk.accounts.dev` |
+| `CLERK_JWT_ISSUER` | empty | Exact issuer. Required unless `APP_ENV=local`; locally, empty accepts `https://*.clerk.accounts.dev` |
 | `GEMINI_API_KEY` | empty | Required for any coach reply |
 | `GEMINI_MODEL_CHAT` | `gemini-3.5-flash-lite` | Chat model |
 | `GEMINI_MODEL_LESSON` | `gemini-3.5-flash-lite` | Lesson and report JSON model |
-| `GEMINI_TIMEOUT_SECONDS` | `120` | Per-call timeout |
-| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins |
+| `GEMINI_TIMEOUT_SECONDS` | `120` | Per-call timeout; twice this marks a stuck generation as failed |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins; also the allowed values of a token's `azp` claim |
 | `CHAT_RATE_LIMIT_PER_HOUR` | `60` | Per-user chat messages |
 | `LESSON_START_RATE_LIMIT_PER_DAY` | `2` | Per-user lesson starts |
 | `LLM_RPM_LIMIT` | `15` | Global Gemini requests per minute |
@@ -102,7 +102,7 @@ The backend container runs `uv run alembic upgrade head` before serving. Outside
 
 ## CI
 
-[`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`:
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`:
 
 | Job | Steps |
 |-----|-------|

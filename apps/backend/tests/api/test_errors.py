@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import JobStatus
 from app.models.job import Job
-from app.schemas.llm import LessonReply, MistakeEntry
+from app.schemas.llm import LessonReply
 from app.services.gemini import GeminiError
 from tests.conftest import Auth
 from tests.factories import make_chat_session, make_lesson, make_profile, make_user, roadmap_dict
@@ -30,7 +30,7 @@ RAW_SECRET = "upstream said: key=AIza-secret-123 project=internal"
         (SchemaMismatch(), 502, "LLM_SCHEMA_ERROR"),
     ],
 )
-async def test_llm_failures_map_to_http_status_and_code(
+async def test_llm_failures_map_to_http_without_leaking_raw_text(
     client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, failure: object, status: int, code: str
 ) -> None:
     user = await make_user(db, onboarding_complete=False)
@@ -42,6 +42,8 @@ async def test_llm_failures_map_to_http_status_and_code(
     assert response.status_code == status
     body = response.json()
     assert body["code"] == code
+    assert "secret" not in response.text
+    assert "upstream" not in body["detail"]
     assert "X-Request-ID" in response.headers
 
 
@@ -103,16 +105,14 @@ async def test_persist_failure_is_500_persist_failed(
 ) -> None:
     user = await make_user(db)
     await make_profile(db, user)
-    lesson = await make_lesson(db, user, payload={"curriculum": {}})
+    lesson = await make_lesson(db, user, payload={"curriculum": {}, "target_minutes": 15})
     session = await make_chat_session(db, user, lesson)
-    fake_llm.push(
-        LessonReply(content="ok", mistakes=[MistakeEntry(pattern_type="x", example_text="y", correction="z")])
-    )
+    fake_llm.push(LessonReply(content="ok"))
 
     async def broken(*_args: object, **_kwargs: object) -> None:
         raise SQLAlchemyError("disk full")
 
-    monkeypatch.setattr("app.api.v1.chat._upsert_mistake", broken)
+    monkeypatch.setattr("app.api.v1.chat._upsert_mistakes", broken)
     response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "hi"})
 
     assert response.status_code == 500

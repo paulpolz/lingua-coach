@@ -32,12 +32,12 @@ apps/frontend/        Next.js app: sign-in, onboarding, dashboard, lesson chat, 
 apps/backend/         FastAPI API, Postgres models, Alembic, Gemini integration
 apps/backend/skills/  Coach pedagogy as markdown, loaded at runtime
 infra/monitoring/     Prometheus, Loki, Promtail, Grafana provisioning
-docs/mvp/init/        Business and technical requirements
+docs/                 Business and technical requirements
 docker-compose.yml    Local stack
 ```
 
 ## Docs
 
-- [Business requirements](./docs/mvp/init/business_requirements/cjm.md): the learner journey, plan days, pacing, and reports.
-- [Technical requirements](./docs/mvp/init/tech_requirements/README.md): backend, frontend, AI, database, deployment, and hosting.
+- [Business requirements](./docs/business_requirements/cjm.md): the learner journey, plan days, pacing, and reports.
+- [Technical requirements](./docs/tech_requirements/README.md): backend, frontend, AI, database, deployment, and hosting.
 - [Skills](./apps/backend/skills/README.md): what each coach skill does.

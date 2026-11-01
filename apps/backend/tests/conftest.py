@@ -50,7 +50,10 @@ from tests.fake_llm import FakeLLM, install_fake_llm  # noqa: E402
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 # Modules that open their own session with `AsyncSessionLocal()` (background jobs).
-BACKGROUND_SESSION_TARGETS = ("app.services.lesson_generation.AsyncSessionLocal",)
+BACKGROUND_SESSION_TARGETS = (
+    "app.services.lesson_generation.AsyncSessionLocal",
+    "app.services.report_writer.AsyncSessionLocal",
+)
 
 
 def _sync_url(url: str) -> str:

@@ -1,6 +1,6 @@
 # Database
 
-PostgreSQL 16 is the system of record. Models are SQLAlchemy 2 (async, `asyncpg`) in [`apps/backend/app/models/`](../../../../apps/backend/app/models); migrations are Alembic in [`apps/backend/alembic/versions/`](../../../../apps/backend/alembic/versions). Clerk owns sign-in sessions; the database stores only `clerk_user_id`.
+PostgreSQL 16 is the system of record. Models are SQLAlchemy 2 (async, `asyncpg`) in [`apps/backend/app/models/`](../../apps/backend/app/models); migrations are Alembic in [`apps/backend/alembic/versions/`](../../apps/backend/alembic/versions). Clerk owns sign-in sessions; the database stores only `clerk_user_id`.
 
 The database stores what the coach learned about the learner as structured data. Chat transcripts are kept only while a conversation is open.
 
@@ -75,7 +75,7 @@ Written from the onboarding reply's `learner_profile`, then by plan accept, less
 |--------|------|-------|
 | `learning_goal_id` | FK | |
 | `status` | `accepted` \| `superseded` | |
-| `roadmap` | JSONB | The `course_roadmap` object as the client sent it |
+| `roadmap` | JSONB | The accepted `course_roadmap`, validated as `CourseRoadmap` and stored as `model_dump()` |
 | `current_milestone_index` | int | From `roadmap.current_milestone_index` |
 | `accepted_at`, `superseded_at` | timestamptz | |
 
@@ -111,7 +111,7 @@ Roadmap shape (written by the `course_composer` skill). A chat draft is `model_d
 | `accomplished_at` | timestamptz | Set on finish |
 | `pace_status` | `on_pace` \| `slipped` | Set on finish |
 
-Partial index `ix_lessons_user_id_active` on `user_id` where status is `generating` or `active`. The app allows at most one such row per user.
+Unique partial index `uq_lessons_user_id_active` on `user_id` where status is `generating` or `active`: at most one in-flight lesson per user, enforced by the database (a concurrent start gets `409`).
 
 ```json
 {
@@ -148,7 +148,7 @@ Partial index `ix_lessons_user_id_active` on `user_id` where status is `generati
 | Column | Type | Notes |
 |--------|------|-------|
 | `lesson_id` | FK, nullable | Lesson where it was last seen |
-| `pattern_type` | varchar(255) | Short stable label; one row per user and label |
+| `pattern_type` | varchar(255) | Short stable label in canonical form (whitespace collapsed, case-folded); unique per user (`uq_mistakes_user_id_pattern_type`) |
 | `example_text` | text | Latest example |
 | `correction` | text, nullable | |
 | `occurrence_count` | int | +1 per log |
@@ -184,7 +184,7 @@ Indexed on `(user_id, created_at)`. Lesson chat reads up to 10 rows with `next_r
 | `progress` | First finish, blank template | `latest_session`, `progress_table`, `update_log` |
 | `errors_log` | First finish, blank template | `pattern_tracker`, `daily_log`, `confusion_list` |
 
-Sections are delimited by `<!-- section:ID -->` and `<!-- /section:ID -->`; the report writer patches inside them.
+Sections are delimited by `<!-- section:ID -->` and `<!-- /section:ID -->`; the report writer patches inside them. `update_log` and `daily_log` are append-only logs: the model sees only their last 5 entries and may not `patch_section` them. The progress table rows are Grammar, Vocabulary, Reading, Writing, Goal-specific (no Listening or Speaking).
 
 ### `llm_usage_events`
 

@@ -86,7 +86,8 @@
           "type": "string"
         },
         "pattern_type": {
-          "description": "Short stable label for a recurring error.",
+          "description": "Short stable label for a recurring error, e.g. 'missing articles'.",
+          "minLength": 1,
           "title": "Pattern Type",
           "type": "string"
         }

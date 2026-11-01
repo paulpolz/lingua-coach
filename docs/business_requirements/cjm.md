@@ -1,6 +1,6 @@
 # Customer journey
 
-Lingua Coach is a text-chat language coach. A learner signs in, talks through an onboarding interview, accepts a course roadmap, and then works through it one lesson at a time in chat. Every learner-facing behavior of the coach comes from the skill files in [`apps/backend/skills/`](../../../../apps/backend/skills/README.md).
+Lingua Coach is a text-chat language coach. A learner signs in, talks through an onboarding interview, accepts a course roadmap, and then works through it one lesson at a time in chat. Every learner-facing behavior of the coach comes from the skill files in [`apps/backend/skills/`](../../apps/backend/skills/README.md).
 
 ## Who the learner is
 
@@ -99,7 +99,7 @@ The lesson chat runs the `exercise_tutor` skill. On week-end vocabulary review l
 
 1. The lesson gets a **session summary**: duration, completed and deferred slots, whether the exit criteria were met, the grammar focus, the new mistake patterns, and the learner's note. Unfinished slots count as not done.
 2. Pace is evaluated against the 24-hour window, and the plan slips by one day if needed.
-3. The Progress and Error Log reports are updated by the `report_writer` skill.
+3. The Progress and Error Log reports are updated by the `report_writer` skill in the background, after the learner is back on the dashboard.
 4. The lesson transcript is deleted. The summary, mistakes, and reports are what later lessons read.
 5. The learner returns to the dashboard and can start the next lesson.
 

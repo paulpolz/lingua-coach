@@ -6,9 +6,8 @@ Per-user chat (rolling hour) counts `call_type='chat'` rows written by
 and RPD count Gemini calls only (`chat`, `lesson_json`, `report`), including
 `reserved` and `error` rows. Windows are 60s / 3600s / 86400s.
 
-Rows are committed on a side session so a caller's open transaction (lesson
-finish, in particular) is not committed early, and in-flight reservations are
-visible to the next request.
+Rows are committed on a side session so a caller's open transaction is not
+committed early, and in-flight reservations are visible to the next request.
 """
 
 from __future__ import annotations

@@ -4,11 +4,12 @@ Clerk owns sessions; nothing is stored in Postgres.
 
 Flow:
 1. Read the `iss` claim from the *unverified* token.
-2. Confirm `iss` against an allow-list/pattern (either an exact
-   `CLERK_JWT_ISSUER` override, or the default Clerk Development pattern
-   `https://*.clerk.accounts.dev`) — never fetch JWKS from an arbitrary host.
+2. Confirm `iss` against the exact `CLERK_JWT_ISSUER`. Only when `APP_ENV=local`
+   and the issuer is unset, accept the Clerk Development pattern
+   `https://*.clerk.accounts.dev`. Never fetch JWKS from an arbitrary host.
 3. Fetch (and cache) `{iss}/.well-known/jwks.json`.
 4. Verify the token signature + standard claims against the matching JWK.
+5. If the token names an authorized party (`azp`), it must be one of `CORS_ORIGINS`.
 """
 
 import re
@@ -30,7 +31,8 @@ _jwks_cache: dict[str, tuple[float, dict]] = {}
 def _is_allowed_issuer(issuer: str) -> bool:
     if settings.clerk_jwt_issuer:
         return issuer == settings.clerk_jwt_issuer
-    return bool(_DEV_ISSUER_PATTERN.match(issuer))
+    # Settings refuse to start without an issuer outside local; this is defense in depth.
+    return settings.app_env == "local" and bool(_DEV_ISSUER_PATTERN.match(issuer))
 
 
 async def _fetch_jwks(issuer: str) -> dict:
@@ -94,4 +96,7 @@ async def verify_clerk_jwt(token: str) -> dict:
     except httpx.HTTPError as exc:
         raise APIError(401, f"Unable to verify token: {exc}", "INVALID_TOKEN") from exc
 
+    azp = claims.get("azp")
+    if azp is not None and azp not in settings.cors_origin_list:
+        raise APIError(401, "Token issued for an untrusted origin", "INVALID_TOKEN")
     return claims

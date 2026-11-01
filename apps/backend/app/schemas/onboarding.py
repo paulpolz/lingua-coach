@@ -4,10 +4,14 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.llm import CourseRoadmap
+
 
 class OnboardingAcceptRequest(BaseModel):
     session_id: str
-    course_roadmap: dict
+    # Validated against the same schema the LLM fills: the client echoes a draft back, and
+    # the stored roadmap feeds later prompts, so unknown keys are dropped here.
+    course_roadmap: CourseRoadmap
 
 
 class OnboardingAcceptResponse(BaseModel):

@@ -1,6 +1,6 @@
 # Frontend
 
-Next.js 16 App Router app in [`apps/frontend`](../../../../apps/frontend), with React 19, Tailwind CSS 4, and Clerk. It renders the screens and calls the FastAPI backend; all business rules live in the backend.
+Next.js 16 App Router app in [`apps/frontend`](../../apps/frontend), with React 19, Tailwind CSS 4, and Clerk. It renders the screens and calls the FastAPI backend; all business rules live in the backend.
 
 ## Layout
 
@@ -58,7 +58,7 @@ Report slugs: `progress`, `errors`, `roadmap`, `four-week-plan`. The account men
 
 ## Onboarding screen
 
-[`OnboardingChat`](../../../../apps/frontend/app/onboarding/OnboardingChat.tsx) receives the session id and transcript from the server page.
+[`OnboardingChat`](../../apps/frontend/app/onboarding/OnboardingChat.tsx) receives the session id and transcript from the server page.
 
 - A turn is one JSON post through `sendChatMessage`. The learner bubble appears immediately. An empty coach bubble shows typing dots until the body arrives, then that bubble is replaced with one stored message. Corrections, tips, and the plan card arrive with it.
 - When the response carries `course_roadmap_draft`, the coach prose bubble stays hidden and the latest draft is shown in `PlanSummaryCard` (left panel on desktop, above the chat on narrow screens). Earlier drafts are marked superseded. The card tolerates missing fields because the backend stores the model's roadmap as sent. Dots show until the body arrives, then the card. The card is marked regenerating only while the hidden "I'd like to change my plan." send is in flight. Any other send after a plan only sets the busy state.
@@ -68,7 +68,7 @@ Report slugs: `progress`, `errors`, `roadmap`, `four-week-plan`. The account men
 
 ## Dashboard
 
-[`DashboardClient`](../../../../apps/frontend/app/dashboard/DashboardClient.tsx) is a small state machine:
+[`DashboardClient`](../../apps/frontend/app/dashboard/DashboardClient.tsx) is a small state machine:
 
 ```mermaid
 stateDiagram-v2
@@ -94,7 +94,7 @@ stateDiagram-v2
 
 ## Lesson chat
 
-[`LessonChat`](../../../../apps/frontend/app/lesson/[lessonId]/LessonChat.tsx) gets the lesson from the server page.
+[`LessonChat`](../../apps/frontend/app/lesson/[lessonId]/LessonChat.tsx) gets the lesson from the server page.
 
 - It creates or resumes the lesson chat session (the id is cached in `sessionStorage` per lesson) and loads the transcript.
 - A turn is one JSON post through `sendChatMessage`. Typing dots show in an empty coach bubble, then one stored message. Corrections, tips, and checklist updates arrive with that message. A failed send removes the pending bubble and shows the retry line.
@@ -111,4 +111,4 @@ stateDiagram-v2
 
 ## Reports
 
-[`ReportBody`](../../../../apps/frontend/app/reports/ReportBody.tsx) loads one report and splits it on `<!-- section:ID -->` markers with the ids in `REPORT_SECTION_IDS`. Each section renders as a card; markdown tables render with `ReportTable`. Missing sections and a missing report show "Fills in after your first lesson". Markers are stripped before display.
+[`ReportBody`](../../apps/frontend/app/reports/ReportBody.tsx) loads one report and splits it on `<!-- section:ID -->` markers with the ids in `REPORT_SECTION_IDS`. Each section renders as a card; markdown tables render with `ReportTable`. Missing sections and a missing report show "Fills in after your first lesson". Markers are stripped before display.

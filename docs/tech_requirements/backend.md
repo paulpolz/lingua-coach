@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service in [`apps/backend`](../../../../apps/backend). It authenticates Clerk users, stores learner data in Postgres, runs the coach chat as one JSON response per turn, generates lessons in a background task, and exposes Prometheus metrics.
+FastAPI service in [`apps/backend`](../../apps/backend). It authenticates Clerk users, stores learner data in Postgres, runs the coach chat as one JSON response per turn, generates lessons in a background task, and exposes Prometheus metrics.
 
 ## Layout
 
@@ -43,7 +43,7 @@ All routes are under `/api/v1` and, except `health`, require `Authorization: Bea
 | POST | `/chat/sessions` | synced user | Get or create the onboarding session, or the session for a lesson (`{type, lesson_id?}`) |
 | GET | `/chat/sessions/{id}/messages` | owner | Transcript with per-message metadata |
 | POST | `/chat/sessions/{id}/messages` | owner | Send a message; `200` `ChatTurnResponse` |
-| POST | `/onboarding/accept` | synced user | Accept a roadmap (`{session_id, course_roadmap}`) |
+| POST | `/onboarding/accept` | synced user | Accept a roadmap (`{session_id, course_roadmap}`, roadmap validated as `CourseRoadmap`) |
 | GET | `/profile` | synced user | Profile summary plus schedule and pace |
 | GET | `/progress` | onboarded | Plan days done, target, slip, projection, pace summary, active lesson |
 | GET | `/reports/{report_type}` | onboarded | One markdown report (`progress`, `errors_log`, `roadmap`, `four_week_plan`) |
@@ -74,7 +74,7 @@ sequenceDiagram
   A-->>F: {user_id, onboarding_complete}
 ```
 
-[`core/clerk_auth.py`](../../../../apps/backend/app/core/clerk_auth.py) verifies the token against the issuer's JWKS. With `CLERK_JWT_ISSUER` set, the issuer must match exactly; without it, any `https://*.clerk.accounts.dev` issuer is accepted.
+[`core/clerk_auth.py`](../../apps/backend/app/core/clerk_auth.py) verifies the token against the issuer's JWKS. The issuer must equal `CLERK_JWT_ISSUER`. That setting is **required whenever `APP_ENV` is not `local`**: the app refuses to start without it, because otherwise a token minted by anyone's Clerk development instance would be trusted. Only with `APP_ENV=local` and no issuer configured is any `https://*.clerk.accounts.dev` issuer accepted. If the token carries an `azp` (authorized party) claim, it must be one of `CORS_ORIGINS`; otherwise `401 INVALID_TOKEN`.
 
 ## Chat turn
 
@@ -123,7 +123,7 @@ The user row is committed before Gemini. Gemini failures use the `{detail, code}
 
 `POST /onboarding/accept` requires the onboarding session and a draft goal. In one transaction it:
 
-1. inserts an `accepted` `learning_plans` row with the roadmap as sent;
+1. inserts an `accepted` `learning_plans` row with the validated roadmap's `model_dump()`;
 2. points `profiles.active_learning_plan_id` at it, sets `target_plan_days` from `roadmap.summary.target_plan_days`, and sets `projected_completion_at = now + target × pace window`;
 3. activates the goal and sets `users.onboarding_complete` and `plan_accepted_at`;
 4. seeds the Roadmap and 4-Week Plan reports from the roadmap;
@@ -158,9 +158,10 @@ flowchart TD
   on --> sum[session_summary]
   slip --> sum
   sum --> ev[lesson_completed event]
-  ev --> rep[report_writer: one structured Gemini call, never raises]
-  rep --> del[delete lesson chat messages + session]
+  ev --> del[delete lesson chat messages + session]
   del --> commit[commit]
+  commit --> resp[200 response]
+  resp --> bg[background task, own session: report_writer, one LLM call, never raises]
 ```
 
 Completed slots come from `completed_slot_ids` when the client sends them; otherwise all slots count as done if any assistant turn set `suggest_finish`; otherwise none. The response is `{accomplished_at, pace_status, schedule_updated}`.
@@ -195,7 +196,7 @@ Each Gemini call is reserved before it runs (input tokens estimated at 4 charact
 
 ## Metrics
 
-`prometheus-fastapi-instrumentator` provides HTTP request counts and latency. [`core/metrics.py`](../../../../apps/backend/app/core/metrics.py) adds:
+`prometheus-fastapi-instrumentator` provides HTTP request counts and latency. [`core/metrics.py`](../../apps/backend/app/core/metrics.py) adds:
 
 | Metric | Labels |
 |--------|--------|

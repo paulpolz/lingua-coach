@@ -4,32 +4,39 @@ from __future__ import annotations
 
 from app.services.report_ops import wrap_section
 
+_EMPTY = "—"
+
+
+def _v(value: object) -> object:
+    """A stored roadmap is `model_dump()`, so optional fields are present as None."""
+    return _EMPTY if value is None or value == "" else value
+
 
 def seed_roadmap_markdown(roadmap: dict) -> str:
     summary = roadmap.get("summary") or {}
     milestones = (
         "\n\n".join(
-            f"### {m.get('index', i) + 1}. {m.get('title', '')}\n\n"
-            f"- **Skill:** {m.get('skill_developed', '')}\n"
-            f"- **Why now:** {m.get('why_now', '')}\n"
-            f"- **Success criteria:** {m.get('success_criteria', '')}\n"
-            f"- **Estimated plan days:** {m.get('estimated_plan_days', '')}"
+            f"### {(m.get('index') if m.get('index') is not None else i) + 1}. {_v(m.get('title'))}\n\n"
+            f"- **Skill:** {_v(m.get('skill_developed'))}\n"
+            f"- **Why now:** {_v(m.get('why_now'))}\n"
+            f"- **Success criteria:** {_v(m.get('success_criteria'))}\n"
+            f"- **Estimated plan days:** {_v(m.get('estimated_plan_days'))}"
             for i, m in enumerate(roadmap.get("milestones") or [])
         )
         or "_Milestones will appear here._"
     )
-    principles = "\n".join(f"- {p}" for p in roadmap.get("learning_principles") or []) or "_None yet._"
+    principles = "\n".join(f"- {p}" for p in roadmap.get("learning_principles") or []) or "_No principles yet._"
     adaptations = (
         "\n".join(f"- **{k}:** {v}" for k, v in (roadmap.get("adaptation_rules") or {}).items())
         or "_No scope adjustments yet._"
     )
     overview = "\n\n".join(
         [
-            f"**Goal:** {summary.get('goal_outcome', '')}",
-            f"**Horizon:** {summary.get('goal_horizon', '')}",
-            f"**Starting level:** {summary.get('starting_level', '')}",
-            f"**Learning language:** {summary.get('target_language', '')}",
-            f"**Pace:** {summary.get('pace_description', '')} ({summary.get('target_plan_days', '?')} plan days)",
+            f"**Goal:** {_v(summary.get('goal_outcome'))}",
+            f"**Horizon:** {_v(summary.get('goal_horizon'))}",
+            f"**Starting level:** {_v(summary.get('starting_level'))}",
+            f"**Learning language:** {_v(summary.get('target_language'))}",
+            f"**Pace:** {_v(summary.get('pace_description'))} ({_v(summary.get('target_plan_days'))} plan days)",
         ]
     )
     return "\n\n".join(
@@ -50,24 +57,24 @@ def seed_four_week_plan_markdown(roadmap: dict) -> str:
     block = roadmap.get("current_block") or {}
     weekly = roadmap.get("weekly_template") or {}
     intro = (
-        f"**Current block:** {block.get('focus_summary', '')}\n\n"
-        f"**Milestone index:** {block.get('milestone_index', 0)} · **Weeks:** {block.get('weeks', '')}"
+        f"**Current block:** {_v(block.get('focus_summary'))}\n\n"
+        f"**Milestone index:** {block.get('milestone_index', 0)} · **Weeks:** {_v(block.get('weeks'))}"
     )
     days = (
         "\n\n".join(
-            f"### Day {t.get('block_day', '')}\n\n"
+            f"### Day {_v(t.get('block_day'))}\n\n"
             "| Focus | Detail |\n| --- | --- |\n"
-            f"| Grammar | {t.get('grammar_focus', '')} |\n"
-            f"| Vocabulary | {t.get('vocab_theme', '')} |\n"
-            f"| Reading | {t.get('input_type', 'reading')} |\n"
-            f"| Writing | {t.get('production_focus', '')} |\n"
-            f"| Goal-specific | {t.get('goal_specific_focus', '')} |"
+            f"| Grammar | {_v(t.get('grammar_focus'))} |\n"
+            f"| Vocabulary | {_v(t.get('vocab_theme'))} |\n"
+            f"| Reading | {_v(t.get('input_type') or 'reading')} |\n"
+            f"| Writing | {_v(t.get('production_focus'))} |\n"
+            f"| Goal-specific | {_v(t.get('goal_specific_focus'))} |"
             for t in block.get("themes") or []
         )
         or "_Day-by-day themes will appear here._"
     )
     activities = (
-        "\n".join(f"- {a.get('label', '')}: {a.get('minutes', '')} min" for a in weekly.get("activities") or [])
+        "\n".join(f"- {_v(a.get('label'))}: {_v(a.get('minutes'))} min" for a in weekly.get("activities") or [])
         or "_No weekly template yet._"
     )
     return "\n\n".join(
@@ -77,7 +84,7 @@ def seed_four_week_plan_markdown(roadmap: dict) -> str:
             "## Day-by-day breakdown",
             wrap_section("day_by_day", days),
             "## Weekly template",
-            wrap_section("weekly_template", f"{weekly.get('minutes_per_session', '?')} min sessions\n\n{activities}"),
+            wrap_section("weekly_template", f"{_v(weekly.get('minutes_per_session'))} min sessions\n\n{activities}"),
         ]
     )
 

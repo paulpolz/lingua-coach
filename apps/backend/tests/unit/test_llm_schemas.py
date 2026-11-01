@@ -1,11 +1,21 @@
-"""LLM schema behavior: stripping holds, unknown keys are ignored."""
+"""LLM schema behavior: normalization and stripping hold, unknown keys are ignored."""
 
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm import LessonReply
+from app.schemas.llm import LessonReply, MistakeEntry
+
+
+def test_mistake_pattern_labels_are_normalized() -> None:
+    entry = MistakeEntry(pattern_type="  Missing   Articles ", example_text="x", correction="y")
+    assert entry.pattern_type == "missing articles"
+
+
+def test_blank_pattern_labels_are_rejected() -> None:
+    with pytest.raises(ValidationError):
+        MistakeEntry(pattern_type="   ", example_text="x", correction="y")
 
 
 def test_reply_content_is_stripped_and_unknown_keys_ignored() -> None:
