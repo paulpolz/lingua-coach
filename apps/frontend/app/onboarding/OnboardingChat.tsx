@@ -7,95 +7,58 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { waitForToken } from "@/lib/wait-for-token";
 import {
   acceptOnboarding,
-  sendChatMessage,
   type ChatMessage,
   type CourseRoadmap,
+  type DisplayMessage,
 } from "@/lib/chat";
+import { isTimeBudgetRequired } from "@/lib/lessons";
+import { useChatTurn } from "@/lib/use-chat-turn";
 import ChatComposer from "@/components/ChatComposer";
-import ChatMessageBubble, { type DisplayMessage } from "@/components/ChatMessageBubble";
+import ChatMessageBubble from "@/components/ChatMessageBubble";
 import Button from "@/components/ui/Button";
 import PlanSummaryCard from "./PlanSummaryCard";
 
 const START_TRIGGER = "Hello";
 const CHANGE_PLAN_TRIGGER = "I'd like to change my plan.";
 
-type PlanStatus = "active" | "superseded";
-
 interface OnboardingChatProps {
   initialSessionId: string;
   initialMessages: ChatMessage[];
 }
 
-type ChatTimelineItem =
-  | ({ kind: "message" } & DisplayMessage)
-  | {
-      kind: "plan";
-      id: string;
-      sourceMessageId: string;
-      roadmap: CourseRoadmap;
-      status: PlanStatus;
-    };
+interface ActivePlan {
+  sourceMessageId: string;
+  roadmap: CourseRoadmap;
+}
 
 const THREAD_CLASS = "mx-auto flex w-full max-w-[560px] flex-col gap-4";
 
-function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[] {
-  const items: ChatTimelineItem[] = [];
-  let lastActivePlanId: string | null = null;
+function isTrigger(content: string, trigger: string): boolean {
+  return content.trim().toLowerCase() === trigger.toLowerCase();
+}
 
-  for (let index = 0; index < messages.length; index++) {
-    const message = messages[index];
-    // Hide silent Start / Change-plan triggers so reload doesn't show a fake user bubble.
-    const isSilentStart =
-      index === 0 &&
+/** Hide the silent Start / Change-plan triggers so a reload doesn't show a fake user bubble. */
+function toDisplayMessages(messages: ChatMessage[]): DisplayMessage[] {
+  return messages.map((message, index) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    metadata: message.metadata ?? null,
+    hidden:
       message.role === "user" &&
-      message.content.trim().toLowerCase() === START_TRIGGER.toLowerCase();
-    const isSilentChange =
-      message.role === "user" &&
-      message.content.trim().toLowerCase() === CHANGE_PLAN_TRIGGER.toLowerCase();
+      ((index === 0 && isTrigger(message.content, START_TRIGGER)) ||
+        isTrigger(message.content, CHANGE_PLAN_TRIGGER)),
+  }));
+}
 
-    items.push({
-      kind: "message",
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      metadata: message.metadata ?? null,
-      hidden: isSilentStart || isSilentChange,
-    });
-
-    const draft = message.metadata?.course_roadmap_draft;
-    if (message.role === "assistant" && draft) {
-      const planId = `plan-${message.id}`;
-      if (lastActivePlanId) {
-        const prior = items.find((item) => item.kind === "plan" && item.id === lastActivePlanId);
-        if (prior && prior.kind === "plan" && prior.status === "active") {
-          prior.status = "superseded";
-        }
-      }
-      items.push({
-        kind: "plan",
-        id: planId,
-        sourceMessageId: message.id,
-        roadmap: draft,
-        status: "active",
-      });
-      lastActivePlanId = planId;
-    }
+/** The latest `course_roadmap_draft` is the active plan; earlier drafts are superseded. */
+function findActivePlan(messages: DisplayMessage[]): ActivePlan | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    const draft = message.role === "assistant" ? message.metadata?.course_roadmap_draft : null;
+    if (draft) return { sourceMessageId: message.id, roadmap: draft };
   }
-
-  // Only the latest plan should be active.
-  let seenActive = false;
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
-    if (item.kind !== "plan") continue;
-    if (item.status === "superseded") continue;
-    if (!seenActive) {
-      seenActive = true;
-    } else {
-      item.status = "superseded";
-    }
-  }
-
-  return items;
+  return null;
 }
 
 export default function OnboardingChat({
@@ -106,16 +69,13 @@ export default function OnboardingChat({
   const router = useRouter();
 
   const sessionId = initialSessionId;
-  const [timeline, setTimeline] = useState<ChatTimelineItem[]>(() =>
-    buildTimelineFromTranscript(initialMessages)
+  const { messages, send, lastFailed, isSending, sendError } = useChatTurn(
+    sessionId,
+    toDisplayMessages(initialMessages)
   );
 
   const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
   const [isPlanRegenerating, setIsPlanRegenerating] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [lastFailedContent, setLastFailedContent] = useState<string | null>(null);
-  const [lastFailedSilent, setLastFailedSilent] = useState(false);
 
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
@@ -123,28 +83,20 @@ export default function OnboardingChat({
   const [justUpdated, setJustUpdated] = useState(false);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
-  const streamingMessageIdRef = useRef<string>("streaming-assistant");
   const prevPlanSourceIdRef = useRef<string | null>(null);
 
   const visibleMessageCount = useMemo(
-    () => timeline.filter((item) => item.kind === "message" && !item.hidden).length,
-    [timeline]
+    () => messages.filter((message) => !message.hidden).length,
+    [messages]
   );
 
-  const activePlan = useMemo(
-    () =>
-      timeline.find(
-        (item): item is Extract<ChatTimelineItem, { kind: "plan" }> =>
-          item.kind === "plan" && item.status === "active"
-      ) ?? null,
-    [timeline]
-  );
+  const activePlan = useMemo(() => findActivePlan(messages), [messages]);
 
   const showIntro = visibleMessageCount === 0 && !hasStarted && !isSending;
 
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [timeline]);
+  }, [messages]);
 
   useEffect(() => {
     const sourceId = activePlan?.sourceMessageId ?? null;
@@ -164,96 +116,17 @@ export default function OnboardingChat({
 
   const sendMessage = useCallback(
     async (content: string, options?: { silent?: boolean }) => {
-      if (!sessionId || isSending) return;
+      if (isSending) return;
       const silent = options?.silent === true;
-
-      setIsSending(true);
-      setIsPlanRegenerating(
-        silent && content.trim().toLowerCase() === CHANGE_PLAN_TRIGGER.toLowerCase()
-      );
-      setSendError(null);
-      setLastFailedContent(null);
-      setLastFailedSilent(false);
       setHasStarted(true);
-
-      const userMessage: DisplayMessage & { kind: "message" } = {
-        kind: "message",
-        id: `local-user-${Date.now()}`,
-        role: "user",
-        content,
-        hidden: silent,
-      };
-      const streamingId = streamingMessageIdRef.current;
-      setTimeline((prev) => [
-        ...prev,
-        userMessage,
-        {
-          kind: "message",
-          id: streamingId,
-          role: "assistant",
-          content: "",
-          isStreaming: true,
-        },
-      ]);
-
-      const failSend = (message: string) => {
-        setTimeline((prev) =>
-          prev.filter((item) => !(item.kind === "message" && item.id === streamingId))
-        );
-        setSendError(message || "Something went wrong, try again.");
-        setLastFailedContent(content);
-        setLastFailedSilent(silent);
-      };
-
+      setIsPlanRegenerating(silent && isTrigger(content, CHANGE_PLAN_TRIGGER));
       try {
-        const token = await waitForToken(getToken);
-        const data = await sendChatMessage(token, sessionId, content);
-        if (!data.content?.trim()) {
-          failSend("Something went wrong, try again.");
-          return;
-        }
-
-        setTimeline((prev) => {
-          const next = prev.map((item) => {
-            if (item.kind === "message" && item.id === streamingId) {
-              return {
-                kind: "message" as const,
-                id: data.message_id,
-                role: "assistant" as const,
-                content: data.content,
-                metadata: data.metadata,
-                isStreaming: false,
-              };
-            }
-            if (
-              item.kind === "plan" &&
-              item.status === "active" &&
-              data.metadata?.course_roadmap_draft
-            ) {
-              return { ...item, status: "superseded" as const };
-            }
-            return item;
-          });
-
-          if (data.metadata?.course_roadmap_draft) {
-            next.push({
-              kind: "plan",
-              id: `plan-${data.message_id}`,
-              sourceMessageId: data.message_id,
-              roadmap: data.metadata.course_roadmap_draft,
-              status: "active",
-            });
-          }
-          return next;
-        });
-      } catch (error) {
-        failSend(error instanceof Error ? error.message : "Something went wrong, try again.");
+        await send(content, { hidden: silent });
       } finally {
-        setIsSending(false);
         setIsPlanRegenerating(false);
       }
     },
-    [sessionId, isSending, getToken]
+    [isSending, send]
   );
 
   const submitInput = useCallback(() => {
@@ -263,10 +136,11 @@ export default function OnboardingChat({
     void sendMessage(content);
   }, [input, sendMessage]);
 
+  // Retry through `sendMessage` so a failed silent Change still shows the regenerating overlay.
   const handleRetrySend = useCallback(() => {
-    if (!lastFailedContent) return;
-    void sendMessage(lastFailedContent, { silent: lastFailedSilent });
-  }, [lastFailedContent, lastFailedSilent, sendMessage]);
+    if (!lastFailed) return;
+    void sendMessage(lastFailed.content, { silent: lastFailed.options.hidden });
+  }, [lastFailed, sendMessage]);
 
   const handleStart = useCallback(() => {
     void sendMessage(START_TRIGGER, { silent: true });
@@ -285,7 +159,13 @@ export default function OnboardingChat({
       }
       setAcceptError("The server didn't confirm the plan was accepted. Please try again.");
     } catch (error) {
-      setAcceptError(error instanceof Error ? error.message : "Failed to accept the plan.");
+      setAcceptError(
+        isTimeBudgetRequired(error)
+          ? "Tell the coach how many minutes each lesson should last, then accept the updated plan."
+          : error instanceof Error
+            ? error.message
+            : "Failed to accept the plan."
+      );
     } finally {
       setIsAccepting(false);
     }
@@ -314,19 +194,11 @@ export default function OnboardingChat({
         </div>
       ) : null}
 
-      {timeline.map((item) => {
-        if (item.kind !== "message") return null;
-
+      {messages.map((message) => {
         const hideForPlanDraft =
-          item.role === "assistant" && Boolean(item.metadata?.course_roadmap_draft);
+          message.role === "assistant" && Boolean(message.metadata?.course_roadmap_draft);
         if (hideForPlanDraft) return null;
-
-        return (
-          <ChatMessageBubble
-            key={item.id}
-            message={item}
-          />
-        );
+        return <ChatMessageBubble key={message.id} message={message} />;
       })}
 
       <div ref={scrollAnchorRef} />

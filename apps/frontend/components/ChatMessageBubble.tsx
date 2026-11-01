@@ -4,8 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 
-import type { ChatMessageMetadata } from "@/lib/chat";
-import { CHAT_EXTERNAL_LINK } from "@/lib/chat";
+import { CHAT_EXTERNAL_LINK, type DisplayMessage } from "@/lib/chat";
 
 const chatMarkdownComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -50,18 +49,6 @@ function StreamingDots() {
       <span className="h-1 w-1 animate-pulse rounded-full bg-tutor [animation-delay:240ms]" />
     </span>
   );
-}
-
-/** A message rendered in a chat transcript — either persisted or still waiting on the reply. */
-export interface DisplayMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  metadata?: ChatMessageMetadata | null;
-  /** Client-only: the coach reply is in flight. An empty bubble shows the typing dots. */
-  isStreaming?: boolean;
-  /** Hide this bubble (e.g. silent onboarding Start trigger). */
-  hidden?: boolean;
 }
 
 /**

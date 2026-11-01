@@ -70,7 +70,7 @@ export default function PaceSummary({
       ) : null}
       {pastPaceWindow ? (
         <p className="mt-1.5 text-xs text-warning">
-          Past your usual 24h pace window for the active lesson.
+          Past your pace window for the active lesson.
         </p>
       ) : null}
     </div>

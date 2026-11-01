@@ -78,8 +78,45 @@ export async function toApiError(response: Response, fallbackMessage: string): P
     // Response body wasn't JSON — keep the default message.
   }
 
-
   return new ApiError(response.status, detail, code, requestId);
+}
+
+/** `apiFetch` that throws `toApiError(response, fallbackMessage)` on a non-2xx status. */
+export async function apiRequest(
+  path: string,
+  token: string | null,
+  init: RequestInit = {},
+  fallbackMessage = "Request failed"
+): Promise<Response> {
+  const response = await apiFetch(path, token, init);
+  if (!response.ok) {
+    throw await toApiError(response, fallbackMessage);
+  }
+  return response;
+}
+
+/** `apiRequest` plus the parsed JSON body. Types mirror the backend by hand, so `T` is not validated. */
+export async function apiJson<T>(
+  path: string,
+  token: string | null,
+  init: RequestInit = {},
+  fallbackMessage = "Request failed"
+): Promise<T> {
+  const response = await apiRequest(path, token, init, fallbackMessage);
+  return (await response.json()) as T;
+}
+
+/**
+ * True when an id route (`/lessons/{id}`, `/chat/sessions/{id}`, `/jobs/{id}`)
+ * says the resource doesn't exist for this user. A well-formed id that is
+ * missing or foreign is `404`; a malformed id is rejected by FastAPI's path
+ * validation with `422` and no `code`. Both mean "not found" to the UI. A 422
+ * with a business code (e.g. `EMPTY_MESSAGE`) is a real validation error.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 404) return true;
+  return error.status === 422 && error.code === undefined;
 }
 
 export interface SyncUserResponse {
@@ -89,12 +126,6 @@ export interface SyncUserResponse {
 }
 
 /** `POST /api/v1/auth/sync` — idempotently ensures a Postgres user exists. */
-export async function syncUser(token: string | null): Promise<SyncUserResponse> {
-  const response = await apiFetch("/api/v1/auth/sync", token, { method: "POST" });
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to sync user");
-  }
-
-  return response.json();
+export function syncUser(token: string | null): Promise<SyncUserResponse> {
+  return apiJson("/api/v1/auth/sync", token, { method: "POST" }, "Failed to sync user");
 }

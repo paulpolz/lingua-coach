@@ -3,13 +3,35 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import Button from "@/components/ui/Button";
+import type { LessonTiming } from "@/lib/chat";
 import type { FinishLessonRequest } from "@/lib/lessons";
 
 export interface FinishLessonDialogProps {
   open: boolean;
+  /** Latest turn timing; `null` when unknown (e.g. finishing from the dashboard). */
+  timing?: LessonTiming | null;
   isSubmitting?: boolean;
   onCancel: () => void;
   onConfirm: (payload: FinishLessonRequest) => void;
+}
+
+/** Matches the backend: `finished_early` is `shortfall_minutes > 1`. */
+const EARLY_FINISH_SHORTFALL_MINUTES = 1;
+
+/**
+ * "You practiced about 8 of 15 min." plus what finishing means; an early finish
+ * still counts. `timing` is from the last turn, while the backend counts up to
+ * the click, so the numbers are approximate.
+ */
+function describeFinishTiming(timing: LessonTiming | null | undefined): string {
+  if (!timing) return "Marks it accomplished.";
+  const active = Math.max(0, Math.round(timing.active_minutes));
+  const target = Math.round(timing.target_minutes);
+  const practiced = `You practiced about ${active} of ${target} min.`;
+  const shortfall = target - active;
+  return shortfall > EARLY_FINISH_SHORTFALL_MINUTES
+    ? `${practiced} It still counts; we'll note the ~${shortfall} min you missed.`
+    : `${practiced} Marks it accomplished.`;
 }
 
 /**
@@ -18,21 +40,29 @@ export interface FinishLessonDialogProps {
  */
 export default function FinishLessonDialog({
   open,
+  timing = null,
   isSubmitting = false,
   onCancel,
   onConfirm,
 }: FinishLessonDialogProps) {
   if (!open) return null;
   return (
-    <FinishLessonDialogForm isSubmitting={isSubmitting} onCancel={onCancel} onConfirm={onConfirm} />
+    <FinishLessonDialogForm
+      body={describeFinishTiming(timing)}
+      isSubmitting={isSubmitting}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
 
 function FinishLessonDialogForm({
+  body,
   isSubmitting,
   onCancel,
   onConfirm,
 }: {
+  body: string;
   isSubmitting: boolean;
   onCancel: () => void;
   onConfirm: (payload: FinishLessonRequest) => void;
@@ -67,10 +97,7 @@ function FinishLessonDialogForm({
         <h2 id={titleId} className="text-[17px] font-[590] leading-6 tracking-[-0.02em] text-foreground">
           Finish this lesson?
         </h2>
-        <p className="mt-1.5 text-sm leading-[22px] text-muted">
-          Marks it accomplished. Any unfinished slots count as 0%.
-        </p>
-
+        <p className="mt-1.5 text-sm leading-[22px] text-muted">{body}</p>
 
         <label htmlFor={textareaId} className="mt-4 block text-[13px] font-[550] leading-[18px] text-foreground">
           Anything we should know?

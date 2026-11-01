@@ -3,7 +3,7 @@
  * metadata objects come from the model as-is, so fields may be missing.
  */
 
-import { apiFetch, toApiError } from "@/lib/api";
+import { ApiError, apiJson } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Chat sessions + messages
@@ -36,44 +36,51 @@ interface GetChatMessagesResponse {
 }
 
 /** `POST /api/v1/chat/sessions` — create (or, for lesson sessions, resume) a chat session. */
-export async function createChatSession(
+export function createChatSession(
   token: string | null,
   type: ChatSessionType,
   lessonId?: string
 ): Promise<ChatSession> {
-  const response = await apiFetch("/api/v1/chat/sessions", token, {
-    method: "POST",
-    body: JSON.stringify(lessonId ? { type, lesson_id: lessonId } : { type }),
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to create chat session");
-  }
-
-  return response.json();
+  return apiJson(
+    "/api/v1/chat/sessions",
+    token,
+    { method: "POST", body: JSON.stringify(lessonId ? { type, lesson_id: lessonId } : { type }) },
+    "Failed to create chat session"
+  );
 }
 
 /** `GET /api/v1/chat/sessions/{id}/messages` — source of truth for the chat UI; always re-fetched on open. */
 export async function getChatMessages(token: string | null, sessionId: string): Promise<ChatMessage[]> {
-  const response = await apiFetch(`/api/v1/chat/sessions/${sessionId}/messages`, token);
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to load chat messages");
-  }
-
-  const body: GetChatMessagesResponse = await response.json();
+  const body = await apiJson<GetChatMessagesResponse>(
+    `/api/v1/chat/sessions/${sessionId}/messages`,
+    token,
+    {},
+    "Failed to load chat messages"
+  );
   return body.messages;
+}
+
+/** A message rendered in a chat transcript — either persisted or still waiting on the reply. */
+export interface DisplayMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata?: ChatMessageMetadata | null;
+  /** Client-only: the coach reply is in flight. An empty bubble shows the typing dots. */
+  isStreaming?: boolean;
+  /** Hide this bubble (e.g. silent onboarding Start trigger). */
+  hidden?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Chat message metadata
 // ---------------------------------------------------------------------------
 
+/** All fields are nullable on the backend; `minutes_per_session` is required before a roadmap. */
 export interface TimeBudget {
-  minutes_per_session: number;
-  sessions_per_week: number;
-  intensity: "light" | "moderate" | "intensive" | string;
-  optional_partner_minutes?: number;
+  minutes_per_session: number | null;
+  sessions_per_week: number | null;
+  intensity: "light" | "moderate" | "intensive" | string | null;
 }
 
 export interface Correction {
@@ -90,7 +97,8 @@ export interface PlanUpdates {
   topics?: string[];
   vocab_priorities?: string[];
   target_plan_days?: number;
-  grammar_mastery?: Record<string, number>;
+  /** Backend values are untyped; the practiced loop writes `"solid"`. */
+  grammar_mastery?: Record<string, string | number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,16 +134,10 @@ export interface CourseRoadmapMilestone {
   estimated_plan_days?: number;
 }
 
-export interface CourseRoadmapWeeklyActivity {
-  id: string;
-  label: string;
-  minutes: number;
-}
-
+/** Each lesson is `minutes_per_session` of mixed chat practice; no per-activity split. */
 export interface CourseRoadmapWeeklyTemplate {
   minutes_per_session: number;
-  activities: CourseRoadmapWeeklyActivity[];
-  partner_session?: unknown;
+  sessions_per_week?: number;
   weekends?: string;
 }
 
@@ -143,9 +145,7 @@ export interface CourseRoadmapThemeDay {
   block_day: number;
   grammar_focus?: string;
   vocab_theme?: string;
-  input_type?: string;
-  production_focus?: string;
-  goal_specific_focus?: string;
+  goal_context?: string;
 }
 
 export interface CourseRoadmapCurrentBlock {
@@ -167,55 +167,45 @@ export interface CourseRoadmap {
   current_milestone_index?: number;
 }
 
-export interface LessonPlanTask {
-  id: string;
-  label: string;
-  minutes: number;
+/** Lesson time measured by the backend: active chat minutes vs the profile's lesson length. */
+export interface LessonTiming {
+  active_minutes: number;
+  target_minutes: number;
 }
 
-export interface LessonPlan {
-  tasks: LessonPlanTask[];
+/** What the tutor saw practiced this turn (`LessonReply.practiced`). */
+export interface PracticeResult {
+  aspect: "grammar" | "vocabulary" | "review";
+  item: string;
+  result: "solid" | "shaky";
 }
 
-export interface TaskUpdate {
-  completed_task_ids: string[];
-}
-
-/** Chat turn metadata. Onboarding sessions also carry `course_roadmap_draft`. */
+/**
+ * Chat turn metadata. Onboarding sessions also carry `course_roadmap_draft`;
+ * lesson sessions carry `timing`. Messages stored before `timing` existed lack it.
+ */
 export interface ChatMessageMetadata {
   corrections?: Correction[] | null;
   tips?: string[] | null;
   plan_updates?: PlanUpdates | null;
   suggest_finish?: boolean | null;
   course_roadmap_draft?: CourseRoadmap | null;
-  lesson_plan?: LessonPlan | null;
-  task_update?: TaskUpdate | null;
+  practiced?: PracticeResult[] | null;
+  timing?: LessonTiming | null;
 }
 
-/** Accumulate pinned-checklist tasks and completions from assistant message metadata. */
-export function applyChecklistMetadata(
-  metadata: ChatMessageMetadata | null | undefined,
-  tasks: LessonPlanTask[],
-  completedIds: Set<string>
-): { tasks: LessonPlanTask[]; completedIds: Set<string> } {
-  let nextTasks = tasks;
-  const nextCompleted = new Set(completedIds);
-  if (metadata?.lesson_plan?.tasks?.length) {
-    nextTasks = metadata.lesson_plan.tasks;
-    const ids = new Set(nextTasks.map((task) => task.id));
-    for (const id of [...nextCompleted]) {
-      if (!ids.has(id)) nextCompleted.delete(id);
-    }
+/** Metadata of the newest assistant message that has `key` set, or `null`. */
+export function latestAssistantMetadata<K extends keyof ChatMessageMetadata>(
+  messages: readonly DisplayMessage[],
+  key: K
+): NonNullable<ChatMessageMetadata[K]> | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "assistant" || message.isStreaming) continue;
+    const value = message.metadata?.[key];
+    if (value !== undefined && value !== null) return value as NonNullable<ChatMessageMetadata[K]>;
   }
-  for (const id of metadata?.task_update?.completed_task_ids ?? []) {
-    nextCompleted.add(id);
-  }
-  if (metadata?.suggest_finish) {
-    for (const task of nextTasks) {
-      nextCompleted.add(task.id);
-    }
-  }
-  return { tasks: nextTasks, completedIds: nextCompleted };
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,30 +225,20 @@ export async function sendChatMessage(
   sessionId: string,
   content: string
 ): Promise<ChatTurnResponse> {
-  let response: Response;
   try {
-    response = await apiFetch(`/api/v1/chat/sessions/${sessionId}/messages`, token, {
-      method: "POST",
-      body: JSON.stringify({ content }),
-    });
-  } catch (error) {
-    // A dropped connection has no HTTP response. `toApiError` needs one, so this
-    // stand-in carries the client message. It is not a backend status.
-    const detail = error instanceof Error && error.message ? error.message : "Could not reach the server.";
-    throw await toApiError(
-      new Response(JSON.stringify({ detail, code: "NETWORK_ERROR" }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      }),
-      "Could not reach the server."
+    return await apiJson<ChatTurnResponse>(
+      `/api/v1/chat/sessions/${sessionId}/messages`,
+      token,
+      { method: "POST", body: JSON.stringify({ content }) },
+      "Message failed"
     );
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    // A dropped connection has no HTTP response. The 503 carries the client
+    // message; it is not a backend status.
+    const detail = error instanceof Error && error.message ? error.message : "Could not reach the server.";
+    throw new ApiError(503, detail, "NETWORK_ERROR");
   }
-
-  if (!response.ok) {
-    throw await toApiError(response, "Message failed");
-  }
-
-  return response.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -275,19 +255,15 @@ export interface AcceptOnboardingResponse {
  * `course_roadmap_draft` (verbatim, as last received on a chat turn)
  * back to the backend, which persists it as given.
  */
-export async function acceptOnboarding(
+export function acceptOnboarding(
   token: string | null,
   sessionId: string,
   courseRoadmap: CourseRoadmap
 ): Promise<AcceptOnboardingResponse> {
-  const response = await apiFetch("/api/v1/onboarding/accept", token, {
-    method: "POST",
-    body: JSON.stringify({ session_id: sessionId, course_roadmap: courseRoadmap }),
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, "Failed to accept plan");
-  }
-
-  return response.json();
+  return apiJson(
+    "/api/v1/onboarding/accept",
+    token,
+    { method: "POST", body: JSON.stringify({ session_id: sessionId, course_roadmap: courseRoadmap }) },
+    "Failed to accept plan"
+  );
 }
