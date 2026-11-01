@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from app.models.enums import PaceStatus
 from app.models.lesson import Lesson
@@ -26,12 +27,15 @@ def hours_remaining_in_pace_window(started_at: datetime | None, pace_window_hour
     """Negative when the active lesson is overdue."""
     if started_at is None:
         return float(pace_window_hours)
-    return pace_window_hours - (datetime.now(timezone.utc) - started_at).total_seconds() / 3600
+    return pace_window_hours - (datetime.now(UTC) - started_at).total_seconds() / 3600
+
+
+PaceSummary = Literal["on_pace", "behind", "ahead", "not_started"]
 
 
 def compute_profile_pace_summary(
     profile: Profile | None, active_lesson: Lesson | None, last_accomplished: Lesson | None
-) -> str:
+) -> PaceSummary:
     """behind: active lesson overdue or last finish slipped.
     ahead: last finish took at most half the window and the plan never slipped.
     on_pace otherwise; not_started before any lesson."""

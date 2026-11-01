@@ -23,13 +23,9 @@ async def get_report(
     db: AsyncSession = Depends(get_db),
 ) -> UserReportOut:
     result = await db.execute(
-        select(UserReport).where(
-            UserReport.user_id == user.id, UserReport.report_type == report_type
-        )
+        select(UserReport).where(UserReport.user_id == user.id, UserReport.report_type == report_type)
     )
     row = result.scalar_one_or_none()
     if row is None:
         return UserReportOut(report_type=report_type, body=None, updated_at=None)
-    return UserReportOut(
-        report_type=row.report_type, body=row.body, updated_at=row.updated_at
-    )
+    return UserReportOut(report_type=row.report_type, body=row.body, updated_at=row.updated_at)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pythonjsonlogger.json import JsonFormatter
@@ -24,7 +24,7 @@ class _LinguaJsonFormatter(JsonFormatter):
         message_dict: dict[str, Any],
     ) -> None:
         super().add_fields(log_data, record, message_dict)
-        log_data["timestamp"] = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+        log_data["timestamp"] = datetime.fromtimestamp(record.created, tz=UTC).isoformat()
         log_data["level"] = record.levelname
         if "message" not in log_data:
             log_data["message"] = record.getMessage()

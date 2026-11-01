@@ -1,9 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP
+from sqlalchemy import TIMESTAMP, ForeignKey, Index, Integer, UniqueConstraint, text
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, Index, Integer, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,9 +23,7 @@ class Lesson(Base, TimestampMixin):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -44,6 +41,4 @@ class Lesson(Base, TimestampMixin):
     )
     started_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     accomplished_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    pace_status: Mapped[PaceStatus | None] = mapped_column(
-        SAEnum(PaceStatus, name="pace_status"), nullable=True
-    )
+    pace_status: Mapped[PaceStatus | None] = mapped_column(SAEnum(PaceStatus, name="pace_status"), nullable=True)

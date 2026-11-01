@@ -229,9 +229,7 @@ class OnboardingReply(_Reply):
     )
     course_roadmap: CourseRoadmap | None = Field(
         default=None,
-        description=(
-            "The full object on a new or revised plan. Null on a clarifying question."
-        ),
+        description=("The full object on a new or revised plan. Null on a clarifying question."),
     )
 
 

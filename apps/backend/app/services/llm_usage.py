@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal, TypeVar
 
 from pydantic import BaseModel
@@ -51,8 +51,8 @@ def _retry_after(oldest: datetime | None, window_seconds: int, *, fixed: int | N
     if oldest is None:
         return window_seconds
     if oldest.tzinfo is None:
-        oldest = oldest.replace(tzinfo=timezone.utc)
-    elapsed = (datetime.now(timezone.utc) - oldest).total_seconds()
+        oldest = oldest.replace(tzinfo=UTC)
+    elapsed = (datetime.now(UTC) - oldest).total_seconds()
     return max(1, int(window_seconds - elapsed))
 
 
@@ -79,7 +79,7 @@ async def _window_stats(
     user_id: uuid.UUID | None = None,
     call_types: tuple[str, ...] | None = None,
 ) -> tuple[int, int, datetime | None]:
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+    cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
     stmt = select(
         func.count(LlmUsageEvent.id),
         func.coalesce(func.sum(LlmUsageEvent.input_tokens), 0),
@@ -102,9 +102,7 @@ async def _insert_event(db: AsyncSession, event: LlmUsageEvent) -> LlmUsageEvent
     return event
 
 
-async def check_and_record_user_limit(
-    db: AsyncSession, user_id: uuid.UUID, *, kind: UserLimitKind
-) -> None:
+async def check_and_record_user_limit(db: AsyncSession, user_id: uuid.UUID, *, kind: UserLimitKind) -> None:
     """Enforce the per-user chat hour or lesson-start day bucket.
 
     Chat is checked against Gemini `chat` rows (recorded by the following
@@ -122,9 +120,7 @@ async def check_and_record_user_limit(
         call_types = ("lesson_start",)
         detail = "Lesson start rate limit exceeded"
 
-    count, _, oldest = await _window_stats(
-        db, window_seconds=window, user_id=user_id, call_types=call_types
-    )
+    count, _, oldest = await _window_stats(db, window_seconds=window, user_id=user_id, call_types=call_types)
     if count >= limit:
         raise _limit_error(detail, "RATE_LIMIT_EXCEEDED", _retry_after(oldest, window))
 
@@ -163,9 +159,7 @@ async def reserve_gemini_call(
             _retry_after(None, _MINUTE_SECONDS, fixed=_MINUTE_SECONDS),
         )
 
-    day_count, _, day_oldest = await _window_stats(
-        db, window_seconds=_DAY_SECONDS, call_types=_GEMINI_CALL_TYPES
-    )
+    day_count, _, day_oldest = await _window_stats(db, window_seconds=_DAY_SECONDS, call_types=_GEMINI_CALL_TYPES)
     if day_count >= settings.llm_rpd_limit:
         raise _limit_error(
             "LLM rate limit exceeded",

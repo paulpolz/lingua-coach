@@ -106,5 +106,17 @@ The backend container runs `uv run alembic upgrade head` before serving. Outside
 
 | Job | Steps |
 |-----|-------|
-| `backend-import` | `uv sync --frozen`, then `uv run python -c "import app.main"`, then `uv run python -m unittest tests.test_structured_output` |
+| `backend-check` | Postgres 16 service; `uv sync --frozen`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app`, `uv run pytest --cov=app --cov-fail-under=70` (tests use `TEST_DATABASE_URL`) |
 | `frontend-check` | `npm ci`, `npm run lint`, `npm run typecheck` |
+
+### Running backend checks locally
+
+```bash
+docker run -d --name lingua-testdb -p 55432:5432 \
+  -e POSTGRES_USER=lingua -e POSTGRES_PASSWORD=lingua -e POSTGRES_DB=lingua_test postgres:16-alpine
+cd apps/backend
+export TEST_DATABASE_URL=postgresql+asyncpg://lingua:lingua@localhost:55432/lingua_test
+uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest --cov=app
+```
+
+The test session drops and recreates the `public` schema of that database and runs `alembic upgrade head`; every test runs in a transaction that is rolled back.

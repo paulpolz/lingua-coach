@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import delete, func, select
@@ -83,13 +83,15 @@ async def start_lesson(
     existing = await _active_lesson(db, user.id)
     if existing is not None:
         raise APIError(
-            409, "An active or generating lesson already exists", "ACTIVE_LESSON_EXISTS",
+            409,
+            "An active or generating lesson already exists",
+            "ACTIVE_LESSON_EXISTS",
             active_lesson_id=str(existing.id),
         )
     await check_and_record_user_limit(db, user.id, kind="lesson_start")
 
     lesson_number = (
-        await db.scalar(select(func.coalesce(func.max(Lesson.lesson_number), 0)).where(Lesson.user_id == user.id))
+        await db.scalar(select(func.coalesce(func.max(Lesson.lesson_number), 0)).where(Lesson.user_id == user.id)) or 0
     ) + 1
     profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
     goal = (
@@ -198,9 +200,11 @@ async def finish_lesson(
 ) -> FinishLessonResponse:
     lesson = await _owned_lesson(db, lesson_id, user.id)
     if lesson.status != LessonStatus.active:
-        raise APIError(409, f"Lesson is {lesson.status.value}; only an active lesson can be finished", "LESSON_NOT_ACTIVE")
+        raise APIError(
+            409, f"Lesson is {lesson.status.value}; only an active lesson can be finished", "LESSON_NOT_ACTIVE"
+        )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
     pace_window = (profile.pace_window_hours if profile else None) or settings.pace_window_hours
     session = (
@@ -226,8 +230,9 @@ async def finish_lesson(
     )
 
     # Finishing past the pace window slips the plan by one day.
-    schedule_updated = pace_status == PaceStatus.slipped and profile is not None
-    if schedule_updated:
+    schedule_updated = False
+    if pace_status == PaceStatus.slipped and profile is not None:
+        schedule_updated = True
         profile.plan_slip_days = (profile.plan_slip_days or 0) + 1
         remaining = (profile.target_plan_days or 0) - await _accomplished_count(db, user.id)
         profile.projected_completion_at = compute_projected_completion(now, remaining, pace_window)
@@ -247,6 +252,4 @@ async def finish_lesson(
         await db.execute(delete(ChatSession).where(ChatSession.id == session.id))
     await db.commit()
 
-    return FinishLessonResponse(
-        accomplished_at=now, pace_status=pace_status.value, schedule_updated=schedule_updated
-    )
+    return FinishLessonResponse(accomplished_at=now, pace_status=pace_status.value, schedule_updated=schedule_updated)

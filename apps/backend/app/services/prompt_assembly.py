@@ -22,9 +22,7 @@ def language_policy(native: str | None, target: str | None, *, onboarding: bool 
 
 
 def onboarding_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join(
-        [get_system_instruction("onboarding"), language_policy(native, target, onboarding=True)]
-    )
+    return "\n\n".join([get_system_instruction("onboarding"), language_policy(native, target, onboarding=True)])
 
 
 def lesson_system_instruction(native: str | None, target: str | None, include_vocab: bool) -> str:

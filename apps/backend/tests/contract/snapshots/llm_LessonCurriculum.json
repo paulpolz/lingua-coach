@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "CurriculumSlot": {
+      "properties": {
+        "exercise_set": {
+          "title": "Exercise Set",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "exercise_set"
+      ],
+      "title": "CurriculumSlot",
+      "type": "object"
+    },
+    "GoalSpecificTask": {
+      "properties": {
+        "format": {
+          "title": "Format",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "format"
+      ],
+      "title": "GoalSpecificTask",
+      "type": "object"
+    },
+    "InputTask": {
+      "properties": {
+        "focus": {
+          "title": "Focus",
+          "type": "string"
+        },
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "topic",
+        "focus"
+      ],
+      "title": "InputTask",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "exit_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Exit Criteria",
+      "type": "array"
+    },
+    "goal_specific_task": {
+      "$ref": "#/$defs/GoalSpecificTask"
+    },
+    "grammar_focus": {
+      "description": "The grammar point and why it matters.",
+      "title": "Grammar Focus",
+      "type": "string"
+    },
+    "input_task": {
+      "$ref": "#/$defs/InputTask"
+    },
+    "lesson_goal": {
+      "description": "One sentence.",
+      "title": "Lesson Goal",
+      "type": "string"
+    },
+    "milestone_index": {
+      "title": "Milestone Index",
+      "type": "integer"
+    },
+    "partner_session": {
+      "anyOf": [
+        {},
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Null. This product has no speaking practice.",
+      "title": "Partner Session"
+    },
+    "slots": {
+      "items": {
+        "$ref": "#/$defs/CurriculumSlot"
+      },
+      "minItems": 1,
+      "title": "Slots",
+      "type": "array"
+    },
+    "vocab_theme": {
+      "description": "Theme label.",
+      "title": "Vocab Theme",
+      "type": "string"
+    }
+  },
+  "required": [
+    "lesson_goal",
+    "grammar_focus",
+    "vocab_theme",
+    "milestone_index",
+    "slots",
+    "input_task",
+    "goal_specific_task",
+    "exit_criteria"
+  ],
+  "title": "LessonCurriculum",
+  "type": "object"
+}
