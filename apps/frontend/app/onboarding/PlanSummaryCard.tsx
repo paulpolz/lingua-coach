@@ -42,7 +42,9 @@ export default function PlanSummaryCard({
   justUpdated = false,
   acceptError,
 }: PlanSummaryCardProps) {
-  const { summary, milestones, weekly_template: weeklyTemplate } = roadmap;
+  const { milestones, weekly_template: weeklyTemplate } = roadmap;
+  // The backend stores the model's roadmap as-is, so fields can be missing.
+  const summary = roadmap.summary ?? ({} as CourseRoadmap["summary"]);
   const actionsDisabled = isAccepting || isBusy || isRegenerating;
   const range = summary.target_plan_days_range;
   const learningLanguage = formatLearningLanguage(

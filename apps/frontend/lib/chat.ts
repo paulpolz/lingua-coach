@@ -1,24 +1,17 @@
 /**
- * Chat + onboarding client for the FastAPI backend.
- *
- * Mirrors docs/implementation-readiness.md §6 (API contract), §7 (SSE
- * contract), and §8 (JSON schemas), plus the `course_roadmap` v1 shape in
- * docs/tech_requirements/database.md ("learning_plans.roadmap"). There is no
- * shared-types package in MVP (see the plan's blind-spots table), so these
- * types are the frontend's manual mirror of the backend Pydantic models —
- * keep them in sync at integration checkpoints.
+ * Chat + onboarding client. Types mirror the backend by hand; the roadmap and
+ * metadata objects come from the model as-is, so fields may be missing.
  */
 
 import { apiFetch, toApiError } from "@/lib/api";
-import { reportClientError } from "@/lib/reportError";
 
 // ---------------------------------------------------------------------------
-// Chat sessions + messages (readiness §6)
+// Chat sessions + messages
 // ---------------------------------------------------------------------------
 
 export type ChatSessionType = "onboarding" | "lesson";
 
-/** Assistant markdown links open outside the app (catalog clips, etc.). */
+/** Assistant markdown links open outside the app. */
 export const CHAT_EXTERNAL_LINK = {
   target: "_blank",
   rel: "noopener noreferrer",
@@ -73,7 +66,7 @@ export async function getChatMessages(token: string | null, sessionId: string): 
 }
 
 // ---------------------------------------------------------------------------
-// Chat message metadata / JSON schemas (readiness §8)
+// Chat message metadata
 // ---------------------------------------------------------------------------
 
 export interface TimeBudget {
@@ -188,7 +181,7 @@ export interface TaskUpdate {
   completed_task_ids: string[];
 }
 
-/** Chat `done` metadata. Onboarding sessions additionally carry `course_roadmap_draft` (coordination rule #3). */
+/** Chat turn metadata. Onboarding sessions also carry `course_roadmap_draft`. */
 export interface ChatMessageMetadata {
   corrections?: Correction[] | null;
   tips?: string[] | null;
@@ -199,7 +192,7 @@ export interface ChatMessageMetadata {
   task_update?: TaskUpdate | null;
 }
 
-/** Accumulate pinned-checklist tasks and completions from SSE `done.metadata`. */
+/** Accumulate pinned-checklist tasks and completions from assistant message metadata. */
 export function applyChecklistMetadata(
   metadata: ChatMessageMetadata | null | undefined,
   tasks: LessonPlanTask[],
@@ -226,224 +219,50 @@ export function applyChecklistMetadata(
 }
 
 // ---------------------------------------------------------------------------
-// SSE contract (readiness §7)
+// Send a chat turn
 // ---------------------------------------------------------------------------
 
-export interface SSETokenData {
-  text: string;
-}
-
-export interface SSEDoneData {
+/** `POST /api/v1/chat/sessions/{id}/messages` — `ChatTurnResponse`, status 200. */
+export interface ChatTurnResponse {
   message_id: string;
   content: string;
   metadata: ChatMessageMetadata;
 }
 
-export interface SSEErrorData {
-  code: string;
-  message: string;
-}
-
-export interface StreamChatMessageHandlers {
-  onToken?: (text: string) => void;
-  onDone?: (data: SSEDoneData) => void;
-  onError?: (data: SSEErrorData) => void;
-}
-
-/** Fullwidth `？` counts as a question, same as ASCII `?`. */
-export function hasQuestionMark(content: string): boolean {
-  return content.includes("?") || content.includes("？");
-}
-
-/**
- * Detect a streaming / complete course-roadmap reply.
- * Primary signal is the `json:course_roadmap` fence (language-agnostic).
- * English heading regexes are extras for older English-only drafts.
- */
-export function isPlanStreamContent(content: string): boolean {
-  if (/```json:course_roadmap/.test(content)) return true;
-  if (/# Your course roadmap/i.test(content)) return true;
-  if (/## Milestones/i.test(content)) return true;
-  if (/course roadmap|personalized (?:learning )?plan/i.test(content)) return true;
-  if (
-    /Here(?:'s| is) (?:your|the updated)/i.test(content) &&
-    /roadmap|plan/i.test(content)
-  ) {
-    return true;
-  }
-  return false;
-}
-
-interface ParsedSSEEvent {
-  event: string;
-  data: string;
-}
-
-/**
- * Splits a raw SSE buffer (`event: <name>\ndata: <json>\n\n`) into complete
- * events plus a remainder of unterminated trailing bytes. Pure/synchronous so
- * it can be unit-tested against synthetic chunks without a real network
- * stream.
- */
-export function extractSSEEvents(buffer: string): { events: ParsedSSEEvent[]; remainder: string } {
-  const normalized = buffer.replace(/\r\n/g, "\n");
-  const blocks = normalized.split("\n\n");
-  // The final element is either "" (buffer ended cleanly on a boundary) or a
-  // partial event still waiting on more bytes — either way, it's not a
-  // complete event yet, so it becomes the new remainder.
-  const remainder = blocks.pop() ?? "";
-  const events: ParsedSSEEvent[] = [];
-
-  for (const block of blocks) {
-    if (!block.trim()) continue;
-
-    let eventName = "message";
-    const dataLines: string[] = [];
-    for (const line of block.split("\n")) {
-      if (line.startsWith("event:")) {
-        eventName = line.slice("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        dataLines.push(line.slice("data:".length).trim());
-      }
-    }
-
-    if (dataLines.length > 0) {
-      events.push({ event: eventName, data: dataLines.join("\n") });
-    }
-  }
-
-  return { events, remainder };
-}
-
-function dispatchSSEEvent(event: ParsedSSEEvent, handlers: StreamChatMessageHandlers): void {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(event.data);
-  } catch {
-    handlers.onError?.({
-      code: "MALFORMED_EVENT",
-      message: `Received an unparsable ${event.event} event from the server.`,
-    });
-    return;
-  }
-
-  switch (event.event) {
-    case "token": {
-      const text = (parsed as Partial<SSETokenData> | null)?.text;
-      if (typeof text === "string") handlers.onToken?.(text);
-      break;
-    }
-    case "done":
-      handlers.onDone?.(parsed as SSEDoneData);
-      break;
-    case "error":
-      handlers.onError?.(parsed as SSEErrorData);
-      break;
-    default:
-      // Unknown event name — ignore rather than break the stream, in case
-      // the backend adds a forward-compatible event type later.
-      break;
-  }
-}
-
-function reportStreamError(data: SSEErrorData, sessionId: string): void {
-  reportClientError({
-    code: data.code,
-    message: data.message,
-    surface: "api",
-    path: typeof window !== "undefined" ? window.location.pathname : undefined,
-    meta: { session_id: sessionId },
-  });
-}
-
-/**
- * `POST /api/v1/chat/sessions/{id}/messages` with `Accept: text/event-stream`.
- *
- * `EventSource` doesn't support custom headers or POST bodies, so this
- * manually parses the SSE-over-fetch response: read the stream in chunks,
- * decode, split on blank lines, and dispatch `token` / `done` / `error`
- * events to the provided handlers. Never throws — all failure modes
- * (network error, non-2xx response, missing body, malformed frames, mid-
- * stream disconnects) are surfaced via `handlers.onError` so callers can
- * render a consistent inline error state.
- */
-export async function streamChatMessage(
+/** `POST /api/v1/chat/sessions/{id}/messages` with `{content}`. Returns the JSON body. */
+export async function sendChatMessage(
   token: string | null,
   sessionId: string,
-  content: string,
-  handlers: StreamChatMessageHandlers,
-  signal?: AbortSignal
-): Promise<void> {
-  const wrapped: StreamChatMessageHandlers = {
-    ...handlers,
-    onError: (data) => {
-      reportStreamError(data, sessionId);
-      handlers.onError?.(data);
-    },
-  };
-
+  content: string
+): Promise<ChatTurnResponse> {
   let response: Response;
   try {
     response = await apiFetch(`/api/v1/chat/sessions/${sessionId}/messages`, token, {
       method: "POST",
-      headers: { Accept: "text/event-stream" },
       body: JSON.stringify({ content }),
-      signal,
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return;
-    wrapped.onError?.({
-      code: "NETWORK_ERROR",
-      message: error instanceof Error ? error.message : "Could not reach the server.",
-    });
-    return;
+    // A dropped connection has no HTTP response. `toApiError` needs one, so this
+    // stand-in carries the client message. It is not a backend status.
+    const detail = error instanceof Error && error.message ? error.message : "Could not reach the server.";
+    throw await toApiError(
+      new Response(JSON.stringify({ detail, code: "NETWORK_ERROR" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      "Could not reach the server."
+    );
   }
 
   if (!response.ok) {
-    // toApiError already reports telemetry for HTTP failures.
-    const apiError = await toApiError(response, "Message failed");
-    handlers.onError?.({ code: apiError.code ?? "HTTP_ERROR", message: apiError.message });
-    return;
+    throw await toApiError(response, "Message failed");
   }
 
-  if (!response.body) {
-    wrapped.onError?.({ code: "NO_BODY", message: "Server response had no body to stream." });
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const { events, remainder } = extractSSEEvents(buffer);
-      buffer = remainder;
-      for (const event of events) dispatchSSEEvent(event, wrapped);
-    }
-
-    // Flush any trailing bytes the decoder buffered internally, then treat a
-    // non-blank remainder as one last (possibly unterminated) event.
-    buffer += decoder.decode();
-    if (buffer.trim().length > 0) {
-      const { events } = extractSSEEvents(`${buffer}\n\n`);
-      for (const event of events) dispatchSSEEvent(event, wrapped);
-    }
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return;
-    wrapped.onError?.({
-      code: "STREAM_READ_ERROR",
-      message: error instanceof Error ? error.message : "Lost connection while streaming the reply.",
-    });
-  }
+  return response.json();
 }
 
 // ---------------------------------------------------------------------------
-// Onboarding accept (readiness §6)
+// Onboarding accept
 // ---------------------------------------------------------------------------
 
 export interface AcceptOnboardingResponse {
@@ -453,10 +272,8 @@ export interface AcceptOnboardingResponse {
 
 /**
  * `POST /api/v1/onboarding/accept` — sends the session id plus the *cached*
- * `course_roadmap_draft` (verbatim, as last received in an SSE `done`
- * event) back to the backend. Per coordination rule #3 the backend persists
- * exactly what it's given, validated server-side — the client does not
- * infer or alter the roadmap.
+ * `course_roadmap_draft` (verbatim, as last received on a chat turn)
+ * back to the backend, which persists it as given.
  */
 export async function acceptOnboarding(
   token: string | null,

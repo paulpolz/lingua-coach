@@ -12,7 +12,6 @@ import {
   REPORT_SECTION_IDS,
   type ReportType,
 } from "@/lib/reports";
-import { reportClientError } from "@/lib/reportError";
 import Button from "@/components/ui/Button";
 import ReportIcon, { type ReportIconName } from "./ReportIcons";
 import ReportSection, { type ReportSectionVariant } from "./ReportSection";
@@ -104,12 +103,6 @@ export default function ReportBody({
             : /onboarding not complete/i.test(message)
         );
         setLoadState("error");
-        reportClientError({
-          code: "REPORT_LOAD_ERROR",
-          message,
-          surface: "unknown",
-          meta: { report_type: reportType },
-        });
       }
     }
     void load();

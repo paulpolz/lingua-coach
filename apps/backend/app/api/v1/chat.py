@@ -1,18 +1,11 @@
-"""Chat sessions + SSE messages.
-
-`POST /chat/sessions`, `POST /chat/sessions/{id}/messages` (SSE),
-`GET /chat/sessions/{id}/messages` — docs/implementation-readiness.md §6-7.
-"""
+"""Chat sessions and coach turns for onboarding and lessons."""
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,185 +20,91 @@ from app.models.chat import ChatMessage, ChatSession
 from app.models.enums import ChatMessageRole, ChatSessionType, LearningGoalStatus, LessonStatus
 from app.models.learning_goal import LearningGoal
 from app.models.lesson import Lesson
-from app.models.llm_usage import LlmUsageEvent
 from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.models.progress_event import ProgressEvent
 from app.models.user import User
 from app.schemas.chat import (
-    ChatDoneMetadata,
     ChatMessageCreateRequest,
     ChatMessageOut,
     ChatMessagesListResponse,
     ChatSessionCreateRequest,
     ChatSessionResponse,
-    CorrectionItem,
-    LessonMistakeItem,
-    PlanUpdates,
+    ChatTurnResponse,
 )
-from app.schemas.learner_profile import LearnerProfile
-from app.services import extraction
-from app.services.gemini import ChatTurn, GeminiError, stream_chat
-from app.services.languages import normalize_language
+from app.schemas.llm import LessonReply, OnboardingReply
+from app.services.gemini import ChatTurn, GeminiError
+from app.services.llm_usage import check_and_record_user_limit, metered_structured_call
 from app.services.prompt_assembly import (
-    lesson_curriculum_snippet_from_payload,
-    lesson_profile_block_from_snapshot,
+    lesson_context_block,
     lesson_system_instruction,
     onboarding_system_instruction,
 )
-from app.services.llm_usage import (
-    check_and_record_user_limit,
-    complete,
-    estimate_input_tokens,
-    reserve_gemini_call,
-)
-from app.services.quality import maybe_write_lesson_turn_candidate
 from app.services.skills import should_include_vocab_formats
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# Spaced-repetition schedule for `mistakes.next_review_at`, keyed by the
-# occurrence count *after* this write (skills/exercise_tutor.md "When the
-# learner errs" step 4: "+1, +3, +7, +14 days"). Occurrence counts beyond the
-# table cap at the longest interval.
-_SPACED_REPETITION_DAYS = {1: 1, 2: 3, 3: 7}
-_SPACED_REPETITION_MAX_DAYS = 14
+# Days until the next review, keyed by occurrence count (exercise_tutor.md: +1, +3, +7, +14).
+_REVIEW_DAYS = {1: 1, 2: 3, 3: 7}
 
-# Most-recent open mistakes surfaced in the lesson-chat profile context block
-# — a short list, not a full dump (ai-api.md "compact learner profile").
-_DUE_MISTAKES_LIMIT = 10
-
-
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+_GEMINI_STATUS = {
+    "LLM_TIMEOUT": 504,
+    "LLM_QUOTA_EXCEEDED": 429,
+    "LLM_SCHEMA_ERROR": 502,
+    "LLM_API_ERROR": 502,
+    "LLM_CONFIG_ERROR": 502,
+}
 
 
-async def _get_owned_session(db: AsyncSession, session_id: str, user: User) -> ChatSession:
+def _uuid_or_404(value: str, what: str) -> uuid.UUID:
     try:
-        session_uuid = uuid.UUID(session_id)
+        return uuid.UUID(value)
     except ValueError:
-        raise APIError(404, "Chat session not found", "NOT_FOUND") from None
-    result = await db.execute(select(ChatSession).where(ChatSession.id == session_uuid))
-    session = result.scalar_one_or_none()
+        raise APIError(404, f"{what} not found", "NOT_FOUND") from None
+
+
+async def _owned_session(db: AsyncSession, session_id: str, user: User) -> ChatSession:
+    session = await db.get(ChatSession, _uuid_or_404(session_id, "Chat session"))
     if session is None or session.user_id != user.id:
         raise APIError(404, "Chat session not found", "NOT_FOUND")
     return session
 
 
-async def _get_owned_lesson(db: AsyncSession, lesson_id: str, user: User) -> Lesson:
-    try:
-        lesson_uuid = uuid.UUID(lesson_id)
-    except ValueError:
-        raise APIError(404, "Lesson not found", "NOT_FOUND") from None
-    lesson = await db.get(Lesson, lesson_uuid)
+async def _owned_lesson(db: AsyncSession, lesson_id: uuid.UUID | None, user: User) -> Lesson:
+    lesson = await db.get(Lesson, lesson_id) if lesson_id else None
     if lesson is None or lesson.user_id != user.id:
         raise APIError(404, "Lesson not found", "NOT_FOUND")
     return lesson
 
 
-async def _get_lesson_for_session(db: AsyncSession, session: ChatSession, user: User) -> Lesson:
-    if session.lesson_id is None:
-        raise APIError(404, "Lesson not found", "NOT_FOUND")
-    lesson = await db.get(Lesson, session.lesson_id)
-    if lesson is None or lesson.user_id != user.id:
-        raise APIError(404, "Lesson not found", "NOT_FOUND")
-    return lesson
+async def _profile(db: AsyncSession, user: User) -> Profile | None:
+    return (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
 
 
-async def _fetch_onboarding_session(db: AsyncSession, user_id: uuid.UUID) -> ChatSession | None:
-    result = await db.execute(
-        select(ChatSession).where(
-            ChatSession.user_id == user_id,
-            ChatSession.type == ChatSessionType.onboarding,
-        )
-    )
-    return result.scalar_one_or_none()
+async def _get_or_create_session(db: AsyncSession, user: User, lesson: Lesson | None) -> ChatSession:
+    """One onboarding session per user and one session per lesson, via partial unique indexes.
 
-
-async def _fetch_lesson_session(
-    db: AsyncSession, user_id: uuid.UUID, lesson_id: uuid.UUID
-) -> ChatSession | None:
-    result = await db.execute(
-        select(ChatSession).where(
-            ChatSession.user_id == user_id,
-            ChatSession.type == ChatSessionType.lesson,
-            ChatSession.lesson_id == lesson_id,
-        )
-    )
-    return result.scalar_one_or_none()
-
-
-async def _get_or_create_onboarding_session(db: AsyncSession, user: User) -> ChatSession:
-    """One onboarding session per user — enforced by partial unique index + upsert.
-
-    `index_where` must be the same SQL as the unique index predicate
-    (`type = 'onboarding'`). A bound enum (`type = $1::chat_session_type`)
-    does not match, and Postgres raises InvalidColumnReferenceError.
+    `index_where` must repeat the index predicate as literal SQL; a bound enum does not match.
     """
-    existing = await _fetch_onboarding_session(db, user.id)
-    if existing is not None:
-        return existing
+    if lesson is None:
+        values = {"user_id": user.id, "type": ChatSessionType.onboarding, "lesson_id": None}
+        conflict = {"index_elements": ["user_id"], "index_where": text("type = 'onboarding'")}
+        where = (ChatSession.type == ChatSessionType.onboarding,)
+    else:
+        values = {"user_id": user.id, "type": ChatSessionType.lesson, "lesson_id": lesson.id}
+        conflict = {
+            "index_elements": ["user_id", "lesson_id"],
+            "index_where": text("type = 'lesson' AND lesson_id IS NOT NULL"),
+        }
+        where = (ChatSession.type == ChatSessionType.lesson, ChatSession.lesson_id == lesson.id)
 
-    stmt = (
-        insert(ChatSession)
-        .values(user_id=user.id, type=ChatSessionType.onboarding, lesson_id=None)
-        .on_conflict_do_nothing(
-            index_elements=["user_id"],
-            index_where=text("type = 'onboarding'"),
-        )
-        .returning(ChatSession.id)
-    )
-    result = await db.execute(stmt)
-    new_id = result.scalar_one_or_none()
+    await db.execute(insert(ChatSession).values(**values).on_conflict_do_nothing(**conflict))
     await db.commit()
-
-    if new_id is not None:
-        session = await db.get(ChatSession, new_id)
-        assert session is not None
-        return session
-
-    session = await _fetch_onboarding_session(db, user.id)
-    if session is None:
-        raise RuntimeError("onboarding chat session missing after upsert conflict")
-    return session
-
-
-async def _get_or_create_lesson_session(
-    db: AsyncSession, user: User, lesson: Lesson
-) -> ChatSession:
-    """One lesson chat session per (user, lesson) — enforced by partial unique index + upsert."""
-    existing = await _fetch_lesson_session(db, user.id, lesson.id)
-    if existing is not None:
-        return existing
-
-    stmt = (
-        insert(ChatSession)
-        .values(
-            user_id=user.id,
-            type=ChatSessionType.lesson,
-            lesson_id=lesson.id,
-        )
-        .on_conflict_do_nothing(
-            index_elements=["user_id", "lesson_id"],
-            index_where=text("type = 'lesson' AND lesson_id IS NOT NULL"),
-        )
-        .returning(ChatSession.id)
-    )
-    result = await db.execute(stmt)
-    new_id = result.scalar_one_or_none()
-    await db.commit()
-
-    if new_id is not None:
-        session = await db.get(ChatSession, new_id)
-        assert session is not None
-        return session
-
-    session = await _fetch_lesson_session(db, user.id, lesson.id)
-    if session is None:
-        raise RuntimeError("lesson chat session missing after upsert conflict")
-    return session
+    return (
+        await db.execute(select(ChatSession).where(ChatSession.user_id == user.id, *where))
+    ).scalar_one()
 
 
 @router.post("/sessions", status_code=201, response_model=ChatSessionResponse)
@@ -215,29 +114,17 @@ async def create_chat_session(
     db: AsyncSession = Depends(get_db),
 ) -> ChatSessionResponse:
     if body.type == "onboarding":
-        session = await _get_or_create_onboarding_session(db, user)
-        return ChatSessionResponse(id=str(session.id), type="onboarding", lesson_id=None)
+        session = await _get_or_create_session(db, user, None)
+        return ChatSessionResponse(id=str(session.id), type="onboarding")
 
-    # type == "lesson"
     if not body.lesson_id:
         raise APIError(422, "lesson_id is required for type=lesson", "LESSON_ID_REQUIRED")
-    # Defensive/consistent with the onboarding gate on lesson routes — a
-    # lesson can't exist for a non-onboarded user anyway (POST /lessons/start
-    # requires it), but this keeps the error shape uniform if that ever
-    # changes.
     if not user.onboarding_complete:
         raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
-
-    lesson = await _get_owned_lesson(db, body.lesson_id, user)
+    lesson = await _owned_lesson(db, _uuid_or_404(body.lesson_id, "Lesson"), user)
     if lesson.status not in (LessonStatus.generating, LessonStatus.active):
-        raise APIError(
-            409,
-            f"Lesson is {lesson.status.value}; chat is only available while a lesson is "
-            "generating or active",
-            "LESSON_NOT_ACTIVE",
-        )
-
-    session = await _get_or_create_lesson_session(db, user, lesson)
+        raise APIError(409, f"Lesson is {lesson.status.value}", "LESSON_NOT_ACTIVE")
+    session = await _get_or_create_session(db, user, lesson)
     return ChatSessionResponse(id=str(session.id), type="lesson", lesson_id=str(lesson.id))
 
 
@@ -247,543 +134,251 @@ async def list_chat_messages(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatMessagesListResponse:
-    session = await _get_owned_session(db, session_id, user)
-    result = await db.execute(
-        select(ChatMessage).where(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at)
-    )
-    messages = result.scalars().all()
+    session = await _owned_session(db, session_id, user)
+    rows = (
+        await db.execute(
+            select(ChatMessage).where(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at)
+        )
+    ).scalars()
     return ChatMessagesListResponse(
         messages=[
             ChatMessageOut(
-                id=str(m.id),
-                role=m.role.value,
-                content=m.content,
-                created_at=m.created_at,
-                metadata=m.metadata_json,
+                id=str(m.id), role=m.role.value, content=m.content, created_at=m.created_at, metadata=m.metadata_json
             )
-            for m in messages
+            for m in rows
         ]
     )
 
 
-async def _persist_learner_profile(db: AsyncSession, user: User, learner_profile: LearnerProfile) -> None:
-    """Onboarding interview complete → upsert `profiles` + draft `learning_goals`
-    per database.md's "Onboarding data flow". Idempotent — safe to call again
-    if the model re-emits a revised profile on a later refinement turn."""
-    profile_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
-    profile = profile_result.scalar_one_or_none()
-    now = datetime.now(timezone.utc)
+async def _save_learner_profile(db: AsyncSession, user: User, data: dict) -> None:
+    """Upsert `profiles` and the draft `learning_goals` row from `learner_profile`."""
+    goal = data.get("goal") or {}
+    level = data.get("level") or {}
+    languages = data.get("languages") or {}
+
+    profile = await _profile(db, user)
     if profile is None:
         profile = Profile(user_id=user.id, pace_window_hours=settings.pace_window_hours)
         db.add(profile)
+    profile.goal_outcome = goal.get("outcome")
+    profile.goal_horizon = goal.get("horizon")
+    profile.goal_success_criteria = goal.get("success_criteria")
+    profile.native_language = (languages.get("native") or "").strip() or None
+    profile.target_language = (languages.get("target") or "").strip() or None
+    profile.target_level = level.get("self_assessed")
+    profile.level_strengths = level.get("strengths")
+    profile.level_weaknesses = level.get("weaknesses")
+    profile.diagnostic_notes = level.get("diagnostic_notes")
+    profile.time_budget = data.get("time_budget")
+    profile.focus = data.get("focus")
+    profile.constraints = data.get("constraints")
+    profile.motivation = data.get("motivation")
+    profile.interview_completed_at = datetime.now(timezone.utc)
 
-    profile.goal_outcome = learner_profile.goal.outcome
-    profile.goal_horizon = learner_profile.goal.horizon
-    profile.goal_success_criteria = learner_profile.goal.success_criteria
-    profile.native_language = normalize_language(learner_profile.languages.native)
-    profile.target_language = normalize_language(learner_profile.languages.target)
-    profile.target_level = learner_profile.level.self_assessed
-    profile.level_strengths = learner_profile.level.strengths
-    profile.level_weaknesses = learner_profile.level.weaknesses
-    profile.diagnostic_notes = learner_profile.level.diagnostic_notes
-    profile.time_budget = learner_profile.time_budget.model_dump()
-    profile.focus = learner_profile.focus.model_dump()
-    profile.constraints = learner_profile.constraints.model_dump()
-    profile.motivation = learner_profile.motivation.model_dump()
-    profile.interview_completed_at = now
-
-    goal_result = await db.execute(
-        select(LearningGoal).where(
-            LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft
-        )
-    )
-    goal = goal_result.scalar_one_or_none()
-    if goal is None:
-        goal = LearningGoal(user_id=user.id, status=LearningGoalStatus.draft)
-        db.add(goal)
-    goal.goal_statement = learner_profile.goal.outcome
-    goal.horizon = learner_profile.goal.horizon
-    goal.success_criteria = learner_profile.goal.success_criteria
-
-    await db.commit()
-
-
-def _next_review_at(occurrence_count: int, now: datetime) -> datetime:
-    """Spaced-repetition schedule per skills/exercise_tutor.md ("+1, +3, +7,
-    +14 days"), keyed by occurrence count after this write; caps at the
-    longest interval for repeat offenders beyond the table."""
-    days = _SPACED_REPETITION_DAYS.get(occurrence_count, _SPACED_REPETITION_MAX_DAYS)
-    return now + timedelta(days=days)
-
-
-async def _upsert_mistake(
-    db: AsyncSession, *, user: User, lesson: Lesson, item: LessonMistakeItem
-) -> None:
-    """database.md "mistakes" upsert rule: same `user_id` + `pattern_type` →
-    increment `occurrence_count`, refresh `example_text`/`lesson_id`/
-    `last_seen_at`, recompute `next_review_at`; else create with
-    `occurrence_count=1`."""
-    result = await db.execute(
-        select(Mistake).where(Mistake.user_id == user.id, Mistake.pattern_type == item.pattern_type)
-    )
-    mistake = result.scalar_one_or_none()
-    now = datetime.now(timezone.utc)
-    if mistake is None:
-        db.add(
-            Mistake(
-                user_id=user.id,
-                lesson_id=lesson.id,
-                pattern_type=item.pattern_type,
-                example_text=item.example_text,
-                correction=item.correction,
-                occurrence_count=1,
-                next_review_at=_next_review_at(1, now),
-                last_seen_at=now,
+    draft = (
+        await db.execute(
+            select(LearningGoal).where(
+                LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft
             )
         )
-        return
+    ).scalar_one_or_none()
+    if draft is None:
+        draft = LearningGoal(user_id=user.id, status=LearningGoalStatus.draft)
+        db.add(draft)
+    draft.goal_statement = goal.get("outcome")
+    draft.horizon = goal.get("horizon")
+    draft.success_criteria = goal.get("success_criteria")
 
+
+async def _upsert_mistake(db: AsyncSession, user: User, lesson: Lesson, item: dict) -> None:
+    """Same user + pattern_type bumps the count and reschedules review; otherwise insert."""
+    pattern = str(item.get("pattern_type") or "")[:255]
+    if not pattern:
+        return
+    now = datetime.now(timezone.utc)
+    mistake = (
+        await db.execute(select(Mistake).where(Mistake.user_id == user.id, Mistake.pattern_type == pattern))
+    ).scalar_one_or_none()
+    if mistake is None:
+        mistake = Mistake(user_id=user.id, pattern_type=pattern, occurrence_count=0)
+        db.add(mistake)
     mistake.occurrence_count += 1
-    mistake.example_text = item.example_text
-    if item.correction is not None:
-        mistake.correction = item.correction
+    mistake.example_text = item.get("example_text") or mistake.example_text or ""
+    mistake.correction = item.get("correction") or mistake.correction
     mistake.lesson_id = lesson.id
     mistake.last_seen_at = now
-    mistake.next_review_at = _next_review_at(mistake.occurrence_count, now)
+    mistake.next_review_at = now + timedelta(days=_REVIEW_DAYS.get(mistake.occurrence_count, 14))
 
 
-async def _apply_lesson_plan_updates(db: AsyncSession, *, user: User, plan_updates: PlanUpdates) -> None:
-    """backend.md "Plan adaptation (chat-only)": validated `plan_updates`
-    patch `profiles` fields directly (no plan-editor API). Recompute
-    `projected_completion_at` when `target_plan_days` changes (backend.md
-    "Plan schedule and pacing": "remaining plan days × PACE_WINDOW_HOURS"),
-    and log a `progress_events` row for audit/debug."""
-    profile_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
-    profile = profile_result.scalar_one_or_none()
-    if profile is None:
-        # Shouldn't happen once onboarded, but never fail the chat turn.
+async def _apply_plan_updates(db: AsyncSession, user: User, updates: dict) -> None:
+    """Chat is the only plan editor: patch `profiles` and log a `plan_updated` event."""
+    profile = await _profile(db, user)
+    if profile is None or not updates:
         return
-
-    changed_fields: dict = {}
-
-    if plan_updates.goal_summary is not None:
-        profile.goal_outcome = plan_updates.goal_summary
-        changed_fields["goal_summary"] = plan_updates.goal_summary
-    if plan_updates.level is not None:
-        profile.target_level = plan_updates.level
-        changed_fields["level"] = plan_updates.level
-    if plan_updates.time_budget is not None:
-        profile.time_budget = plan_updates.time_budget
-        changed_fields["time_budget"] = plan_updates.time_budget
-    if plan_updates.topics is not None:
-        focus = dict(profile.focus or {})
-        focus["topic_priorities"] = plan_updates.topics
-        profile.focus = focus
-        changed_fields["topics"] = plan_updates.topics
-    if plan_updates.vocab_priorities is not None:
-        focus = dict(profile.focus or {})
-        focus["vocab_priorities"] = plan_updates.vocab_priorities
-        profile.focus = focus
-        changed_fields["vocab_priorities"] = plan_updates.vocab_priorities
-    if plan_updates.grammar_mastery is not None:
-        grammar_mastery = dict(profile.grammar_mastery or {})
-        grammar_mastery.update(plan_updates.grammar_mastery)
-        profile.grammar_mastery = grammar_mastery
-        changed_fields["grammar_mastery"] = plan_updates.grammar_mastery
-    if plan_updates.target_plan_days is not None and plan_updates.target_plan_days != profile.target_plan_days:
-        profile.target_plan_days = plan_updates.target_plan_days
-        changed_fields["target_plan_days"] = plan_updates.target_plan_days
-
-        plan_days_done = (
-            await db.scalar(
-                select(func.count())
-                .select_from(Lesson)
-                .where(Lesson.user_id == user.id, Lesson.status == LessonStatus.accomplished)
-            )
-            or 0
+    focus = dict(profile.focus or {})
+    for key, column in (("goal_summary", "goal_outcome"), ("level", "target_level"), ("time_budget", "time_budget")):
+        if updates.get(key) is not None:
+            setattr(profile, column, updates[key])
+    if updates.get("topics") is not None:
+        focus["topic_priorities"] = updates["topics"]
+    if updates.get("vocab_priorities") is not None:
+        focus["vocab_priorities"] = updates["vocab_priorities"]
+    profile.focus = focus
+    if isinstance(updates.get("grammar_mastery"), dict):
+        profile.grammar_mastery = {**(profile.grammar_mastery or {}), **updates["grammar_mastery"]}
+    target_days = updates.get("target_plan_days")
+    if isinstance(target_days, int) and target_days != profile.target_plan_days:
+        profile.target_plan_days = target_days
+        done = await db.scalar(
+            select(func.count())
+            .select_from(Lesson)
+            .where(Lesson.user_id == user.id, Lesson.status == LessonStatus.accomplished)
         )
-        remaining_days = max(plan_updates.target_plan_days - plan_days_done, 0)
-        pace_window_hours = profile.pace_window_hours or settings.pace_window_hours
         profile.projected_completion_at = datetime.now(timezone.utc) + timedelta(
-            hours=remaining_days * pace_window_hours
+            hours=max(target_days - (done or 0), 0) * profile.pace_window_hours
         )
-
-    if changed_fields:
-        db.add(
-            ProgressEvent(
-                user_id=user.id,
-                event_type="plan_updated",
-                payload=changed_fields,
-            )
-        )
+    db.add(ProgressEvent(user_id=user.id, event_type="plan_updated", payload=updates))
 
 
-def _lesson_curriculum_snippet(lesson: Lesson) -> str:
-    """Compact "current lesson curriculum" block for `contents` (ai-api.md
-    "Chat / correction": "current lesson snippet (lesson mode)") — the
-    lesson_goal/grammar_focus/vocab_theme/slots/exit_criteria fields from
-    `lessons.payload.curriculum`, not a full chat-history dump."""
-    curriculum = (lesson.payload or {}).get("curriculum") or {}
-    return lesson_curriculum_snippet_from_payload(curriculum)
-
-
-async def _fetch_profile(db: AsyncSession, user: User) -> Profile | None:
-    result = await db.execute(select(Profile).where(Profile.user_id == user.id))
-    return result.scalar_one_or_none()
-
-
-async def _lesson_profile_block(
-    db: AsyncSession, user: User, *, profile: Profile | None = None
-) -> str:
-    """Compact learner-profile context block (languages/goal/level + weak
-    patterns due for review) — a short text block is sufficient for MVP."""
-    if profile is None:
-        profile = await _fetch_profile(db, user)
-
-    now = datetime.now(timezone.utc)
-    mistakes_result = await db.execute(
-        select(Mistake)
-        .where(Mistake.user_id == user.id, Mistake.next_review_at <= now)
-        .order_by(Mistake.next_review_at)
-        .limit(_DUE_MISTAKES_LIMIT)
-    )
-    due_mistakes = mistakes_result.scalars().all()
-
-    goal = profile.goal_outcome if profile and profile.goal_outcome else "(not set)"
-    level = profile.target_level if profile and profile.target_level else "(not set)"
-    native = profile.native_language if profile and profile.native_language else "(not set)"
-    target = profile.target_language if profile and profile.target_language else "en"
-
-    return lesson_profile_block_from_snapshot(native, target, goal, level, due_mistakes)
-
-
-async def _load_context_history(db: AsyncSession, session: ChatSession) -> list[ChatTurn]:
-    context_result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.session_id == session.id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(settings.chat_context_messages)
-    )
-    context_messages = list(reversed(context_result.scalars().all()))
-    return [
-        ChatTurn(role="model" if m.role == ChatMessageRole.assistant else "user", text=m.content)
-        for m in context_messages
-    ]
-
-
-async def _mark_chat_usage_error(db: AsyncSession, event: LlmUsageEvent) -> None:
-    await complete(
-        db,
-        event,
-        input_tokens=event.input_tokens,
-        status="error",
-        model=settings.gemini_model_chat,
-    )
-
-
-async def _assemble_chat_prompt(
-    db: AsyncSession,
-    *,
-    user: User,
-    session: ChatSession,
-    lesson: Lesson | None,
-    history: list[ChatTurn],
+async def _build_prompt(
+    db: AsyncSession, user: User, lesson: Lesson | None, history: list[ChatTurn]
 ) -> tuple[str, list[ChatTurn]]:
-    profile = await _fetch_profile(db, user)
-    if session.type == ChatSessionType.onboarding:
-        return (
-            onboarding_system_instruction(
-                profile.native_language if profile else None,
-                profile.target_language if profile else None,
-            ),
-            history,
-        )
+    profile = await _profile(db, user)
+    native = profile.native_language if profile else None
+    target = profile.target_language if profile else None
+    if lesson is None:
+        return onboarding_system_instruction(native, target), history
 
-    assert lesson is not None
     curriculum = (lesson.payload or {}).get("curriculum") or {}
-    include_vocab = should_include_vocab_formats(curriculum)
-    system_instruction = lesson_system_instruction(
-        profile.native_language if profile else None,
-        profile.target_language if profile else None,
-        include_vocab,
-    )
-    context_block = (
-        f"{_lesson_curriculum_snippet(lesson)}\n\n"
-        f"{await _lesson_profile_block(db, user, profile=profile)}"
-    )
-    return system_instruction, [ChatTurn(role="user", text=context_block), *history]
+    due = (
+        await db.execute(
+            select(Mistake)
+            .where(Mistake.user_id == user.id, Mistake.next_review_at <= datetime.now(timezone.utc))
+            .order_by(Mistake.next_review_at)
+            .limit(10)
+        )
+    ).scalars().all()
+    system = lesson_system_instruction(native, target, should_include_vocab_formats(curriculum))
+    return system, [ChatTurn(role="user", text=lesson_context_block(curriculum, profile, due)), *history]
 
 
-async def _onboarding_event_stream(
-    *,
+async def _persist_turn(
     db: AsyncSession,
     user: User,
-    session: ChatSession,
-    history: list[ChatTurn],
-    system_instruction: str,
-    on_usage: Callable[[int], Awaitable[None]],
-    usage_event: LlmUsageEvent,
-) -> AsyncGenerator[str, None]:
-    full_text_parts: list[str] = []
-    try:
-        async for chunk in stream_chat(
-            system_instruction=system_instruction, history=history, on_usage=on_usage
-        ):
-            full_text_parts.append(chunk)
-            yield _sse("token", {"text": chunk})
-    except GeminiError as exc:
-        await _mark_chat_usage_error(db, usage_event)
-        yield _sse("error", {"code": exc.code, "message": str(exc)})
-        return
+    lesson: Lesson | None,
+    reply: OnboardingReply | LessonReply,
+) -> dict:
+    """Upsert artifacts from the structured reply and return the seven metadata keys."""
+    if isinstance(reply, OnboardingReply):
+        profile = reply.learner_profile
+        if profile is not None:
+            await _save_learner_profile(db, user, profile.model_dump())
+        goal = profile.goal if profile is not None else None
+        level = profile.level if profile is not None else None
+        return {
+            "corrections": [],
+            "tips": [],
+            "plan_updates": {
+                "goal_summary": None if goal is None else goal.outcome,
+                "level": None if level is None else level.self_assessed,
+            }
+            if profile is not None
+            else None,
+            "suggest_finish": False,
+            "course_roadmap_draft": None if reply.course_roadmap is None else reply.course_roadmap.model_dump(),
+            "lesson_plan": None,
+            "task_update": None,
+        }
 
-    raw_text = "".join(full_text_parts)
-    clean_text = extraction.strip_structured_blocks(raw_text)
+    if lesson is None or not isinstance(reply, LessonReply):
+        raise RuntimeError("lesson reply requires a lesson")
 
-    learner_profile = extraction.extract_learner_profile(raw_text)
-    roadmap_draft = extraction.extract_course_roadmap(raw_text)
-
-    plan_updates: PlanUpdates | None = None
-    if learner_profile is not None:
-        try:
-            await _persist_learner_profile(db, user, learner_profile)
-            plan_updates = PlanUpdates(
-                goal_summary=learner_profile.goal.outcome, level=learner_profile.level.self_assessed
-            )
-        except SQLAlchemyError:
-            logger.warning(
-                "onboarding_profile_persist_failed",
-                exc_info=True,
-                extra={
-                    "event": "db_persist_failed",
-                    "surface": "onboarding",
-                    "user_id": str(user.id),
-                    "session_id": str(session.id),
-                },
-            )
-            await db.rollback()
-            yield _sse(
-                "error",
-                {
-                    "code": "PROFILE_PERSIST_FAILED",
-                    "message": "Could not save your learning profile. Please try again.",
-                },
-            )
-            return
-
-    done_metadata = ChatDoneMetadata(
-        corrections=[],
-        tips=[],
-        plan_updates=plan_updates,
-        suggest_finish=False,
-        course_roadmap_draft=roadmap_draft,
-        lesson_plan=None,
-        task_update=None,
-    )
-    assistant_message = ChatMessage(
-        session_id=session.id,
-        role=ChatMessageRole.assistant,
-        content=clean_text,
-        metadata_json=json.loads(done_metadata.model_dump_json()),
-    )
-    db.add(assistant_message)
-    await db.commit()
-    await db.refresh(assistant_message)
-    yield _sse(
-        "done",
-        {
-            "message_id": str(assistant_message.id),
-            "content": clean_text,
-            "metadata": json.loads(done_metadata.model_dump_json()),
-        },
-    )
+    for item in reply.mistakes:
+        await _upsert_mistake(db, user, lesson, item.model_dump())
+    plan_updates = None if reply.plan_updates is None else reply.plan_updates.model_dump()
+    if plan_updates is not None:
+        await _apply_plan_updates(db, user, plan_updates)
+    task_ids = list(reply.completed_task_ids)
+    return {
+        "corrections": [item.model_dump() for item in reply.corrections],
+        "tips": list(reply.tips),
+        "plan_updates": plan_updates,
+        "suggest_finish": reply.suggest_finish,
+        "course_roadmap_draft": None,
+        "lesson_plan": None if reply.lesson_plan is None else reply.lesson_plan.model_dump(),
+        "task_update": {"completed_task_ids": task_ids} if task_ids else None,
+    }
 
 
-async def _lesson_event_stream(
-    *,
-    db: AsyncSession,
-    user: User,
-    session: ChatSession,
-    lesson: Lesson,
-    history: list[ChatTurn],
-    system_instruction: str,
-    on_usage: Callable[[int], Awaitable[None]],
-    usage_event: LlmUsageEvent,
-) -> AsyncGenerator[str, None]:
-    profile = await _fetch_profile(db, user)
-
-    full_text_parts: list[str] = []
-    try:
-        async for chunk in stream_chat(
-            system_instruction=system_instruction, history=history, on_usage=on_usage
-        ):
-            full_text_parts.append(chunk)
-            yield _sse("token", {"text": chunk})
-    except GeminiError as exc:
-        await _mark_chat_usage_error(db, usage_event)
-        yield _sse("error", {"code": exc.code, "message": str(exc)})
-        return
-
-    raw_text = "".join(full_text_parts)
-    clean_text = extraction.strip_structured_blocks(raw_text)
-    turn = extraction.extract_lesson_turn(raw_text)
-
-    corrections: list[CorrectionItem] = turn.corrections if turn else []
-    tips: list[str] = turn.tips if turn else []
-    plan_updates: PlanUpdates | None = turn.plan_updates if turn else None
-    suggest_finish: bool = turn.suggest_finish if turn else False
-    mistakes: list[LessonMistakeItem] = turn.mistakes if turn else []
-    lesson_plan = extraction.extract_lesson_plan(raw_text)
-    task_update = extraction.merge_completed_task_ids(
-        extraction.extract_task_update(raw_text),
-        turn.completed_task_ids if turn else None,
-    )
-
-    try:
-        for item in mistakes:
-            await _upsert_mistake(db, user=user, lesson=lesson, item=item)
-        if plan_updates is not None:
-            await _apply_lesson_plan_updates(db, user=user, plan_updates=plan_updates)
-        await db.commit()
-    except SQLAlchemyError:
-        logger.warning(
-            "lesson_metadata_persist_failed",
-            exc_info=True,
-            extra={
-                "event": "db_persist_failed",
-                "surface": "lesson",
-                "user_id": str(user.id),
-                "session_id": str(session.id),
-                "lesson_id": str(lesson.id),
-            },
-        )
-        await db.rollback()
-        yield _sse(
-            "error",
-            {
-                "code": "LESSON_PERSIST_FAILED",
-                "message": "Could not save lesson progress. Please try again.",
-            },
-        )
-        return
-
-    done_metadata = ChatDoneMetadata(
-        corrections=corrections,
-        tips=tips,
-        plan_updates=plan_updates,
-        suggest_finish=suggest_finish,
-        course_roadmap_draft=None,
-        lesson_plan=lesson_plan,
-        task_update=task_update,
-    )
-    assistant_message = ChatMessage(
-        session_id=session.id,
-        role=ChatMessageRole.assistant,
-        content=clean_text,
-        metadata_json=json.loads(done_metadata.model_dump_json()),
-    )
-    db.add(assistant_message)
-    await db.commit()
-    await db.refresh(assistant_message)
-    await maybe_write_lesson_turn_candidate(
-        db,
-        user=user,
-        session=session,
-        lesson=lesson,
-        message=assistant_message,
-        corrections=corrections,
-        profile=profile,
-    )
-    yield _sse(
-        "done",
-        {
-            "message_id": str(assistant_message.id),
-            "content": clean_text,
-            "metadata": json.loads(done_metadata.model_dump_json()),
-        },
-    )
-
-
-@router.post("/sessions/{session_id}/messages")
+@router.post("/sessions/{session_id}/messages", response_model=ChatTurnResponse)
 async def post_chat_message(
     session_id: str,
     body: ChatMessageCreateRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
-    session = await _get_owned_session(db, session_id, user)
-
+) -> ChatTurnResponse:
+    session = await _owned_session(db, session_id, user)
     content = body.content.strip()
     if not content:
         raise APIError(422, "Message content must not be empty", "EMPTY_MESSAGE")
     if len(content) > settings.max_message_chars:
-        raise APIError(
-            422, f"Message exceeds {settings.max_message_chars} characters", "MESSAGE_TOO_LONG"
-        )
+        raise APIError(422, f"Message exceeds {settings.max_message_chars} characters", "MESSAGE_TOO_LONG")
     await check_and_record_user_limit(db, user.id, kind="chat")
 
-    lesson: Lesson | None = None
+    lesson = None
     if session.type == ChatSessionType.lesson:
         if not user.onboarding_complete:
             raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
-        lesson = await _get_lesson_for_session(db, session, user)
+        lesson = await _owned_lesson(db, session.lesson_id, user)
 
-    prior = await _load_context_history(db, session)
-    keep = settings.chat_context_messages - 1
-    if keep > 0:
-        prior = prior[-keep:]
-    else:
-        prior = []
-    history = [*prior, ChatTurn(role="user", text=content)]
-    system_instruction, contents = await _assemble_chat_prompt(
-        db, user=user, session=session, lesson=lesson, history=history
-    )
-    usage_event = await reserve_gemini_call(
-        db,
-        user.id,
-        "chat",
-        estimated_input_tokens=estimate_input_tokens(
-            system_instruction, *(turn.text for turn in contents)
-        ),
-    )
+    recent = (
+        await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session.id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(max(settings.chat_context_messages - 1, 0))
+        )
+    ).scalars().all()
+    history = [
+        ChatTurn(role="model" if m.role == ChatMessageRole.assistant else "user", text=m.content)
+        for m in reversed(recent)
+    ] + [ChatTurn(role="user", text=content)]
+    system_instruction, contents = await _build_prompt(db, user, lesson, history)
 
-    user_message = ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content)
-    db.add(user_message)
-    await db.commit()
+    async def save_user_message() -> None:
+        db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
+        await db.commit()
 
-    async def on_usage(prompt_token_count: int) -> None:
-        await complete(
+    try:
+        reply = await metered_structured_call(
             db,
-            usage_event,
-            input_tokens=prompt_token_count,
-            status="ok",
-            model=settings.gemini_model_chat,
-        )
-
-    if session.type == ChatSessionType.onboarding:
-        event_stream = _onboarding_event_stream(
-            db=db,
-            user=user,
-            session=session,
-            history=contents,
+            user.id,
+            "chat",
+            model_id=settings.gemini_model_chat,
+            schema=OnboardingReply if lesson is None else LessonReply,
             system_instruction=system_instruction,
-            on_usage=on_usage,
-            usage_event=usage_event,
-        )
-    else:
-        assert lesson is not None
-        event_stream = _lesson_event_stream(
-            db=db,
-            user=user,
-            session=session,
-            lesson=lesson,
             history=contents,
-            system_instruction=system_instruction,
-            on_usage=on_usage,
-            usage_event=usage_event,
+            before_call=save_user_message,
         )
+    except GeminiError as exc:
+        raise APIError(_GEMINI_STATUS.get(exc.code, 502), str(exc), exc.code) from exc
 
-    return StreamingResponse(
-        event_stream,
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    try:
+        metadata = await _persist_turn(db, user, lesson, reply)
+        message = ChatMessage(
+            session_id=session.id,
+            role=ChatMessageRole.assistant,
+            content=reply.content,
+            metadata_json=metadata,
+        )
+        db.add(message)
+        await db.commit()
+    except SQLAlchemyError:
+        logger.warning(
+            "chat_persist_failed",
+            exc_info=True,
+            extra={"event": "db_persist_failed", "user_id": str(user.id), "session_id": str(session.id)},
+        )
+        await db.rollback()
+        raise APIError(500, "Could not save this turn. Please try again.", "PERSIST_FAILED") from None
+    return ChatTurnResponse(message_id=str(message.id), content=message.content, metadata=metadata)

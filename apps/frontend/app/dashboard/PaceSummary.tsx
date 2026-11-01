@@ -9,10 +9,8 @@ const PACE_LABELS: Record<Exclude<PaceSummaryValue, "not_started">, string> = {
 };
 
 /**
- * Dashboard "pace hints" section (frontend.md: "plan days done vs target,
- * on pace / behind, projected completion"). Fetched alongside the active
- * lesson in DashboardClient; degrades to a small inline note (or renders
- * nothing) rather than blocking the Start/Resume flow if it fails to load.
+ * Pace strip: plan days done vs target, on pace / behind, projected completion.
+ * Degrades to a small note instead of blocking Start/Resume.
  */
 export default function PaceSummary({
   progress,

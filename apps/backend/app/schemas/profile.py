@@ -1,17 +1,9 @@
-"""`GET /api/v1/profile` response shape — docs/implementation-readiness.md §6."""
-
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
-
-
-class TimeBudgetOut(BaseModel):
-    minutes_per_session: int
-    sessions_per_week: int
-    intensity: Literal["light", "moderate", "intensive"]
 
 
 class ScheduleOut(BaseModel):
@@ -28,8 +20,8 @@ class ProfileResponse(BaseModel):
     level: str | None
     native_language: str | None = None
     target_language: str | None = None
-    time_budget: TimeBudgetOut | None
-    topics: list[str]
-    vocab_priorities: list[str]
-    grammar_mastery: dict[str, int]
+    time_budget: dict | None
+    topics: list
+    vocab_priorities: list
+    grammar_mastery: dict
     schedule: ScheduleOut

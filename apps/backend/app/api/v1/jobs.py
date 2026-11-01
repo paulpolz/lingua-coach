@@ -1,10 +1,3 @@
-"""`GET /api/v1/jobs/{job_id}` — docs/implementation-readiness.md §6.
-
-Not lesson-scoped (a `jobs` row only carries `type` + `result_ref`), so this
-depends on plain `get_current_user` rather than the onboarding gate — the
-lesson that spawned the job is already gated at `POST /lessons/start`.
-"""
-
 from __future__ import annotations
 
 import uuid

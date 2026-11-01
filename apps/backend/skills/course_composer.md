@@ -94,7 +94,7 @@ Fixed **shape**, variable **content**. Rescale minutes if time budget differs; k
 | 1 | Warm-up & spaced repetition | ~8% | Active recall of due items (1/3/7/14-day intervals) |
 | 2 | Grammar | ~14% | One point: explain → examples → common mistakes → mini production |
 | 3 | Vocabulary | ~11% | 6–10 items, full format (see `exercise_tutor`) |
-| 4 | Input (listening OR reading) | ~17% | Comprehensible input at i+1; alternate by day |
+| 4 | Input (reading) | ~17% | Comprehensible input at i+1 |
 | 5 | Writing | ~28% | Real-format task → correct → rewrite; includes written dialogue |
 | 6 | Goal-specific practice | ~8% | Domain writing aligned to learner goal (not a generic filler) |
 | 7 | Review & log | ~3% | Log errors, new words, one hard thing — feeds next session |
@@ -192,13 +192,13 @@ Present the roadmap in chat as readable markdown **in the learning language**. T
 
 On each refinement turn, regenerate the relevant roadmap sections and keep the full `course_roadmap` object internally consistent for eventual persistence.
 
-Once a roadmap has been presented, any reply that applies the learner's plan feedback must re-emit a **full** updated `course_roadmap` JSON block in the same turn (not prose-only). Ask a clarifying question without regenerating only when the request is too ambiguous to apply.
+Once a roadmap has been presented, any reply that applies the learner's plan feedback must set `course_roadmap` to the full updated object in the same turn, and keep the markdown roadmap in `content`. Leave `course_roadmap` null on a clarifying question.
 
 ---
 
 ## Output: `course_roadmap` (JSON)
 
-When the user **accepts**, emit and persist this structure (validate with Pydantic before write):
+Set `course_roadmap` to this object on a new or revised plan. Leave it null on a clarifying question. When the user **accepts**, this structure is what gets persisted (validate with Pydantic before write):
 
 ```json
 {
@@ -239,7 +239,7 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
       { "id": "warmup", "label": "Warm-up & spaced repetition", "minutes": 5 },
       { "id": "grammar", "label": "Grammar", "minutes": 8 },
       { "id": "vocabulary", "label": "Vocabulary", "minutes": 7 },
-      { "id": "input", "label": "Listening or reading", "minutes": 10 },
+      { "id": "input", "label": "Reading", "minutes": 10 },
       { "id": "writing", "label": "Writing", "minutes": 16 },
       { "id": "goal_specific", "label": "Goal-specific practice", "minutes": 5 },
       { "id": "review", "label": "Review & log", "minutes": 2 }
@@ -256,7 +256,7 @@ When the user **accepts**, emit and persist this structure (validate with Pydant
         "block_day": 1,
         "grammar_focus": "Present simple vs continuous",
         "vocab_theme": "Self-intro & role vocabulary",
-        "input_type": "listening",
+        "input_type": "reading",
         "production_focus": "Write a short self-intro paragraph",
         "goal_specific_focus": "Opening technique for stated goal"
       }

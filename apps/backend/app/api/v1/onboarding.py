@@ -1,7 +1,4 @@
-"""`POST /api/v1/onboarding/accept` — persists the accepted course roadmap and
-unlocks the app. Implements the exact sequence from
-docs/tech_requirements/database.md "Onboarding data flow".
-"""
+"""`POST /onboarding/accept`: the accepted roadmap becomes the plan and the app unlocks."""
 
 from __future__ import annotations
 
@@ -36,24 +33,20 @@ async def accept_onboarding(
     db: AsyncSession = Depends(get_db),
 ) -> OnboardingAcceptResponse:
     try:
-        session_uuid = uuid.UUID(body.session_id)
+        session = await db.get(ChatSession, uuid.UUID(body.session_id))
     except ValueError:
-        raise APIError(404, "Onboarding chat session not found", "NOT_FOUND") from None
-
-    session_result = await db.execute(select(ChatSession).where(ChatSession.id == session_uuid))
-    session = session_result.scalar_one_or_none()
+        session = None
     if session is None or session.user_id != user.id or session.type != ChatSessionType.onboarding:
         raise APIError(404, "Onboarding chat session not found", "NOT_FOUND")
 
-    goal_result = await db.execute(
-        select(LearningGoal)
-        .where(LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft)
-        .order_by(LearningGoal.created_at.desc())
-    )
-    goal = goal_result.scalars().first()
+    goal = (
+        await db.execute(
+            select(LearningGoal)
+            .where(LearningGoal.user_id == user.id, LearningGoal.status == LearningGoalStatus.draft)
+            .order_by(LearningGoal.created_at.desc())
+        )
+    ).scalars().first()
     if goal is None:
-        # The interview never persisted a learner_profile (structured
-        # extraction never fired) — there is no goal to attach the plan to.
         raise APIError(
             422,
             "No draft learning goal found; complete the onboarding interview before accepting a plan",
@@ -62,59 +55,43 @@ async def accept_onboarding(
 
     now = datetime.now(timezone.utc)
     roadmap = body.course_roadmap
+    plan_days = int((roadmap.get("summary") or {}).get("target_plan_days") or 0)
 
     plan = LearningPlan(
         user_id=user.id,
         learning_goal_id=goal.id,
         status=LearningPlanStatus.accepted,
-        roadmap=roadmap.model_dump(),
-        current_milestone_index=roadmap.current_milestone_index,
+        roadmap=roadmap,
+        current_milestone_index=int(roadmap.get("current_milestone_index") or 0),
         accepted_at=now,
     )
     db.add(plan)
-    await db.flush()  # assign plan.id before referencing it on `profiles`
+    await db.flush()
 
-    profile_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
-    profile = profile_result.scalar_one_or_none()
+    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
     if profile is None:
         profile = Profile(user_id=user.id, pace_window_hours=settings.pace_window_hours)
         db.add(profile)
-        await db.flush()
-
-    pace_window_hours = profile.pace_window_hours or settings.pace_window_hours
     profile.active_learning_plan_id = plan.id
-    profile.target_plan_days = roadmap.summary.target_plan_days
-    # Initial projection ≈ accept time + target_plan_days × pace window, per
-    # backend.md "Plan schedule and pacing" (display may round to calendar days).
-    profile.projected_completion_at = now + timedelta(
-        hours=roadmap.summary.target_plan_days * pace_window_hours
-    )
+    profile.target_plan_days = plan_days or None
+    profile.projected_completion_at = now + timedelta(hours=plan_days * (profile.pace_window_hours or 24))
 
     goal.status = LearningGoalStatus.active
-
     user.onboarding_complete = True
     user.plan_accepted_at = now
-
-    db.add(
-        UserReport(
-            user_id=user.id,
-            report_type=UserReportType.roadmap,
-            body=seed_roadmap_markdown(roadmap),
-        )
-    )
-    db.add(
-        UserReport(
-            user_id=user.id,
-            report_type=UserReportType.four_week_plan,
-            body=seed_four_week_plan_markdown(roadmap),
-        )
+    db.add_all(
+        [
+            UserReport(user_id=user.id, report_type=UserReportType.roadmap, body=seed_roadmap_markdown(roadmap)),
+            UserReport(
+                user_id=user.id,
+                report_type=UserReportType.four_week_plan,
+                body=seed_four_week_plan_markdown(roadmap),
+            ),
+        ]
     )
 
-    # Retention (database.md): delete the onboarding chat transcript + session
-    # on accept — `profiles` / `learning_plans` are the long-term store now.
+    # The transcript is disposable once the plan is accepted.
     await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session.id))
     await db.execute(delete(ChatSession).where(ChatSession.id == session.id))
-
     await db.commit()
-
     return OnboardingAcceptResponse(onboarding_complete=True, plan_accepted_at=now)

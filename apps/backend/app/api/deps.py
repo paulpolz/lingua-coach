@@ -42,11 +42,6 @@ async def get_current_user(
     principal: ClerkPrincipal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Resolve the verified Clerk principal to its Postgres `users` row.
-
-    Every authenticated route beyond `/auth/sync` depends on this rather than
-    re-querying by `clerk_user_id` itself.
-    """
     result = await db.execute(select(User).where(User.clerk_user_id == principal.clerk_user_id))
     user = result.scalar_one_or_none()
     if user is None:
@@ -55,13 +50,6 @@ async def get_current_user(
 
 
 async def require_onboarding_complete(user: User = Depends(get_current_user)) -> User:
-    """Onboarding gate for lesson routes (readiness §6: `403` when incomplete).
-
-    No lesson routes exist yet (Phase 3+) — this is built now per the plan so
-    those routes can depend on it directly, e.g.:
-    `user: User = Depends(require_onboarding_complete)` in place of
-    `Depends(get_current_user)`.
-    """
     if not user.onboarding_complete:
         raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
     return user

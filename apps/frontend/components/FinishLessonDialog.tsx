@@ -3,10 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import Button from "@/components/ui/Button";
-import type { CsatValue } from "@/lib/quality";
 import type { FinishLessonRequest } from "@/lib/lessons";
-
-const CSAT_OPTIONS: CsatValue[] = [1, 2, 3, 4, 5];
 
 export interface FinishLessonDialogProps {
   open: boolean;
@@ -16,8 +13,7 @@ export interface FinishLessonDialogProps {
 }
 
 /**
- * Optional 1–5 CSAT + free-text feedback before finishing a lesson.
- * Empty rating and empty comment are allowed — finish must not be blocked.
+ * Optional free-text feedback before finishing a lesson; an empty comment is fine.
  * Form state lives in a child that unmounts when closed so fields reset cleanly.
  */
 export default function FinishLessonDialog({
@@ -43,7 +39,6 @@ function FinishLessonDialogForm({
 }) {
   const titleId = useId();
   const textareaId = useId();
-  const [csat, setCsat] = useState<CsatValue | null>(null);
   const [feedback, setFeedback] = useState("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
@@ -73,37 +68,9 @@ function FinishLessonDialogForm({
           Finish this lesson?
         </h2>
         <p className="mt-1.5 text-sm leading-[22px] text-muted">
-          Marks it accomplished. Any unfinished slots count as 0%. Rating is optional.
+          Marks it accomplished. Any unfinished slots count as 0%.
         </p>
 
-        <fieldset className="mt-4">
-          <legend className="text-[13px] font-[550] leading-[18px] text-foreground">
-            How was this lesson?
-          </legend>
-          <div className="mt-2 flex gap-1.5" role="radiogroup" aria-label="Lesson rating from 1 to 5">
-            {CSAT_OPTIONS.map((value) => {
-              const selected = csat === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={isSubmitting}
-                  onClick={() => setCsat((current) => (current === value ? null : value))}
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl text-sm font-semibold [transition:transform_120ms_cubic-bezier(0.23,1,0.32,1),background-color_150ms_ease] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20 disabled:cursor-not-allowed disabled:opacity-50 ${
-                    selected
-                      ? "bg-accent text-white dark:text-stone-950"
-                      : "border border-border-strong bg-surface text-foreground hover:bg-tutor-soft hover:text-tutor"
-                  }`}
-                >
-                  {value}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-1.5 text-[11px] leading-4 text-muted">1 = poor · 5 = excellent. Skip if you prefer.</p>
-        </fieldset>
 
         <label htmlFor={textareaId} className="mt-4 block text-[13px] font-[550] leading-[18px] text-foreground">
           Anything we should know?
@@ -125,7 +92,6 @@ function FinishLessonDialogForm({
           <Button
             onClick={() =>
               onConfirm({
-                ...(csat ? { csat } : {}),
                 ...(feedback.trim() ? { learner_feedback: feedback.trim() } : {}),
               })
             }

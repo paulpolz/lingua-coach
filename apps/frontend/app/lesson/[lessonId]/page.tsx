@@ -5,12 +5,8 @@ import { getLesson, type Lesson } from "@/lib/lessons";
 import LessonChat, { BackToDashboardButton } from "./LessonChat";
 
 /**
- * Server component: protects the route and does the initial
- * `GET /lessons/{lessonId}` fetch (same auth/data-fetching plumbing as the
- * Phase 3 placeholder this replaces). The interactive chat body — session
- * create/resume, transcript load, SSE streaming — lives in the client
- * component `LessonChat`, mirroring the onboarding page/`OnboardingChat`
- * split from Phase 2.
+ * Server component: protects the route and fetches the lesson; the chat
+ * itself is the client component `LessonChat`.
  */
 export default async function LessonPage({
   params,

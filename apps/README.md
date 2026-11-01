@@ -1,100 +1,74 @@
 # Apps
 
-Local development layout for Lingua Coach.
-
 ## Prerequisites
 
 - Docker
-- Python 3.11+ ([uv](https://docs.astral.sh/uv/)) — only if running backend migrations or backend on the host
-- Node.js 20+ — only if running frontend on the host
+- Python 3.11+ with [uv](https://docs.astral.sh/uv/), only to run the backend on the host
+- Node.js 20+, only to run the frontend on the host
 
 ## First-time setup
 
-From repo root:
+From the repo root:
 
 ```bash
-cp apps/backend/.env.example apps/backend/.env          # once; fill in secrets
-cp apps/frontend/.env.example apps/frontend/.env.local  # once; fill in secrets
+cp apps/backend/.env.example apps/backend/.env          # fill in secrets
+cp apps/frontend/.env.example apps/frontend/.env.local  # fill in secrets
 ```
 
-## Start everything (Docker Compose)
-
-From repo root:
+## Docker Compose
 
 ```bash
-docker compose up --build --no-start
+docker compose up --build
 ```
 
-This starts Postgres, the FastAPI backend (port 8000), and the Next.js frontend (port 3000) with hot reload via volume mounts. The backend runs `alembic upgrade head` on startup before serving requests.
+This starts Postgres, the FastAPI backend on port 8000, and the Next.js frontend on port 3000, with hot reload through volume mounts. The backend runs `alembic upgrade head` before serving.
 
-Verify:
+Check:
 
-- Health: `GET http://localhost:8000/api/v1/health`
-- Metrics: `GET http://localhost:8000/metrics`
-- App: `http://localhost:3000`
+- Health: http://localhost:8000/api/v1/health
+- Metrics: http://localhost:8000/metrics
+- App: http://localhost:3000
 
-
-
-### Local monitoring (optional profile)
-
-Prometheus, Loki, Promtail, and Grafana are opt-in via Compose profile:
-
-```bash
-docker compose --profile monitoring up --build --no-start
-```
-
-
-| Service    | URL                                                                                     |
-| ---------- | --------------------------------------------------------------------------------------- |
-| Grafana    | [http://localhost:3001](http://localhost:3001) (anonymous Viewer, or `admin` / `admin`) |
-| Prometheus | [http://localhost:9090](http://localhost:9090)                                          |
-| Loki       | [http://localhost:3100](http://localhost:3100)                                          |
-
-
-Pre-provisioned dashboards: **API Overview**, **LLM & Token Burn**, **Errors & Correlation**, **AI Quality**. Quality count panels read `quality_events_stored` (hydrated from Postgres on API start, so reload does not wipe thumbs/CSAT). To debug a request, copy `X-Request-ID` from the browser Network tab and filter logs with:
-
-```
-{service="backend"} | json | request_id="<uuid>"
-```
-
-See `[docs/mvp/monitoring_20260811/monitoring_20260811.md](../docs/mvp/monitoring_20260811/monitoring_20260811.md)` for the prod Railway log runbook.
-
-To run migrations manually (e.g. after pulling new migration files without restarting the stack):
+Run migrations by hand after pulling new ones:
 
 ```bash
 docker compose exec backend uv run alembic upgrade head
 ```
 
+### Monitoring profile
 
+```bash
+docker compose --profile monitoring up --build
+```
 
-## Start Postgres only
+| Service | URL |
+|---------|-----|
+| Grafana | http://localhost:3001 (anonymous viewer, or `admin` / `admin`) |
+| Prometheus | http://localhost:9090 |
+| Loki | http://localhost:3100 |
 
-If you prefer running backend/frontend on the host:
+Dashboards: **API Overview**, **LLM & Token Burn**, **Errors & Correlation**. To trace one request, copy `X-Request-ID` from the browser network tab and query Loki:
+
+```
+{service="backend"} | json | request_id="<uuid>"
+```
+
+## Backend on the host
 
 ```bash
 docker compose up -d postgres
-```
-
-
-
-## Backend on host (FastAPI)
-
-```bash
 cd apps/backend
 uv sync
-cp .env.example .env   # then fill in secrets
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-
-
-## Frontend on host (Next.js)
+## Frontend on the host
 
 ```bash
 cd apps/frontend
 npm install
-cp .env.example .env.local   # then fill in secrets
 npm run dev
 ```
 
+Checks used in CI: `npm run lint` and `npm run typecheck` in `apps/frontend`, and `uv run python -c "import app.main"` plus `uv run python -m unittest tests.test_structured_output` in `apps/backend`.

@@ -7,9 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { waitForToken } from "@/lib/wait-for-token";
 import {
   acceptOnboarding,
-  hasQuestionMark,
-  isPlanStreamContent,
-  streamChatMessage,
+  sendChatMessage,
   type ChatMessage,
   type CourseRoadmap,
 } from "@/lib/chat";
@@ -29,7 +27,7 @@ interface OnboardingChatProps {
 }
 
 type ChatTimelineItem =
-  | ({ kind: "message"; isPlanStream?: boolean } & DisplayMessage)
+  | ({ kind: "message" } & DisplayMessage)
   | {
       kind: "plan";
       id: string;
@@ -38,30 +36,7 @@ type ChatTimelineItem =
       status: PlanStatus;
     };
 
-function timelineHasPriorPlan(items: ChatTimelineItem[]): boolean {
-  return items.some(
-    (item) =>
-      item.kind === "plan" ||
-      (item.kind === "message" &&
-        item.role === "assistant" &&
-        Boolean(item.metadata?.course_roadmap_draft))
-  );
-}
-
-function isStreamingPlanMessage(item: ChatTimelineItem): boolean {
-  if (item.kind !== "message" || !item.isStreaming || item.role !== "assistant") return false;
-  return (
-    Boolean(item.isPlanStream) ||
-    isPlanStreamContent(item.content) ||
-    (item.content.length >= 120 && !hasQuestionMark(item.content))
-  );
-}
-
 const THREAD_CLASS = "mx-auto flex w-full max-w-[560px] flex-col gap-4";
-
-function PlanGeneratingPlaceholder() {
-  return <p className="text-sm text-muted">Building your proposed plan…</p>;
-}
 
 function buildTimelineFromTranscript(messages: ChatMessage[]): ChatTimelineItem[] {
   const items: ChatTimelineItem[] = [];
@@ -137,6 +112,7 @@ export default function OnboardingChat({
 
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isPlanRegenerating, setIsPlanRegenerating] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [lastFailedContent, setLastFailedContent] = useState<string | null>(null);
   const [lastFailedSilent, setLastFailedSilent] = useState(false);
@@ -162,10 +138,6 @@ export default function OnboardingChat({
           item.kind === "plan" && item.status === "active"
       ) ?? null,
     [timeline]
-  );
-
-  const isPlanRegenerating = Boolean(
-    activePlan && timeline.some((item) => isStreamingPlanMessage(item))
   );
 
   const showIntro = visibleMessageCount === 0 && !hasStarted && !isSending;
@@ -196,6 +168,9 @@ export default function OnboardingChat({
       const silent = options?.silent === true;
 
       setIsSending(true);
+      setIsPlanRegenerating(
+        silent && content.trim().toLowerCase() === CHANGE_PLAN_TRIGGER.toLowerCase()
+      );
       setSendError(null);
       setLastFailedContent(null);
       setLastFailedSilent(false);
@@ -218,78 +193,65 @@ export default function OnboardingChat({
           role: "assistant",
           content: "",
           isStreaming: true,
-          isPlanStream: timelineHasPriorPlan(prev),
         },
       ]);
 
-      const token = await waitForToken(getToken);
+      const failSend = (message: string) => {
+        setTimeline((prev) =>
+          prev.filter((item) => !(item.kind === "message" && item.id === streamingId))
+        );
+        setSendError(message || "Something went wrong, try again.");
+        setLastFailedContent(content);
+        setLastFailedSilent(silent);
+      };
 
-      await streamChatMessage(token, sessionId, content, {
-        onToken: (text) => {
-          setTimeline((prev) =>
-            prev.map((item) => {
-              if (item.kind !== "message" || item.id !== streamingId) return item;
-              const content = item.content + text;
-              const looksLikeQuestion =
-                hasQuestionMark(content) && content.length < 400;
-              const isPlanStream =
-                item.isPlanStream ||
-                isPlanStreamContent(content) ||
-                (content.length >= 180 && !looksLikeQuestion);
+      try {
+        const token = await waitForToken(getToken);
+        const data = await sendChatMessage(token, sessionId, content);
+        if (!data.content?.trim()) {
+          failSend("Something went wrong, try again.");
+          return;
+        }
+
+        setTimeline((prev) => {
+          const next = prev.map((item) => {
+            if (item.kind === "message" && item.id === streamingId) {
               return {
-                ...item,
-                content,
-                isPlanStream,
+                kind: "message" as const,
+                id: data.message_id,
+                role: "assistant" as const,
+                content: data.content,
+                metadata: data.metadata,
+                isStreaming: false,
               };
-            })
-          );
-        },
-        onDone: (data) => {
-          setTimeline((prev) => {
-            const next = prev.map((item) => {
-              if (item.kind === "message" && item.id === streamingId) {
-                return {
-                  kind: "message" as const,
-                  id: data.message_id,
-                  role: "assistant" as const,
-                  content: data.content,
-                  metadata: data.metadata,
-                  isStreaming: false,
-                };
-              }
-              if (
-                item.kind === "plan" &&
-                item.status === "active" &&
-                data.metadata?.course_roadmap_draft
-              ) {
-                return { ...item, status: "superseded" as const };
-              }
-              return item;
-            });
-
-            if (data.metadata?.course_roadmap_draft) {
-              next.push({
-                kind: "plan",
-                id: `plan-${data.message_id}`,
-                sourceMessageId: data.message_id,
-                roadmap: data.metadata.course_roadmap_draft,
-                status: "active",
-              });
             }
-            return next;
+            if (
+              item.kind === "plan" &&
+              item.status === "active" &&
+              data.metadata?.course_roadmap_draft
+            ) {
+              return { ...item, status: "superseded" as const };
+            }
+            return item;
           });
-          setIsSending(false);
-        },
-        onError: (error) => {
-          setTimeline((prev) =>
-            prev.filter((item) => !(item.kind === "message" && item.id === streamingId))
-          );
-          setSendError(error.message || "Something went wrong, try again.");
-          setLastFailedContent(content);
-          setLastFailedSilent(silent);
-          setIsSending(false);
-        },
-      });
+
+          if (data.metadata?.course_roadmap_draft) {
+            next.push({
+              kind: "plan",
+              id: `plan-${data.message_id}`,
+              sourceMessageId: data.message_id,
+              roadmap: data.metadata.course_roadmap_draft,
+              status: "active",
+            });
+          }
+          return next;
+        });
+      } catch (error) {
+        failSend(error instanceof Error ? error.message : "Something went wrong, try again.");
+      } finally {
+        setIsSending(false);
+        setIsPlanRegenerating(false);
+      }
     },
     [sessionId, isSending, getToken]
   );
@@ -359,16 +321,10 @@ export default function OnboardingChat({
           item.role === "assistant" && Boolean(item.metadata?.course_roadmap_draft);
         if (hideForPlanDraft) return null;
 
-        if (item.isStreaming && isStreamingPlanMessage(item)) {
-          if (activePlan) return null;
-          return <PlanGeneratingPlaceholder key={item.id} />;
-        }
-
         return (
           <ChatMessageBubble
             key={item.id}
             message={item}
-            quality={{ sessionId, surface: "onboarding", getToken }}
           />
         );
       })}

@@ -1,44 +1,32 @@
 # Lingua Coach — Agent Skills
 
-Generic, goal-agnostic skills for the learning engine. Prompt modules and system instructions that define **what the agent does** — separate from how the platform persists and renders it ([database.md](../../../docs/mvp/init/tech_requirements/database.md), [frontend.md](../../../docs/mvp/init/tech_requirements/frontend.md)).
+Goal-agnostic coach skills. The backend loads these files at runtime as the Gemini system instruction; they define **what the coach does**. How the backend wires them (contracts, context, persistence) is in [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md).
 
-## MVP vs post-MVP
-
-| Skill | MVP | Role |
-|-------|-----|------|
-| [onboarding_interviewer.md](./onboarding_interviewer.md) | **Yes** | Discovery interview → learner profile |
-| [course_composer.md](./course_composer.md) | **Yes** | Profile → roadmap, weekly template, plan days |
-| [exercise_tutor.md](./exercise_tutor.md) | **Yes** | Lesson generation, in-chat coaching, error capture, session summary |
-| [vocabulary_practice_formats.md](./vocabulary_practice_formats.md) | **Yes** | Weekly deep-review formats (A/B); used inside lesson chat |
-| [feedback_giver.md](./feedback_giver.md) | **No** | Progress dashboard, weekly gates, structured feedback, plan adjustments |
+| Skill | Loaded for | Role |
+|-------|------------|------|
+| [onboarding_interviewer.md](./onboarding_interviewer.md) | Onboarding chat | Discovery interview → learner profile |
+| [course_composer.md](./course_composer.md) | Onboarding chat | Profile → roadmap, weekly template, plan days |
+| [exercise_tutor.md](./exercise_tutor.md) | Lesson chat, lesson generation | Curriculum, in-chat coaching, error capture |
+| [vocabulary_practice_formats.md](./vocabulary_practice_formats.md) | Lesson chat on vocab-review lessons | Weekly deep-review formats |
+| [report_writer.md](./report_writer.md) | Lesson finish | Incremental updates to the Progress and Error Log reports |
 
 ## Pipeline
 
-**MVP:**
-
-```
-onboarding_interviewer → course_composer → exercise_tutor
-                                                │
-                    pace hints + mistakes + session summaries (Postgres)
-```
-
-**Post-MVP** (adds closed-loop progress analysis):
-
-```
-exercise_tutor ──session summary──► feedback_giver ──► exercise_tutor / course_composer
+```mermaid
+flowchart LR
+  oi[onboarding_interviewer] --> cc[course_composer]
+  cc -->|accepted roadmap| et[exercise_tutor]
+  et -->|session summary + mistakes| rw[report_writer]
+  et -->|mistakes, summaries| et
 ```
 
-## Agent responsibilities
+## What the coach does
 
-The backend learning engine loads these skills as system instructions / prompt modules. The agent:
-
-1. **Interacts** with the learner in chat (onboarding + lessons)
-2. **Plans** the education program (`course_composer` → accepted roadmap)
-3. **Conducts** lessons (`exercise_tutor`)
-4. **Tracks** session outcomes, mistakes, and pace (`exercise_tutor` artifacts in MVP; `feedback_giver` enrichment post-MVP)
-5. **Gives feedback** — inline in lesson chat in MVP; structured progress updates and weekly gates post-MVP (`feedback_giver`)
-
-All structured outputs are **persisted to Postgres** — not inferred from chat history alone.
+1. **Interacts** with the learner in chat (onboarding and lessons).
+2. **Plans** the program (`course_composer` → accepted roadmap).
+3. **Conducts** lessons (`exercise_tutor`).
+4. **Tracks** mistakes and session outcomes, which the backend stores in Postgres.
+5. **Reports** progress and errors after each lesson (`report_writer`).
 
 ## Onboarding interview flow
 
@@ -58,21 +46,18 @@ Learner answers are accepted in any language throughout so beginners can finish.
 ## Design principles
 
 - **Goal-first, not curriculum-first** — the learner's outcome drives structure.
-- **Language of coaching** — start onboarding in English to collect native then learning language; then coach in the learning language. Lessons are full immersion; native is L1-interference context only.
+- **Language of coaching** — start onboarding in English to collect native then learning language; then coach in the learning language. Native is L1-interference context only.
 - **Adapt but never lower the goal** — pace adjusts; target outcome does not.
 - **Output-first** — write before (or alongside) rule explanation.
 - **Structured learner memory** — profile, errors, and progress are data, not chat history.
-- **Text chat plus catalog listening** — learner–tutor interaction is typed; listening uses a linked clip on listening days. There is no speaking practice.
+- **Text chat** — learner–tutor interaction is typed. Product skills are reading and writing. There is no speaking practice.
 - **Fixed ritual, personalized content** — daily shape stays constant; topics adapt to performance.
 
 ## Related docs
 
 | Doc | Role |
 |-----|------|
-| [database.md](../../../docs/mvp/init/tech_requirements/database.md) | What each skill persists |
-| [backend.md](../../../docs/mvp/init/tech_requirements/backend.md) | Orchestration and API lifecycle |
-| [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md) | Gemini call types per skill |
-| [frontend.md](../../../docs/mvp/init/tech_requirements/frontend.md) | UI surfaces for MVP skill use cases |
-| [cjm.md](../../../docs/mvp/init/functional_requirements/cjm.md) | User journeys |
-
-Backend loads skill files at runtime as `system_instruction` per call type; dynamic context (profile, history, lesson snippet) is assembled in code — see [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md).
+| [cjm.md](../../../docs/mvp/init/business_requirements/cjm.md) | Learner journey |
+| [ai-api.md](../../../docs/mvp/init/tech_requirements/ai-api.md) | Skill loading, contracts, context per call |
+| [database.md](../../../docs/mvp/init/tech_requirements/database.md) | What each artifact persists to |
+| [backend.md](../../../docs/mvp/init/tech_requirements/backend.md) | Request flows and lesson lifecycle |

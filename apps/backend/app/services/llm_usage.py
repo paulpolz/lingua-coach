@@ -14,16 +14,21 @@ visible to the next request.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, TypeVar
 
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.errors import APIError
 from app.models.llm_usage import LlmUsageEvent
+from app.services.gemini import ChatTurn, generate_structured
+
+T = TypeVar("T", bound=BaseModel)
 
 GeminiCallType = Literal["chat", "lesson_json", "report"]
 UserLimitKind = Literal["chat", "lesson_start"]
@@ -190,21 +195,74 @@ async def complete(
     db: AsyncSession,
     event: LlmUsageEvent,
     *,
-    input_tokens: int,
+    input_tokens: int | None,
     status: UsageStatus,
     model: str | None,
 ) -> None:
-    """Mark a reserved call `ok` or `error`. Actual input tokens are written on `ok`."""
+    """Mark a reserved call `ok` or `error`.
+
+    A known input count is stored for both statuses. Pass None to keep the
+    reserve estimate, which is only correct when usage never arrived.
+    """
     async with _side_session(db) as side:
         row = await side.get(LlmUsageEvent, event.id)
         if row is None:
             return
         row.status = status
         row.model = model
-        if status == "ok":
+        if input_tokens is not None:
             row.input_tokens = input_tokens
         await side.commit()
     event.status = status
     event.model = model
-    if status == "ok":
+    if input_tokens is not None:
         event.input_tokens = input_tokens
+
+
+async def metered_structured_call(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    call_type: GeminiCallType,
+    *,
+    model_id: str,
+    schema: type[T],
+    system_instruction: str,
+    history: list[ChatTurn],
+    before_call: Callable[[], Awaitable[None]] | None = None,
+) -> T:
+    """Reserve one Gemini call, optionally run `before_call`, then parse a model.
+
+    The reserve estimate is the character length of the system instruction and
+    history divided by 4. A parsed model completes the row as `ok`. Any
+    exception from the Gemini call completes it as `error`. Persistence of the
+    model stays with the caller, so a later insert failure leaves the row `ok`.
+    """
+    event = await reserve_gemini_call(
+        db,
+        user_id,
+        call_type,
+        estimated_input_tokens=estimate_input_tokens(system_instruction, *(turn.text for turn in history)),
+    )
+    if before_call is not None:
+        await before_call()
+
+    known_tokens: int | None = None
+
+    async def on_usage(count: int) -> None:
+        nonlocal known_tokens
+        known_tokens = count
+
+    try:
+        parsed = await generate_structured(
+            model_id=model_id,
+            schema=schema,
+            system_instruction=system_instruction,
+            history=history,
+            call_type=call_type,
+            on_usage=on_usage,
+        )
+    except Exception:
+        await complete(db, event, input_tokens=known_tokens, status="error", model=model_id)
+        raise
+    await complete(db, event, input_tokens=known_tokens, status="ok", model=model_id)
+    return parsed

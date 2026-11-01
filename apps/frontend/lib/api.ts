@@ -3,11 +3,8 @@
  *
  * Kept free of any Clerk imports so it can be called from both Server
  * Components (token via `(await auth()).getToken()`) and Client Components
- * (token via `useAuth().getToken()`) — see app/page.tsx and
- * app/(protected)/*.
+ * (token via `useAuth().getToken()`).
  */
-
-import { reportClientError } from "@/lib/reportError";
 
 export function getApiBaseUrl(): string {
   // Server Components / SSR in Docker Compose reach the backend via the
@@ -66,12 +63,8 @@ export async function apiFetch(
 
 /**
  * Builds an `ApiError` from a non-2xx response, following the common error
- * shape in readiness §6 (`{ "detail": "...", "code": "..." }`). Falls back to
- * a generic message when the body isn't JSON (e.g. an HTML error page from a
- * proxy, or an unreachable/misconfigured backend).
- *
- * Also fire-and-forgets a telemetry report so frontend failures show up next
- * to backend logs under the same `request_id`.
+ * shape (`{ "detail": "...", "code": "..." }`). Falls back to
+ * a generic message when the body isn't JSON.
  */
 export async function toApiError(response: Response, fallbackMessage: string): Promise<ApiError> {
   let detail = `${fallbackMessage} (status ${response.status})`;
@@ -85,16 +78,6 @@ export async function toApiError(response: Response, fallbackMessage: string): P
     // Response body wasn't JSON — keep the default message.
   }
 
-  if (typeof window !== "undefined") {
-    reportClientError({
-      code: code ?? `HTTP_${response.status}`,
-      message: detail,
-      surface: "api",
-      requestId,
-      path: typeof window !== "undefined" ? window.location.pathname : undefined,
-      meta: { status: response.status, url: response.url },
-    });
-  }
 
   return new ApiError(response.status, detail, code, requestId);
 }

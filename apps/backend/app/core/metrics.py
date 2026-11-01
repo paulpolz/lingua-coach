@@ -1,8 +1,6 @@
-"""Prometheus custom metrics for LLM usage, client errors, and quality signals."""
-
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Histogram
 
 llm_requests_total = Counter(
     "llm_requests_total",
@@ -23,36 +21,6 @@ llm_request_duration_seconds = Histogram(
     buckets=(0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
 )
 
-llm_retries_total = Counter(
-    "llm_retries_total",
-    "LLM-related retries (e.g. lesson schema repair)",
-    ["call_type", "reason"],
-)
-
-client_errors_total = Counter(
-    "client_errors_total",
-    "Client-reported frontend errors",
-    ["code", "surface"],
-)
-
-quality_events_total = Counter(
-    "quality_events_total",
-    "User quality signals (thumbs, lesson CSAT)",
-    ["kind", "surface", "value"],
-)
-
-quality_events_stored = Gauge(
-    "quality_events_stored",
-    "quality_events rows (thumbs, lesson CSAT); hydrated from Postgres on startup",
-    ["kind", "surface", "value"],
-)
-
-quality_judge_fail_total = Counter(
-    "quality_judge_fail_total",
-    "Online batch-judge dimension failures",
-    ["dimension", "rubric"],
-)
-
 
 def record_llm_call(
     *,
@@ -69,36 +37,3 @@ def record_llm_call(
         llm_tokens_total.labels(call_type=call_type, model=model, direction="input").inc(input_tokens)
     if output_tokens:
         llm_tokens_total.labels(call_type=call_type, model=model, direction="output").inc(output_tokens)
-
-
-def record_llm_retry(*, call_type: str, reason: str) -> None:
-    llm_retries_total.labels(call_type=call_type, reason=reason).inc()
-
-
-def record_client_error(*, code: str, surface: str) -> None:
-    client_errors_total.labels(code=code or "UNKNOWN", surface=surface or "unknown").inc()
-
-
-def record_quality_event(*, kind: str, surface: str, value: str) -> None:
-    labels = {
-        "kind": kind or "unknown",
-        "surface": surface or "unknown",
-        "value": str(value),
-    }
-    quality_events_total.labels(**labels).inc()
-    quality_events_stored.labels(**labels).inc()
-
-
-def set_quality_event_stored(*, kind: str, surface: str, value: str, count: float) -> None:
-    quality_events_stored.labels(
-        kind=kind or "unknown",
-        surface=surface or "unknown",
-        value=str(value),
-    ).set(count)
-
-
-def record_quality_judge_fail(*, dimension: str, rubric: str) -> None:
-    quality_judge_fail_total.labels(
-        dimension=dimension or "unknown",
-        rubric=rubric or "unknown",
-    ).inc()
