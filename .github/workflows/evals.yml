@@ -1,0 +1,52 @@
+name: Evals
+
+# Offline LLM evals against the real model, recorded as LangSmith experiments.
+# Nondeterministic and billed, so never part of the PR gate (see docs/tech_requirements/evals.md).
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Dataset to run
+        type: choice
+        default: all
+        options: [all, onboarding_turns, lesson_turns, curriculum_gen, report_patch]
+      min_score:
+        description: Fail when any evaluator's mean score is below this
+        default: "0.9"
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    name: evals (${{ matrix.dataset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dataset: [onboarding_turns, lesson_turns, curriculum_gen, report_patch]
+    defaults:
+      run:
+        working-directory: apps/backend
+    env:
+      APP_ENV: local
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_TRACING: "true"
+      LANGSMITH_PROJECT: lingua-coach-evals
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'schedule' || inputs.dataset == 'all' || inputs.dataset == matrix.dataset
+      - uses: astral-sh/setup-uv@v10.0.1
+        if: github.event_name == 'schedule' || inputs.dataset == 'all' || inputs.dataset == matrix.dataset
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          working-directory: apps/backend
+      - name: Run ${{ matrix.dataset }}
+        if: github.event_name == 'schedule' || inputs.dataset == 'all' || inputs.dataset == matrix.dataset
+        run: |
+          uv sync --frozen
+          uv run python -m evals.run --dataset ${{ matrix.dataset }} --min-score ${{ inputs.min_score || '0.9' }}

@@ -32,3 +32,23 @@ async def test_parsed_curriculum_reports_raw_input_tokens(fake_llm: FakeLLM) -> 
     assert call.schema is LessonCurriculum
     assert call.structured_kwargs["method"] == "json_schema"
     assert call.structured_kwargs["include_raw"] is True
+
+
+async def test_trace_config_names_the_call_and_carries_metadata(fake_llm: FakeLLM) -> None:
+    fake_llm.push(curriculum())
+
+    await generate_structured(
+        model_id="m",
+        schema=LessonCurriculum,
+        system_instruction="s",
+        history=[ChatTurn(role="user", text="x")],
+        call_type="lesson_json",
+        trace_metadata={"lesson_number": 3},
+    )
+
+    config = fake_llm.calls[-1].config
+    assert config is not None
+    assert config["run_name"] == "lesson_json"
+    assert "lesson_json" in config["tags"] and "env:local" in config["tags"]
+    assert config["metadata"]["lesson_number"] == 3
+    assert config["metadata"]["call_type"] == "lesson_json"

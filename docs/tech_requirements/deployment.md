@@ -48,8 +48,7 @@ cp apps/backend/.env.example apps/backend/.env
 cp apps/frontend/.env.example apps/frontend/.env.local
 # fill in Clerk keys and GEMINI_API_KEY
 
-docker compose up                         # app
-docker compose --profile monitoring up    # app + monitoring
+docker compose up                         # app + monitoring, all services
 ```
 
 Open http://localhost:3000. The API is at http://localhost:8000, Prometheus at http://localhost:9090, and Grafana at http://localhost:3001.
@@ -86,6 +85,9 @@ cd apps/frontend && npm install && npm run dev
 | `PACE_WINDOW_HOURS` | `24` | Pace window for new profiles |
 | `LESSON_IDLE_CAP_MINUTES` | `5` | Longest gap between lesson messages that counts as practice time |
 | `SKILLS_DIR` | `apps/backend/skills` | Skill markdown location |
+| `LANGSMITH_TRACING` | `false` | Trace every LLM call to LangSmith. `local`/`staging` only: the app refuses to start with `true` and `APP_ENV=production`. The legacy `LANGCHAIN_TRACING_V2=true` is refused there too |
+| `LANGSMITH_API_KEY` | empty | LangSmith key (read by the SDK) |
+| `LANGSMITH_PROJECT` | empty | `lingua-coach-local` or `lingua-coach-staging` |
 
 ## Frontend environment (`apps/frontend/.env.local`)
 
@@ -101,14 +103,31 @@ cd apps/frontend && npm install && npm run dev
 
 The backend container runs `uv run alembic upgrade head` before serving. Outside Compose, run it from `apps/backend`. New migrations go in `apps/backend/alembic/versions/`.
 
+## Staging
+
+Staging is a second deployment of the same images with its own data, used for QA, demos, and LangSmith traces. It holds only test accounts and synthetic or team conversations, never real learners.
+
+| Setting | Staging value |
+|---------|---------------|
+| `APP_ENV` | `staging` |
+| `DATABASE_URL` | Its own Postgres database (never the production one); run `alembic upgrade head` on deploy |
+| Clerk | A Clerk **development** instance; `CLERK_JWT_ISSUER` set to its issuer (required outside `local`) |
+| `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, `API_URL` | The staging URLs |
+| `LANGSMITH_TRACING` / `LANGSMITH_PROJECT` | `true` / `lingua-coach-staging` |
+| `GEMINI_API_KEY` | A key with its own quota, so staging traffic cannot exhaust production's |
+
+Production uses `APP_ENV=production`, a Clerk production instance, and `LANGSMITH_TRACING=false` (enforced at startup).
+
 ## CI
 
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`:
 
 | Job | Steps |
 |-----|-------|
-| `backend-check` | Postgres 16 service; `uv sync --frozen`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app`, `uv run pytest --cov=app --cov-fail-under=70` (tests use `TEST_DATABASE_URL`) |
+| `backend-check` | Postgres 16 service; `uv sync --frozen`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app`, `uv run pytest -m "not eval" --cov=app --cov-fail-under=70` (tests use `TEST_DATABASE_URL`) |
 | `frontend-check` | `npm ci`, `npm run lint`, `npm run typecheck` |
+
+[`.github/workflows/evals.yml`](../../.github/workflows/evals.yml) runs the LangSmith evals nightly and on `workflow_dispatch` (choose a dataset and a minimum score). It needs the `GEMINI_API_KEY` and `LANGSMITH_API_KEY` repository secrets and is never a PR gate. See [evals.md](./evals.md).
 
 ### Running backend checks locally
 
@@ -117,7 +136,7 @@ docker run -d --name lingua-testdb -p 55432:5432 \
   -e POSTGRES_USER=lingua -e POSTGRES_PASSWORD=lingua -e POSTGRES_DB=lingua_test postgres:16-alpine
 cd apps/backend
 export TEST_DATABASE_URL=postgresql+asyncpg://lingua:lingua@localhost:55432/lingua_test
-uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest --cov=app
+uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest -m "not eval" --cov=app
 ```
 
 The test session drops and recreates the `public` schema of that database and runs `alembic upgrade head`; every test runs in a transaction that is rolled back.

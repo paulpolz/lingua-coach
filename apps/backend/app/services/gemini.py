@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 
@@ -113,6 +114,7 @@ async def generate_structured(
     history: list[ChatTurn],
     call_type: str,
     on_usage: OnUsage = None,
+    trace_metadata: Mapping[str, Any] | None = None,
 ) -> T:
     """Return a parsed model. Does not touch the quota row.
 
@@ -123,8 +125,14 @@ async def generate_structured(
     started = time.perf_counter()
     try:
         chat = _model(model_id).with_structured_output(schema, method="json_schema", include_raw=True)
+        # Picked up by LangSmith when LANGSMITH_TRACING is on; inert otherwise.
+        config: RunnableConfig = {
+            "run_name": call_type,
+            "tags": [call_type, f"env:{settings.app_env}"],
+            "metadata": {"call_type": call_type, "model": model_id, **(trace_metadata or {})},
+        }
         async with asyncio.timeout(settings.gemini_timeout_seconds):
-            result = await chat.ainvoke(_messages(system_instruction, history))
+            result = await chat.ainvoke(_messages(system_instruction, history), config=config)
     except Exception as exc:  # noqa: BLE001
         _record(call_type, model_id, "error", started)
         raise _error(exc) from exc

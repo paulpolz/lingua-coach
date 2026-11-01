@@ -201,5 +201,6 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         schema=LessonCurriculum,
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],
+        trace_metadata={"lesson_number": lesson_number},
     )
     return curriculum.model_dump(), minutes

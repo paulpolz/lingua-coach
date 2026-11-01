@@ -466,6 +466,10 @@ async def post_chat_message(
             system_instruction=system_instruction,
             history=contents,
             before_call=save_user_message,
+            trace_metadata={
+                "session_type": session.type.value,
+                "lesson_number": lesson.lesson_number if lesson else None,
+            },
         )
     except GeminiError as exc:
         logger.warning(

@@ -13,7 +13,9 @@ import os
 # Settings are read once at import time, so pin them before any `app` import. Explicit
 # values also override a developer's apps/backend/.env.
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "postgresql+asyncpg://lingua:lingua@localhost:5432/lingua_test")
-# Tests run on a fake key, so an accidental unmocked call fails fast instead of spending money.
+# Live evals (`-m eval`) need the real key; everything else runs on a fake one, so an
+# accidental unmocked call fails fast instead of spending money.
+os.environ["EVAL_GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY") or ""
 os.environ.update(
     {
         "DATABASE_URL": TEST_DATABASE_URL,
@@ -21,6 +23,7 @@ os.environ.update(
         "CLERK_JWT_ISSUER": "",
         "CORS_ORIGINS": "http://localhost:3000",
         "GEMINI_API_KEY": "test-key",
+        "LANGSMITH_TRACING": "false",
         "CHAT_RATE_LIMIT_PER_HOUR": "1000",
         "LESSON_START_RATE_LIMIT_PER_DAY": "1000",
         "LLM_RPM_LIMIT": "1000",

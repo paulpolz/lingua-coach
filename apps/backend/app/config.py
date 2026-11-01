@@ -41,12 +41,20 @@ class Settings(BaseSettings):
     # A measurement constant, not a lesson length (lessons have no default length).
     lesson_idle_cap_minutes: int = 5
     skills_dir: str = str(_BACKEND_ROOT / "skills")
+    # Read from LANGSMITH_TRACING, which the LangSmith SDK also reads. Local and staging
+    # trace every LLM call in full; production never does (checked below).
+    langsmith_tracing: bool = False
+    # The legacy name the LangChain/LangSmith SDKs still honor.
+    langchain_tracing_v2: bool = False
 
     @model_validator(mode="after")
     def _check_deployment_safety(self) -> Settings:
         # Fail at startup: an unset issuer would trust tokens from any Clerk dev instance.
         if self.app_env != "local" and not self.clerk_jwt_issuer:
             raise ValueError(f"CLERK_JWT_ISSUER is required when APP_ENV={self.app_env!r}")
+        # Traces hold full prompts and replies; production learner data never goes to LangSmith.
+        if self.app_env == "production" and (self.langsmith_tracing or self.langchain_tracing_v2):
+            raise ValueError("LANGSMITH_TRACING and LANGCHAIN_TRACING_V2 must be false when APP_ENV='production'")
         return self
 
     @property
