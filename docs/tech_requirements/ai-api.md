@@ -90,7 +90,11 @@ The job stores `{version: 1, curriculum: LessonCurriculum.model_dump(), session_
 
 ## Report update output
 
-`ReportPatch.ops` is applied by [`services/report_ops.py`](../../../../apps/backend/app/services/report_ops.py) inside the matching `<!-- section:ID --> … <!-- /section:ID -->` markers. `append_entry` adds the markdown after the existing content; `patch_section` replaces it. An unknown section id is skipped. If the whole call fails, the lesson still finishes and the reports stay as they were.
+`ReportPatch.ops` is applied by [`services/report_ops.py`](../../apps/backend/app/services/report_ops.py) to the **full** stored body, inside the matching `<!-- section:ID --> … <!-- /section:ID -->` markers. `append_entry` adds the markdown after the existing content; `patch_section` replaces it. An unknown section id is skipped. Because the model saw only the tail of a log section, a `patch_section` on `update_log` or `daily_log` would erase history, so it is skipped with a `report_op_rejected` warning. If the whole call fails, the finished lesson stays finished and the reports stay as they were.
+
+## Tracing (LangSmith)
+
+With `LANGSMITH_TRACING=true` (local and staging only; the app refuses to start in production with it or the legacy `LANGCHAIN_TRACING_V2=true`), every LangChain call is traced. `generate_structured` passes `run_name=<call_type>`, tags `[<call_type>, env:<APP_ENV>]`, and metadata (`call_type`, `model`, `lesson_number` or `session_type`, and a 16-character SHA-256 `user_id_hash`). `metered_structured_call` is wrapped with `@traceable` so the quota step appears in the trace; its trace inputs drop the DB session and the raw user id. Offline evals are described in [evals.md](./evals.md).
 
 ## Limits around every call
 

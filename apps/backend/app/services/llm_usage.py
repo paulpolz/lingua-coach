@@ -12,12 +12,14 @@ committed early, and in-flight reservations are visible to the next request.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
+from langsmith import traceable
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +39,11 @@ _GEMINI_CALL_TYPES = ("chat", "lesson_json", "report")
 _MINUTE_SECONDS = 60
 _HOUR_SECONDS = 3600
 _DAY_SECONDS = 86400
+
+
+def _user_hash(user_id: uuid.UUID) -> str:
+    """Stable, non-reversible id for filtering traces by learner."""
+    return hashlib.sha256(str(user_id).encode()).hexdigest()[:16]
 
 
 def estimate_input_tokens(*parts: str) -> int:
@@ -212,6 +219,20 @@ async def complete(
         event.input_tokens = input_tokens
 
 
+def _trace_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """LangSmith trace inputs without the DB session or callbacks."""
+    return {k: v for k, v in inputs.items() if k not in ("db", "before_call", "user_id")}
+
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _traced(fn: _F) -> _F:
+    """`@traceable` that keeps the wrapped signature for type checkers. No-op unless tracing is on."""
+    return cast(_F, traceable(run_type="chain", name=fn.__name__, process_inputs=_trace_inputs)(fn))
+
+
+@_traced
 async def metered_structured_call(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -222,6 +243,7 @@ async def metered_structured_call(
     system_instruction: str,
     history: list[ChatTurn],
     before_call: Callable[[], Awaitable[None]] | None = None,
+    trace_metadata: Mapping[str, Any] | None = None,
 ) -> T:
     """Reserve one Gemini call, optionally run `before_call`, then parse a model.
 
@@ -253,6 +275,7 @@ async def metered_structured_call(
             history=history,
             call_type=call_type,
             on_usage=on_usage,
+            trace_metadata={"user_id_hash": _user_hash(user_id), **(trace_metadata or {})},
         )
     except Exception:
         await complete(db, event, input_tokens=known_tokens, status="error", model=model_id)

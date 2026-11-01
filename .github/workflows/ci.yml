@@ -42,7 +42,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy app
-      - run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+      - run: uv run pytest -m "not eval" --cov=app --cov-report=term-missing --cov-fail-under=70
 
   frontend-check:
     name: frontend-check

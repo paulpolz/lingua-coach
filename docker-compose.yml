@@ -2,10 +2,13 @@
 #   cp apps/backend/.env.example apps/backend/.env
 #   cp apps/frontend/.env.example apps/frontend/.env.local
 #
-# App only:
+# One command starts everything: app (Postgres, backend, frontend) and
+# monitoring (Prometheus, Loki, Promtail, Grafana):
 #   docker compose up
-# App + monitoring (Prometheus / Loki / Grafana):
-#   docker compose --profile monitoring up
+#
+# LangSmith tracing is a hosted service (smith.langchain.com), not a container.
+# The backend sends traces there when apps/backend/.env sets LANGSMITH_TRACING=true,
+# LANGSMITH_API_KEY and LANGSMITH_PROJECT (see deployment.md).
 services:
   postgres:
     image: postgres:16-alpine
@@ -63,7 +66,6 @@ services:
       - backend
 
   prometheus:
-    profiles: [monitoring]
     image: prom/prometheus:v2.55.0
     ports:
       - "9090:9090"
@@ -78,7 +80,6 @@ services:
       - backend
 
   loki:
-    profiles: [monitoring]
     image: grafana/loki:3.0.0
     ports:
       - "3100:3100"
@@ -88,7 +89,6 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
 
   promtail:
-    profiles: [monitoring]
     image: grafana/promtail:3.0.0
     volumes:
       - ./infra/monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
@@ -98,7 +98,6 @@ services:
       - loki
 
   grafana:
-    profiles: [monitoring]
     image: grafana/grafana:11.0.0
     ports:
       - "3001:3000"

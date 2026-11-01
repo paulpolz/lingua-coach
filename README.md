@@ -20,7 +20,7 @@ flowchart LR
 ```bash
 cp apps/backend/.env.example apps/backend/.env          # add Clerk keys and GEMINI_API_KEY
 cp apps/frontend/.env.example apps/frontend/.env.local  # add Clerk keys
-docker compose up                                       # add --profile monitoring for Grafana
+docker compose up                                       # app + monitoring (Grafana on :3001)
 ```
 
 Open http://localhost:3000. More options are in [`apps/README.md`](./apps/README.md).

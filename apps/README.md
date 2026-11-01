@@ -21,7 +21,7 @@ cp apps/frontend/.env.example apps/frontend/.env.local  # fill in secrets
 docker compose up --build
 ```
 
-This starts Postgres, the FastAPI backend on port 8000, and the Next.js frontend on port 3000, with hot reload through volume mounts. The backend runs `alembic upgrade head` before serving.
+This starts the whole stack: Postgres, the FastAPI backend on port 8000, the Next.js frontend on port 3000 (hot reload through volume mounts), and the monitoring services below. The backend runs `alembic upgrade head` before serving.
 
 Check:
 
@@ -35,11 +35,9 @@ Run migrations by hand after pulling new ones:
 docker compose exec backend uv run alembic upgrade head
 ```
 
-### Monitoring profile
+### Monitoring
 
-```bash
-docker compose --profile monitoring up --build
-```
+Started by the same `docker compose up`; there is no separate profile.
 
 | Service | URL |
 |---------|-----|
@@ -52,6 +50,10 @@ Dashboards: **API Overview**, **LLM & Token Burn**, **Errors & Correlation**. To
 ```
 {service="backend"} | json | request_id="<uuid>"
 ```
+
+### LangSmith tracing
+
+LangSmith is hosted at smith.langchain.com, so it has no container in the stack. Set `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT=lingua-coach-local` in `apps/backend/.env`, restart the backend, and every LLM call shows up in that project. It is refused when `APP_ENV=production`.
 
 ## Backend on the host
 

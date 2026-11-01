@@ -17,6 +17,7 @@ from app.services.gemini import ChatTurn
 from app.services.llm_usage import metered_structured_call, reserve_gemini_call
 from tests.factories import make_chat_session, make_user
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, SchemaMismatch
+from tests.samples import curriculum
 
 
 async def _events(db: AsyncSession) -> list[LlmUsageEvent]:
@@ -47,6 +48,29 @@ async def test_parse_failure_reports_tokens_and_complete_stores_error_count(
     assert events[0].status == "error"
     assert events[0].input_tokens == RAW_INPUT_TOKENS
     assert events[0].input_tokens != 0
+
+
+async def test_metered_call_traces_a_hashed_user_id(db: AsyncSession, fake_llm: FakeLLM) -> None:
+    user = await make_user(db)
+    fake_llm.push(curriculum())
+
+    await metered_structured_call(
+        db,
+        user.id,
+        "lesson_json",
+        model_id="m",
+        schema=LessonCurriculum,
+        system_instruction="s",
+        history=[ChatTurn(role="user", text="x")],
+        trace_metadata={"lesson_number": 1},
+    )
+
+    metadata = fake_llm.calls[-1].config["metadata"]  # type: ignore[index]
+    assert metadata["lesson_number"] == 1
+    assert len(metadata["user_id_hash"]) == 16
+    assert str(user.id) not in str(metadata)
+    events = await _events(db)
+    assert [e.status for e in events] == ["ok"]
 
 
 async def _usage(

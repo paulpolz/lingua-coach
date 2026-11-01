@@ -120,6 +120,7 @@ async def _update(
         schema=ReportPatch,
         system_instruction=system_instruction,
         history=[ChatTurn(role="user", text=prompt)],
+        trace_metadata={"lesson_number": lesson.lesson_number},
     )
     reports = await _locked_reports(db, user.id)
     for op in patch.ops:

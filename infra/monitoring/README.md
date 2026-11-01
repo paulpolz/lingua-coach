@@ -1,9 +1,9 @@
 # Local monitoring stack
 
-Opt-in Docker Compose profile used by the repo root `docker-compose.yml`.
+Monitoring services in the repo root `docker-compose.yml`. They start with the app.
 
 ```bash
-docker compose --profile monitoring up
+docker compose up
 ```
 
 | Path | Purpose |

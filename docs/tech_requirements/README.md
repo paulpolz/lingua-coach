@@ -11,6 +11,7 @@ How Lingua Coach is built. The learner-facing behavior is in [business_requireme
 | [deployment.md](./deployment.md) | Docker Compose, environment variables, migrations, CI |
 | [hosting.md](./hosting.md) | Where each piece runs and what is external |
 | [rag.md](./rag.md) | Choosing what learner memory goes into each LLM call (stage 1 implemented, stage 2 gated on evals) |
+| [evals.md](./evals.md) | LangSmith tracing, datasets, evaluators, and the nightly eval run |
 | [refinement-plan.md](./refinement-plan.md) | Code review findings, RAG, LangSmith evals, test framework, refinement PRs (backend implemented) |
 
 ## System overview
