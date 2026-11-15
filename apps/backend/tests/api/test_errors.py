@@ -12,10 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import JobStatus
 from app.models.job import Job
 from app.schemas.llm import LessonReply
-from app.services.structured_llm import LLMError
+from app.services.agents.runner import LLMError
 from tests.conftest import Auth
 from tests.factories import make_chat_session, make_lesson, make_profile, make_user, roadmap_dict
 from tests.fake_llm import FakeLLM, SchemaMismatch
+from tests.integration.test_llm_usage_limits import _events
 
 RAW_SECRET = "upstream said: key=AIza-secret-123 project=internal"
 
@@ -118,6 +119,8 @@ async def test_persist_failure_is_500_persist_failed(
 
     assert response.status_code == 500
     assert response.json()["code"] == "PERSIST_FAILED"
+    events = await _events(db)
+    assert len(events) == 1 and events[0].status == "ok"
 
 
 async def test_unhandled_errors_use_the_envelope(client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:

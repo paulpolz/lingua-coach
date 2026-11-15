@@ -6,7 +6,9 @@ How Lingua Coach is built. The learner-facing behavior is in [business_requireme
 |-----|--------|
 | [backend.md](./backend.md) | FastAPI service, endpoints, request flows, limits, errors |
 | [frontend.md](./frontend.md) | Next.js routes, screens, API clients |
-| [ai-api.md](./ai-api.md) | LLM calls, skill loading, prompt context, time-boxed lessons |
+| [ai-api.md](./ai-api.md) | Agents, tools, quota, SSE chat, time-boxed lessons |
+| [adr/](./adr/README.md) | Shipped agent decisions: factory, tools, metering, SSE, Postgres checkpointer |
+| [langchain-migration.html](./langchain-migration.html) | Folder map of the shipped agents and the two history stores |
 | [database.md](./database.md) | Postgres tables, JSON shapes, lifecycles |
 | [deployment.md](./deployment.md) | Docker Compose, environment variables, migrations, CI |
 | [hosting.md](./hosting.md) | Where each piece runs and what is external |
@@ -36,6 +38,6 @@ flowchart LR
 | Frontend | Next.js 16 (App Router), React 19, Tailwind CSS 4, `@clerk/nextjs` |
 | Backend | Python 3.11, FastAPI, async SQLAlchemy 2, Alembic, `uv` |
 | Database | PostgreSQL 16 |
-| LLM | Gemini through `langchain-google-genai` |
+| LLM | Gemini through LangChain `init_chat_model` (`google_genai`) and four `create_agent` graphs |
 | Auth | Clerk (frontend sessions, backend JWT verification) |
 | Monitoring | Prometheus, Loki, Promtail, Grafana (Compose profile `monitoring`) |

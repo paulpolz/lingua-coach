@@ -1,4 +1,8 @@
-"""metered_structured_call and the DB-backed limiter against real Postgres."""
+"""DB-backed chat, lesson-start, and global LLM limits against real Postgres.
+
+Agent metering (one row, summed tokens, hashed trace metadata) lives in
+`tests/unit/test_agent_runner.py`.
+"""
 
 from __future__ import annotations
 
@@ -12,65 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.errors import APIError
 from app.models.llm_usage import LlmUsageEvent
-from app.schemas.llm import LessonCurriculum
-from app.services.llm_usage import metered_structured_call, reserve_llm_call
-from app.services.structured_llm import ChatTurn
+from app.services.llm_usage import reserve_llm_call
 from tests.factories import make_chat_session, make_user
-from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, SchemaMismatch
-from tests.samples import curriculum
 
 
 async def _events(db: AsyncSession) -> list[LlmUsageEvent]:
     db.expire_all()
     return list((await db.execute(select(LlmUsageEvent))).scalars())
-
-
-async def test_parse_failure_reports_tokens_and_complete_stores_error_count(
-    db: AsyncSession, fake_llm: FakeLLM
-) -> None:
-    user = await make_user(db)
-    fake_llm.push(SchemaMismatch())
-
-    with pytest.raises(Exception) as caught:
-        await metered_structured_call(
-            db,
-            user.id,
-            "lesson_json",
-            model_id="gemini-test",
-            schema=LessonCurriculum,
-            system_instruction="system",
-            history=[ChatTurn(role="user", text="next lesson")],
-        )
-
-    assert getattr(caught.value, "code", None) == "LLM_SCHEMA_ERROR"
-    events = await _events(db)
-    assert len(events) == 1
-    assert events[0].status == "error"
-    assert events[0].input_tokens == RAW_INPUT_TOKENS
-    assert events[0].input_tokens != 0
-
-
-async def test_metered_call_traces_a_hashed_user_id(db: AsyncSession, fake_llm: FakeLLM) -> None:
-    user = await make_user(db)
-    fake_llm.push(curriculum())
-
-    await metered_structured_call(
-        db,
-        user.id,
-        "lesson_json",
-        model_id="m",
-        schema=LessonCurriculum,
-        system_instruction="s",
-        history=[ChatTurn(role="user", text="x")],
-        trace_metadata={"lesson_number": 1},
-    )
-
-    metadata = fake_llm.calls[-1].config["metadata"]  # type: ignore[index]
-    assert metadata["lesson_number"] == 1
-    assert len(metadata["user_id_hash"]) == 16
-    assert str(user.id) not in str(metadata)
-    events = await _events(db)
-    assert [e.status for e in events] == ["ok"]
 
 
 async def _usage(

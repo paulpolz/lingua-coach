@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -46,19 +48,14 @@ from app.schemas.llm import (
     PracticeResult,
     normalize_pattern,
 )
+from app.services.agents.lesson_chat import lesson_agent
+from app.services.agents.onboarding import onboarding_agent
+from app.services.agents.runner import LLMError, StreamItem, metered_agent_run, metered_agent_stream, public_detail
+from app.services.agents.tools import AgentContext
 from app.services.lesson_timing import active_minutes, lesson_target_minutes
-from app.services.llm_usage import check_and_record_user_limit, metered_structured_call
-from app.services.memory import CHAT_MISTAKES, rank_mistakes
+from app.services.llm_usage import check_and_record_user_limit
 from app.services.pace import compute_projected_completion, pace_window
-from app.services.prompt_assembly import (
-    lesson_context_block,
-    lesson_system_instruction,
-    log_context_tokens,
-    mistake_lines,
-    onboarding_system_instruction,
-)
 from app.services.queries import accomplished_count, get_profile
-from app.services.structured_llm import ChatTurn, LLMError, public_detail
 
 logger = get_logger(__name__)
 
@@ -323,33 +320,56 @@ async def _lesson_timing(
     return TurnTiming(active_minutes=active, target_minutes=target)
 
 
-async def _build_prompt(
-    db: AsyncSession, user: User, session: ChatSession, lesson: Lesson | None, history: list[ChatTurn]
-) -> tuple[str, list[ChatTurn], TurnTiming | None]:
-    profile = await get_profile(db, user.id)
-    native = profile.native_language if profile else None
-    target = profile.target_language if profile else None
-    if lesson is None:
-        return onboarding_system_instruction(native, target), history, None
+def _checkpointer(request: Request):
+    saver = getattr(request.app.state, "checkpointer", None)
+    if saver is None:
+        raise APIError(503, "The coach is unavailable right now. Please try again.", "CHECKPOINTER_UNAVAILABLE")
+    return saver
 
-    curriculum = (lesson.payload or {}).get("curriculum") or {}
-    timing = await _lesson_timing(db, session, lesson, profile)
-    now = datetime.now(UTC)
-    open_mistakes = (
-        await db.execute(select(Mistake).where(Mistake.user_id == user.id, Mistake.resolved_at.is_(None)))
-    ).scalars()
-    focus = f"{curriculum.get('grammar_focus') or ''} {curriculum.get('vocab_theme') or ''}"
-    mistakes = mistake_lines(rank_mistakes(list(open_mistakes), focus, now, k=CHAT_MISTAKES), now)
-    context = lesson_context_block(curriculum, profile, mistakes, timing)
-    log_context_tokens(
-        "chat",
-        {
-            "curriculum": json.dumps(curriculum, ensure_ascii=False),
-            "mistakes": mistakes,
-            "history": "\n".join(turn.text for turn in history),
-        },
+
+async def _prepare_turn(
+    db: AsyncSession, user: User, session_id: uuid.UUID, content: str
+) -> tuple[ChatSession, Lesson | None, AgentContext, Profile | None]:
+    session = await get_owned(db, ChatSession, session_id, user, "Chat session")
+    if not content:
+        raise APIError(422, "Message content must not be empty", "EMPTY_MESSAGE")
+    if len(content) > settings.max_message_chars:
+        raise APIError(422, f"Message exceeds {settings.max_message_chars} characters", "MESSAGE_TOO_LONG")
+    await check_and_record_user_limit(db, user.id, kind="chat")
+
+    lesson = None
+    if session.type == ChatSessionType.lesson:
+        if not user.onboarding_complete:
+            raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
+        if session.lesson_id is None:
+            raise APIError(404, "Lesson not found", "NOT_FOUND")
+        lesson = await get_owned(db, Lesson, session.lesson_id, user, "Lesson")
+
+    profile = await get_profile(db, user.id)
+    context = AgentContext(
+        user_id=user.id,
+        db=db,
+        call_type="chat",
+        native_language=profile.native_language if profile else None,
+        target_language=profile.target_language if profile else None,
+        onboarding=lesson is None,
+        session_id=session.id,
+        lesson_id=lesson.id if lesson else None,
+        lesson_number=lesson.lesson_number if lesson else None,
     )
-    return lesson_system_instruction(native, target), [ChatTurn(role="user", text=context), *history], timing
+    return session, lesson, context, profile
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _stream_payload(item: StreamItem) -> dict:
+    if item.kind == "token":
+        return {"delta": item.data}
+    if item.kind in ("tool_start", "tool_end"):
+        return {"name": item.data}
+    return item.data
 
 
 async def _persist_turn(
@@ -393,84 +413,27 @@ async def _persist_turn(
     )
 
 
-@router.post("/sessions/{session_id}/messages", response_model=ChatTurnResponse)
-async def post_chat_message(
-    session_id: uuid.UUID,
-    body: ChatMessageCreateRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> ChatTurnResponse:
-    session = await get_owned(db, ChatSession, session_id, user, "Chat session")
-    content = body.content.strip()
-    if not content:
-        raise APIError(422, "Message content must not be empty", "EMPTY_MESSAGE")
-    if len(content) > settings.max_message_chars:
-        raise APIError(422, f"Message exceeds {settings.max_message_chars} characters", "MESSAGE_TOO_LONG")
-    await check_and_record_user_limit(db, user.id, kind="chat")
+def _trace_for(session: ChatSession, lesson: Lesson | None) -> dict:
+    return {"session_type": session.type.value, "lesson_number": lesson.lesson_number if lesson else None}
 
-    lesson = None
-    if session.type == ChatSessionType.lesson:
-        if not user.onboarding_complete:
-            raise APIError(403, "Onboarding not complete", "ONBOARDING_INCOMPLETE")
-        if session.lesson_id is None:
-            raise APIError(404, "Lesson not found", "NOT_FOUND")
-        lesson = await get_owned(db, Lesson, session.lesson_id, user, "Lesson")
 
-    recent = (
-        (
-            await db.execute(
-                select(ChatMessage)
-                .where(ChatMessage.session_id == session.id)
-                .order_by(ChatMessage.created_at.desc())
-                .limit(max(settings.chat_context_messages - 1, 0))
-            )
-        )
-        .scalars()
-        .all()
-    )
-    history = [
-        ChatTurn(role="model" if m.role == ChatMessageRole.assistant else "user", text=m.content)
-        for m in reversed(recent)
-    ] + [ChatTurn(role="user", text=content)]
-    system_instruction, contents, timing = await _build_prompt(db, user, session, lesson, history)
+async def _save_user_message(db: AsyncSession, session: ChatSession, content: str) -> None:
+    db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
+    await db.commit()
 
-    async def save_user_message() -> None:
-        db.add(ChatMessage(session_id=session.id, role=ChatMessageRole.user, content=content))
-        await db.commit()
 
-    schema: type[OnboardingReply] | type[LessonReply] = OnboardingReply if lesson is None else LessonReply
+async def _save_assistant(
+    db: AsyncSession,
+    user: User,
+    session: ChatSession,
+    lesson: Lesson | None,
+    profile: Profile | None,
+    reply: OnboardingReply | LessonReply,
+) -> tuple[ChatMessage, TurnMetadata]:
     try:
-        reply = await metered_structured_call(
-            db,
-            user.id,
-            "chat",
-            model_id=settings.llm_model_chat,
-            schema=schema,
-            system_instruction=system_instruction,
-            history=contents,
-            before_call=save_user_message,
-            trace_metadata={
-                "session_type": session.type.value,
-                "lesson_number": lesson.lesson_number if lesson else None,
-            },
-        )
-    except LLMError as exc:
-        logger.warning(
-            "chat_llm_failed",
-            extra={"event": "chat_llm_failed", "code": exc.code, "error": str(exc)[:500], "user_id": str(user.id)},
-        )
-        raise APIError(_LLM_STATUS.get(exc.code, 502), public_detail(exc.code), exc.code) from exc
-
-    try:
-        if timing is not None:
-            # Re-measure now: the learner's message is saved and the reply took a while. This is the
-            # value the UI shows and the guard uses, so it agrees with what finish records.
-            timing = TurnTiming(
-                active_minutes=await active_minutes(
-                    db, session.id, settings.lesson_idle_cap_minutes, until=datetime.now(UTC)
-                ),
-                target_minutes=timing.target_minutes,
-            )
+        # Re-measure after the reply: the user row is saved and the call took time. This is the
+        # value the UI shows and the suggest_finish guard uses.
+        timing = await _lesson_timing(db, session, lesson, profile) if lesson is not None else None
         metadata = await _persist_turn(db, user, lesson, reply, timing)
         message = ChatMessage(
             session_id=session.id,
@@ -488,4 +451,116 @@ async def post_chat_message(
         )
         await db.rollback()
         raise APIError(500, "Could not save this turn. Please try again.", "PERSIST_FAILED") from None
+    return message, metadata
+
+
+def _log_llm_failure(exc: LLMError, user: User) -> None:
+    logger.warning(
+        "chat_llm_failed",
+        extra={"event": "chat_llm_failed", "code": exc.code, "error": str(exc)[:500], "user_id": str(user.id)},
+    )
+
+
+@router.post("/sessions/{session_id}/messages", response_model=ChatTurnResponse)
+async def post_chat_message(
+    session_id: uuid.UUID,
+    body: ChatMessageCreateRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ChatTurnResponse:
+    """Non-streaming turn. Kept while `CHAT_STREAMING_ENABLED` is the rollback switch."""
+    content = body.content.strip()
+    session, lesson, context, profile = await _prepare_turn(db, user, session_id, content)
+    agent = onboarding_agent(_checkpointer(request)) if lesson is None else lesson_agent(_checkpointer(request))
+
+    async def save_user_message() -> None:
+        await _save_user_message(db, session, content)
+
+    try:
+        reply = await metered_agent_run(
+            db,
+            user.id,
+            "chat",
+            agent=agent,
+            user_text=content,
+            context=context,
+            thread_id=session.id,
+            before_call=save_user_message,
+            trace_metadata=_trace_for(session, lesson),
+        )
+    except LLMError as exc:
+        _log_llm_failure(exc, user)
+        raise APIError(_LLM_STATUS.get(exc.code, 502), public_detail(exc.code), exc.code) from exc
+
+    message, metadata = await _save_assistant(db, user, session, lesson, profile, reply)
     return ChatTurnResponse(message_id=str(message.id), content=message.content, metadata=metadata)
+
+
+@router.post("/sessions/{session_id}/messages/stream")
+async def stream_chat_message(
+    session_id: uuid.UUID,
+    body: ChatMessageCreateRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    if not settings.chat_streaming_enabled:
+        raise APIError(404, "Streaming is not enabled", "STREAMING_DISABLED")
+    content = body.content.strip()
+    session, lesson, context, profile = await _prepare_turn(db, user, session_id, content)
+    agent = onboarding_agent(_checkpointer(request)) if lesson is None else lesson_agent(_checkpointer(request))
+
+    async def save_user_message() -> None:
+        await _save_user_message(db, session, content)
+
+    # Quota refusal must be the HTTP status. StreamingResponse commits 200
+    # before its body runs, so the reserve finishes first.
+    items = await metered_agent_stream(
+        db,
+        user.id,
+        "chat",
+        agent=agent,
+        user_text=content,
+        context=context,
+        thread_id=session.id,
+        before_call=save_user_message,
+        trace_metadata=_trace_for(session, lesson),
+    )
+
+    async def events() -> AsyncIterator[str]:
+        reply: OnboardingReply | LessonReply | None = None
+        saw_token = False
+        try:
+            async for item in items:
+                if item.kind == "structured":
+                    reply = item.data
+                    continue
+                if item.kind == "token":
+                    saw_token = True
+                yield _sse(item.kind, _stream_payload(item))
+        except LLMError as exc:
+            _log_llm_failure(exc, user)
+            yield _sse("error", {"code": exc.code, "detail": public_detail(exc.code)})
+            return
+        if reply is None:
+            yield _sse(
+                "error",
+                {"code": "LLM_SCHEMA_ERROR", "detail": public_detail("LLM_SCHEMA_ERROR")},
+            )
+            return
+        if settings.chat_stream_reply_fallback and not saw_token:
+            yield _sse("token", {"delta": reply.content})
+        yield _sse("structured", reply.model_dump(mode="json"))
+        try:
+            message, _metadata = await _save_assistant(db, user, session, lesson, profile, reply)
+        except APIError as exc:
+            yield _sse("error", {"code": exc.code, "detail": exc.detail})
+            return
+        yield _sse("done", {"message_id": str(message.id)})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

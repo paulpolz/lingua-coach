@@ -40,6 +40,7 @@ from typing import Any  # noqa: E402
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 from alembic.config import Config  # noqa: E402
+from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
@@ -133,7 +134,22 @@ def background_sessions(db_conn: AsyncConnection, monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.fixture
-async def client(db_conn: AsyncConnection, auth: Auth, background_sessions: None) -> AsyncIterator[httpx.AsyncClient]:
+def app_checkpointer() -> Iterator[InMemorySaver]:
+    """httpx does not run the FastAPI lifespan, so the Postgres saver is never opened.
+
+    One memory saver per test keeps `thread_id` history inside that test and drops it after.
+    """
+    saver = InMemorySaver()
+    app.state.checkpointer = saver
+    yield saver
+    if getattr(app.state, "checkpointer", None) is saver:
+        app.state.checkpointer = None
+
+
+@pytest.fixture
+async def client(
+    db_conn: AsyncConnection, auth: Auth, background_sessions: None, app_checkpointer: InMemorySaver
+) -> AsyncIterator[httpx.AsyncClient]:
     async def _get_db() -> AsyncIterator[AsyncSession]:
         session = _joined_session(db_conn)
         try:
@@ -170,7 +186,10 @@ async def committed_sessions(engine: AsyncEngine) -> AsyncIterator[Callable[[], 
 
 @pytest.fixture
 async def committed_client(
-    committed_sessions: Callable[[], AsyncSession], auth: Auth, monkeypatch: pytest.MonkeyPatch
+    committed_sessions: Callable[[], AsyncSession],
+    auth: Auth,
+    monkeypatch: pytest.MonkeyPatch,
+    app_checkpointer: InMemorySaver,
 ) -> AsyncIterator[httpx.AsyncClient]:
     async def _get_db() -> AsyncIterator[AsyncSession]:
         async with committed_sessions() as session:

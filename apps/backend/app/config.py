@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Exact Clerk JWT issuer. Required outside `local`; locally an unset value accepts
     # any Clerk Development issuer (`https://*.clerk.accounts.dev`). See core/clerk_auth.py.
     clerk_jwt_issuer: str = ""
-    # Only Google (Gemini via langchain-google-genai) is implemented; see services/structured_llm.py.
+    # Only Google (Gemini via init_chat_model) is implemented; see services/agents/.
     llm_provider: Literal["google"] = "google"
     llm_api_key: str = ""
     llm_model_chat: str = "gemini-3.5-flash-lite"
@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     llm_rpd_limit: int = 500
     max_message_chars: int = 4000
     chat_context_messages: int = 10
+    # Pre-run the agent's tools so the first model call already has skill and SQL context.
+    agent_bootstrap_context: bool = True
+    # SSE chat. The JSON POST stays available either way, for rollback.
+    chat_streaming_enabled: bool = False
+    # Gemini streams schema JSON as content blocks, not reply prose (spike, 14 Nov 2026).
+    # When no plain-string token arrived, send one token whose delta is structured content.
+    chat_stream_reply_fallback: bool = True
     pace_window_hours: int = 24
     # Longest gap between lesson-chat messages that still counts as practice time.
     # A measurement constant, not a lesson length (lessons have no default length).

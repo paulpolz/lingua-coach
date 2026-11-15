@@ -55,8 +55,11 @@ async def test_schema_error_completes_usage_as_error_and_skips_assistant_row(
     assert response.status_code == 502
     assert response.json()["code"] == "LLM_SCHEMA_ERROR"
     events = await _events(db)
+    assert len(events) == 1
     assert events[0].status == "error"
-    assert events[0].input_tokens == RAW_INPUT_TOKENS
+    # The graph raises before a completed AIMessage reaches the runner, so the estimate stays.
+    assert events[0].input_tokens != RAW_INPUT_TOKENS
+    assert events[0].input_tokens > 0
     assert [m.role for m in await _messages(db)] == [ChatMessageRole.user]
 
 

@@ -18,22 +18,18 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, TypeVar, cast
 
 from langsmith import traceable
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.errors import APIError
 from app.models.llm_usage import LlmUsageEvent
-from app.services.structured_llm import ChatTurn, generate_structured
-
-T = TypeVar("T", bound=BaseModel)
 
 LLMCallType = Literal["chat", "lesson_json", "report"]
 UserLimitKind = Literal["chat", "lesson_start"]
@@ -219,8 +215,9 @@ async def complete(
 
 
 def _trace_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
-    """LangSmith trace inputs without the DB session or callbacks."""
-    return {k: v for k, v in inputs.items() if k not in ("db", "before_call", "user_id")}
+    """LangSmith trace inputs without the DB session, learner context, or callbacks."""
+    skipped = {"db", "before_call", "user_id", "context", "agent"}
+    return {k: v for k, v in inputs.items() if k not in skipped}
 
 
 _F = TypeVar("_F", bound=Callable[..., Any])
@@ -229,55 +226,3 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 def _traced(fn: _F) -> _F:
     """`@traceable` that keeps the wrapped signature for type checkers. No-op unless tracing is on."""
     return cast(_F, traceable(run_type="chain", name=fn.__name__, process_inputs=_trace_inputs)(fn))
-
-
-@_traced
-async def metered_structured_call(
-    db: AsyncSession,
-    user_id: uuid.UUID,
-    call_type: LLMCallType,
-    *,
-    model_id: str,
-    schema: type[T],
-    system_instruction: str,
-    history: list[ChatTurn],
-    before_call: Callable[[], Awaitable[None]] | None = None,
-    trace_metadata: Mapping[str, Any] | None = None,
-) -> T:
-    """Reserve one Gemini call, optionally run `before_call`, then parse a model.
-
-    The reserve estimate is the character length of the system instruction and
-    history divided by 4. A parsed model completes the row as `ok`. Any
-    exception from the Gemini call completes it as `error`. Persistence of the
-    model stays with the caller, so a later insert failure leaves the row `ok`.
-    """
-    event = await reserve_llm_call(
-        db,
-        user_id,
-        call_type,
-        estimated_input_tokens=estimate_input_tokens(system_instruction, *(turn.text for turn in history)),
-    )
-    if before_call is not None:
-        await before_call()
-
-    known_tokens: int | None = None
-
-    async def on_usage(count: int) -> None:
-        nonlocal known_tokens
-        known_tokens = count
-
-    try:
-        parsed = await generate_structured(
-            model_id=model_id,
-            schema=schema,
-            system_instruction=system_instruction,
-            history=history,
-            call_type=call_type,
-            on_usage=on_usage,
-            trace_metadata={"user_id_hash": _user_hash(user_id), **(trace_metadata or {})},
-        )
-    except Exception:
-        await complete(db, event, input_tokens=known_tokens, status="error", model=model_id)
-        raise
-    await complete(db, event, input_tokens=known_tokens, status="ok", model=model_id)
-    return parsed

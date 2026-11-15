@@ -1504,6 +1504,7 @@
         ]
       },
       "post": {
+        "description": "Non-streaming turn. Kept while `CHAT_STREAMING_ENABLED` is the rollback switch.",
         "operationId": "post_chat_message_api_v1_chat_sessions__session_id__messages_post",
         "parameters": [
           {
@@ -1555,6 +1556,62 @@
           }
         ],
         "summary": "Post Chat Message",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/chat/sessions/{session_id}/messages/stream": {
+      "post": {
+        "operationId": "stream_chat_message_api_v1_chat_sessions__session_id__messages_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stream Chat Message",
         "tags": [
           "chat"
         ]

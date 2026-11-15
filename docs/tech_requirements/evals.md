@@ -16,8 +16,8 @@ flowchart LR
   datasets --> offline
 ```
 
-- **Tracing** is on in `local` and `staging` (`LANGSMITH_TRACING=true`, one project per environment) and never in production: the app refuses to start with `APP_ENV=production` and tracing on. Staging holds only test accounts, so no learner data reaches LangSmith. Each LLM call is a run named after its call type (`chat`, `lesson_json`, `report`) with tags `[call_type, env:<APP_ENV>]` and metadata (`lesson_number` or `session_type`, `user_id_hash`). The quota step (`metered_structured_call`) is a parent run.
-- **Offline experiments** run a dataset through the production prompt builders against the real model and score the outputs.
+- **Tracing** is on in `local` and `staging` (`LANGSMITH_TRACING=true`, one project per environment) and never in production: the app refuses to start with `APP_ENV=production` and tracing on. Staging holds only test accounts, so no learner data reaches LangSmith. In the app, `metered_agent_run` and `metered_agent_stream` are the traced parents. The agent config names the run after its call type (`chat`, `lesson_json`, `report`) with tags `[call_type, env:<APP_ENV>]` and metadata (`call_type`, `model`, `user_id_hash`, plus `lesson_number` or `session_type` when the caller has them).
+- **Offline experiments** run a dataset through the same agent factories as the app, against the real model, and score the outputs.
 - **CI**: [`.github/workflows/evals.yml`](../../.github/workflows/evals.yml) runs every dataset nightly and on `workflow_dispatch`. A run fails when any evaluator's mean score drops below `--min-score` (default 0.9). It is never part of the PR gate: it is nondeterministic and costs money.
 
 ## Datasets
@@ -58,7 +58,7 @@ uv run python -m evals.run --dataset report_patch --min-score 0.8
 uv run pytest -m eval                                        # the same, as a pytest (skipped without keys)
 ```
 
-The runner calls `generate_structured` directly with the same system instructions and prompt builders as the app (no database, no quota rows). Compare two prompt versions by running the dataset on each branch and opening both experiments side by side in LangSmith.
+The runner calls `invoke_agent` on the same agent factories as the app (no quota row, `thread_id` omitted). Dataset history is passed as the user text. Context tools run against an empty eval session that supplies the profile and, for reports, a lesson stub. Compare two prompt versions by running the dataset on each branch and opening both experiments side by side in LangSmith.
 
 ## Status
 

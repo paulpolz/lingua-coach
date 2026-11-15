@@ -1,6 +1,8 @@
 # Code review and refinement plan
 
 > **Status: implemented, 2026-11-01.** A review of `apps/` against these docs and the `.cursor/rules` and `.cursor/skills` standards. PRs 0–8c are in the working tree: test foundation, F1–F7, E1, A1–A3, Part F (backend, schemas, skills), RAG stage 1 ([rag.md](./rag.md)), LangSmith code ([evals.md](./evals.md)), D1–D13, and the frontend PRs 5c and 8c. Still open: a real staging deployment and the first LangSmith experiments (need accounts), and RAG stage 2 (gated on evals).
+>
+> The LangChain call path described below (`generate_structured`, `metered_structured_call`, `ChatGoogleGenerativeAI`) was replaced on 14 Nov 2026 by the four agents in [ai-api.md](./ai-api.md) and [adr/](./adr/README.md). This file stays as the record of that review. It is not the current coach architecture, and it did not ship embeddings or pgvector.
 
 ## Context
 
@@ -17,6 +19,7 @@ Overall verdict: the backend is small (~2.4k LOC), consistent, well commented an
 ## Part A — How it works today
 
 ### Pydantic (in this repo)
+
 - **Settings**: `app/config.py` uses `pydantic-settings` `BaseSettings`. It reads env and `.env` into typed fields once, at import time, as `settings`.
 - **HTTP contracts**: `app/schemas/*.py`. FastAPI uses them to validate request bodies (422 on mismatch) and to serialize responses (`response_model=`). Pydantic v2 runs on a Rust core (`pydantic-core`), so validation is fast.
 - **LLM contracts**: `app/schemas/llm.py` (`OnboardingReply`, `LessonReply`, `LessonCurriculum`, `ReportPatch`). Each model does three jobs:
@@ -25,6 +28,7 @@ Overall verdict: the backend is small (~2.4k LOC), consistent, well commented an
   3. It **normalizes**: with `extra="ignore"`, unknown keys are dropped, and `model_dump()` writes every key, with nulls for omitted optional fields. This is why the stored JSON always has a fixed shape.
 
 ### LangChain (in this repo, `app/services/gemini.py`, to be renamed `structured_llm.py` per D13)
+
 - `ChatGoogleGenerativeAI` is LangChain's wrapper for Gemini. It implements the `BaseChatModel` "Runnable" interface (`invoke`, `ainvoke`, `stream`, `batch`).
 - Messages: `SystemMessage` comes from the skills plus the language policy. `HumanMessage` and `AIMessage` come from `ChatTurn` history.
 - `with_structured_output(Schema, method="json_schema", include_raw=True)` returns a new Runnable that does the following:
@@ -41,11 +45,13 @@ Overall verdict: the backend is small (~2.4k LOC), consistent, well commented an
 Full proposal with diagrams and schemas: [rag.md](./rag.md).
 
 **The current problem.** Context is either "everything" or "a fixed slice", so it grows without limit:
+
 - Lesson generation: `services/lesson_generation.py:76` loads **all** mistakes and 5 full prior lessons.
 - Report writer: `services/report_writer.py:79` sends the **full body of all 4 reports**. `update_log` and `daily_log` grow on every lesson through `append_entry`, so prompt size grows linearly with lessons. It will eventually hit `LLM_INPUT_TPM_LIMIT` (250k) and latency and cost will drift upward.
 - Lesson chat: only 10 due mistakes, chosen by date rather than by relevance to today's grammar focus.
 
 **Recommended approach, in order. Do the cheap steps first; most of the gain needs no vectors.**
+
 1. **Structured retrieval** (no embeddings), per the context-engineering skill's "Selective include" and "Hierarchical summary":
    - Rank mistakes by `occurrence_count`, how overdue they are, and whether they match the curriculum's `grammar_focus`. Cap at about 15.
    - Send the report writer only the sections it can patch, plus the **last N** log entries, never the whole history.
@@ -68,6 +74,7 @@ Full proposal with diagrams and schemas: [rag.md](./rag.md).
 ## Part C — LangSmith for the evals loop
 
 **Yes, LangSmith has its own web UI** (smith.langchain.com, or self-hosted for enterprise). There you can:
+
 - **Tracing**: browse every LLM call with its inputs, outputs, tokens, latency and errors, filtered by tags or metadata such as `call_type` or `user_id` hash.
 - **Datasets**: create example sets in the UI, from CSV, or with one click from a production trace ("Add to dataset").
 - **Evaluators**: build LLM-as-judge evaluators in the UI (a prompt plus a scoring rubric). Attach them to a dataset for offline experiments, or to a tracing project as **online evaluators** that score a sample of live traffic. Code evaluators run from the SDK.
@@ -76,6 +83,7 @@ Full proposal with diagrams and schemas: [rag.md](./rag.md).
 - **Annotation queues**: humans label traces (for example a teacher grading corrections), and the labels feed datasets.
 
 **How to wire it here:**
+
 1. Tracing costs almost nothing to turn on. Because calls go through LangChain, setting `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT=lingua-coach-<env>` traces every `ainvoke` automatically.
    - Add `config={"run_name": call_type, "tags": [call_type], "metadata": {"lesson_number": …}}` in `generate_structured`.
    - Wrap `metered_structured_call` with `@traceable` so the quota step appears in the trace too.
@@ -111,6 +119,7 @@ Full proposal with diagrams and schemas: [rag.md](./rag.md).
 Today there is a single `unittest` module with a `MemoryDB` fake that re-implements SQLAlchemy behavior. It can't catch real-database bugs like F3 and F4 below.
 
 **Target stack**:
+
 - **Packages**: `pytest`, `pytest-asyncio`, `httpx` (already a dep), `asgi-lifespan` (optional), `pytest-cov`, `ruff`, `mypy`. Add them as `[dependency-groups] dev` in `pyproject.toml`.
 - **Real Postgres**: either the CI `services: postgres:16` container or `testcontainers[postgres]`.
 - **Generic fake model**: `langchain_core.language_models.fake_chat_models` (`GenericFakeChatModel`), or a single fixture that patches `generate_structured` (`app.services.gemini` today, `app.services.structured_llm` after the D13 rename in PR 8a).
@@ -134,6 +143,7 @@ evals/                   # LangSmith, marked @pytest.mark.eval, excluded from de
 ```
 
 **Conventions** (verification.mdc):
+
 - Tests are deterministic and never call Gemini.
 - Every bug fix gets a regression test that fails first.
 - Test names describe behavior, e.g. `test_finish_past_pace_window_slips_plan`.
@@ -176,7 +186,7 @@ evals/                   # LangSmith, marked @pytest.mark.eval, excluded from de
 
 ### Docs alignment
 
-- **A1: every code link in `docs/tech_requirements/*.md` is broken.** They use `../../../../apps/...`, which resolves outside the repo; the correct prefix is `../../apps/...`.
+- **A1: every code link in** `docs/tech_requirements/*.md` **is broken.** They use `../../../../apps/...`, which resolves outside the repo; the correct prefix is `../../apps/...`.
 - **A2: the product says reading and writing only, but the progress report has a "Listening" row.** The lesson prompt says "Reading and writing only" and the latest commit removed the listening catalog, yet `report_seed.blank_progress_markdown` and `cjm.md:114` still list Listening. **Decided: Listening is out.** Remove it from both, along with the Listening row in `report_writer.md` (PR 5b).
 - **A3: docs to update after F2–F6** (unique index, background report update, typed accept body):
   - database.md (indexes and migrations list);
@@ -219,16 +229,18 @@ The LLM can't measure time, so the backend measures it and tells the tutor every
 #### `exercise_tutor.md` (rewrite, about half its current length)
 
 **Remove** (the code already does this or the model never does it):
+
 - the `Inputs` YAML, since `prompt_assembly.py` builds the context;
 - the "Context retrieval and persistence" table and "What to persist";
 - the `lessons.payload` JSON example, since `LessonCurriculum` and its `Field` descriptions are the contract;
 - the mistake JSON example, since `MistakeEntry` covers it;
-- the whole `session_summary` section. **The backend builds it in `lessons.py:_session_summary`, the model never writes it.** Today the skill asks for fields like `performance_notes` and `focus_pattern_result` that nothing produces.
+- the whole `session_summary` section. **The backend builds it in** `lessons.py:_session_summary`**, the model never writes it.** Today the skill asks for fields like `performance_notes` and `focus_pattern_result` that nothing produces.
 - "Lesson agenda (chat + pinned checklist)", slot mapping, "Completion and exit criteria";
 - "Partner session pack";
 - the pointer to `vocabulary_practice_formats.md` (see below).
 
 **Add:**
+
 1. **Time budget.** The lesson lasts `target_minutes`. Read the `Time:` line each turn.
    - Before the end: if the planned material is done, keep practicing. Use a harder variant, a new context, another round on a due mistake, or reuse today's words in a short writing task.
    - Never wrap up early because the learner was fast.
@@ -286,6 +298,7 @@ The LLM can't measure time, so the backend measures it and tells the tutor every
 ### Rule for "what stays in a skill"
 
 A skill says **how to teach and decide**. It doesn't repeat:
+
 - **payload shapes**: the Pydantic model, its `Field(description=…)` text and `model_json_schema()` already send them to Gemini on every call;
 - **persistence steps**: routers and services;
 - **context lists**: `prompt_assembly.py`.
@@ -335,35 +348,35 @@ If a constraint matters to the model ("null on a clarifying question", "themes o
 This cleanup goes last, after the skills refinement in Part F. Part F rewrites the same schemas, prompt assembly and lesson chat. If the cleanup ran first, that code would be refactored twice.
 
 Two items are already handled by Part F:
+
 - **D7** ships in PR 5a, because that PR adds the `timing` metadata key anyway.
 - **D9** is resolved there (decided): `partner_session` and the other partner fields are dropped.
 
 ### Backend (code-simplification: same output for every input)
 
-- **D1: `select(Profile).where(Profile.user_id==…)` is repeated in 7 places.** chat (twice through `_profile`), lessons (twice), onboarding, progress, profile, plus lesson_generation. Add `get_profile(db, user_id)` in a small `app/services/queries.py`. That file also takes:
+- **D1:** `select(Profile).where(Profile.user_id==…)` **is repeated in 7 places.** chat (twice through `_profile`), lessons (twice), onboarding, progress, profile, plus lesson_generation. Add `get_profile(db, user_id)` in a small `app/services/queries.py`. That file also takes:
   - `active_lesson(db, user_id)`: 3 copies (lessons.py:34, progress.py:38, profile.py:29);
   - `accomplished_count(db, user_id)`: 4 copies (lessons.py:66, progress.py:29, profile.py:26, chat.py:232);
   - `last_accomplished(db, user_id)`: 2 copies.
-- **D2: `/progress` and `/profile` compute the same pace snapshot.** Extract `pace_snapshot(db, user) -> (profile, done, active, last, summary)` into `services/pace.py`, which leaves both routers thin (architecture-and-docs.mdc).
+- **D2:** `/progress` **and** `/profile` **compute the same pace snapshot.** Extract `pace_snapshot(db, user) -> (profile, done, active, last, summary)` into `services/pace.py`, which leaves both routers thin (architecture-and-docs.mdc).
 - **D3: projection math is open-coded twice.** `chat.py:237` and `onboarding.py:77` duplicate `pace.compute_projected_completion`. Reuse the helper.
 - **D4: hardcoded pace-window fallbacks.** The fallback `or 24` appears in pace.py:40, progress.py:51 and onboarding.py:77, while lessons.py:205 uses `settings.pace_window_hours`. Pick one, `settings.pace_window_hours`, through a `pace_window(profile)` helper.
-- **D5: four copies of UUID parse + ownership check.** `_uuid_or_404` / `_owned_*` appear in chat.py, lessons.py, jobs.py and onboarding.py. Move one `get_owned(db, Model, id_str, user_id, what)` to `api/deps.py`.
+- **D5: four copies of UUID parse + ownership check.** `_uuid_or_404` / `_owned_`* appear in chat.py, lessons.py, jobs.py and onboarding.py. Move one `get_owned(db, Model, id_str, user_id, what)` to `api/deps.py`.
   - **Decided: 422.** Type path params as `uuid.UUID`, so FastAPI rejects malformed ids with 422 before the handler runs. `get_owned` then takes a `uuid.UUID` and only returns 404 for well-formed ids that don't exist or belong to another user. Drop `_uuid_or_404`.
   - This is an API contract change. Update backend.md's error table and add an `api/test_errors.py` case. Check that the frontend treats 422 on these routes like 404 ("not found"), since today it only expects 404.
-- **D6: two strip helpers in `schemas/llm.py`.** `_Reply._strip_content` and `_strip_string` + `_strip_language` do the same thing. Replace them with `Stripped = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]`.
+- **D6: two strip helpers in** `schemas/llm.py`**.** `_Reply._strip_content` and `_strip_string` + `_strip_language` do the same thing. Replace them with `Stripped = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]`.
 - **D7: the seven-key chat metadata is built by hand in two branches** (`chat.py:_persist_turn`). Introduce a `TurnMetadata` Pydantic model with defaults, so each branch sets only what differs, and type `ChatTurnResponse.metadata: TurnMetadata`. This makes the documented "always seven keys" invariant hold by construction, and the frontend can share the type through OpenAPI.
-- **D8: a round trip through dicts in `_save_learner_profile`.** It does `model_dump()` and then `.get()` with `or {}`. Use the typed model attributes directly. The language `.strip()` there is redundant because the validator already strips.
-- **D9: `partner_session` is an always-null field.** It sits on `LessonCurriculum` and `CourseRoadmapWeeklyTemplate`, costs schema tokens on every call, and invites hallucination. **Decided: drop it, since it's not needed.**
+- **D8: a round trip through dicts in** `_save_learner_profile`**.** It does `model_dump()` and then `.get()` with `or {}`. Use the typed model attributes directly. The language `.strip()` there is redundant because the validator already strips.
+- **D9:** `partner_session` **is an always-null field.** It sits on `LessonCurriculum` and `CourseRoadmapWeeklyTemplate`, costs schema tokens on every call, and invites hallucination. **Decided: drop it, since it's not needed.**
   - Drop it together with the practice-partner profile fields (`PracticePartner`, `optional_partner_minutes`).
   - This is done in PR 5b, as part of the schema slimming.
   - Update ai-api.md, backend.md and database.md, which describe it.
 - **D10 · Nit: inconsistent loggers.** `lesson_generation.py` and `report_writer.py` use `logging.getLogger`, while the rest use `core.logging.get_logger`.
-- **D11 · Nit: odd `_retry_after` signature.** Its `fixed=` parameter just returns the constant. Inline 60.
-- **D12 · Consider: cache `_model()`.** It builds a new `ChatGoogleGenerativeAI` on every call. Cache per `model_id` with `functools.cache`.
+- **D11 · Nit: odd** `_retry_after` **signature.** Its `fixed=` parameter just returns the constant. Inline 60.
+- **D12 · Consider: cache** `_model()`**.** It builds a new `ChatGoogleGenerativeAI` on every call. Cache per `model_id` with `functools.cache`.
   - The double timeout (client `timeout` plus `asyncio.timeout`) is harmless. Keep one and say why in a comment.
-- **D13: `services/gemini.py` is named after the vendor, not the job.** The module's purpose is "make one structured-output LLM call": build messages from `ChatTurn` history, call `with_structured_output`, enforce the timeout, record metrics and logs, map failures to error codes, and return a validated Pydantic object. Only `_model()` is Gemini-specific. The vendor name leaks into every caller (`chat.py`, `llm_usage.py`, `lesson_generation.py`, `report_writer.py`, tests) and would be wrong the day a second provider or `rag.md`'s `embeddings.py` sits next to it.
+- **D13:** `services/gemini.py` **is named after the vendor, not the job.** The module's purpose is "make one structured-output LLM call": build messages from `ChatTurn` history, call `with_structured_output`, enforce the timeout, record metrics and logs, map failures to error codes, and return a validated Pydantic object. Only `_model()` is Gemini-specific. The vendor name leaks into every caller (`chat.py`, `llm_usage.py`, `lesson_generation.py`, `report_writer.py`, tests) and would be wrong the day a second provider or `rag.md`'s `embeddings.py` sits next to it.
   - **Decided: rename everything to provider-agnostic names**, including env vars and settings:
-
     | Today | After |
     | --- | --- |
     | `services/gemini.py` | `services/structured_llm.py` (public API stays `generate_structured`, `ChatTurn`) |
@@ -377,7 +390,6 @@ Two items are already handled by Part F:
     | `settings.gemini_model_lesson` / `GEMINI_MODEL_LESSON` | `settings.llm_model_lesson` / `LLM_MODEL_LESSON` |
     | `settings.gemini_timeout_seconds` / `GEMINI_TIMEOUT_SECONDS` | `settings.llm_timeout_seconds` / `LLM_TIMEOUT_SECONDS` |
     | test helper `patched_gemini` | `patched_llm` |
-
   - Env vars are a deployment contract, so roll them over with no downtime:
     - for one release, each setting reads both names (`validation_alias=AliasChoices("LLM_API_KEY", "GEMINI_API_KEY")`) and logs a deprecation warning when the old name is used;
     - update `.env.example`, CI and the hosting secrets (deployment.md, hosting.md);
@@ -400,16 +412,16 @@ Two items are already handled by Part F:
 
 Every PR follows the same rule: write a failing regression test first, then the fix, then update docs.
 
-0. **Test foundation** (prerequisite)
+1. **Test foundation** (prerequisite)
    - Add the pytest + Postgres harness, factories, `fake_llm` fixture, ruff and mypy.
    - Port `test_structured_output.py` cases into `api/` and `unit/`, keeping every assertion.
    - Update CI.
    - The `fake_llm` fixture patches `generate_structured` through one constant patch target. The D13 rename in PR 8a then changes only that constant.
-1. **Security**: F1 (require the issuer outside local), plus a stop to echoing raw Gemini exception text in 502 bodies (log it, return a generic detail). Also A1 (broken doc links), because it's trivial.
-2. **Data integrity**: F2 and F3 via one Alembic migration (unique partial active-lesson index, unique `(user_id, pattern_type)` with a dedupe step for existing rows), plus the `IntegrityError` → 409 mapping and mistake upsert via `ON CONFLICT`.
-3. **Lifecycle robustness**: F4 (stale generating reaper), then F5 (report update as a background task).
-4. **Trust boundary**: F6 (`CourseRoadmap` body).
-5. **Time-boxed lessons and skills refinement (Part F)**, in three PRs:
+2. **Security**: F1 (require the issuer outside local), plus a stop to echoing raw Gemini exception text in 502 bodies (log it, return a generic detail). Also A1 (broken doc links), because it's trivial.
+3. **Data integrity**: F2 and F3 via one Alembic migration (unique partial active-lesson index, unique `(user_id, pattern_type)` with a dedupe step for existing rows), plus the `IntegrityError` → 409 mapping and mistake upsert via `ON CONFLICT`.
+4. **Lifecycle robustness**: F4 (stale generating reaper), then F5 (report update as a background task).
+5. **Trust boundary**: F6 (`CourseRoadmap` body).
+6. **Time-boxed lessons and skills refinement (Part F)**, in three PRs:
    - **5a, backend timing**: `lesson_timing.py`, `target_minutes` in the payload, the `Time:` context line, the `suggest_finish` guard, and active-minutes `duration_minutes`. Adds `metadata.timing` through D7 `TurnMetadata`, which is introduced here. It is additive, so the checklist still works.
    - **5b, schema + skills**:
      - the slimmer `LessonCurriculum` / `LessonReply` / `CourseRoadmap*` and the `practiced` loop;
@@ -418,9 +430,9 @@ Every PR follows the same rule: write a failing regression test first, then the 
      - D9 (`partner_session` dropped) and A2 (Listening row removed).
      - Contract snapshots get updated on purpose.
    - **5c, frontend**: `LessonTimeCard` replaces `LessonChecklist`, plus the finish dialog text, `PlanSummaryCard`, and the type cleanup. 5b and 5c ship together, or 5c first while it still accepts the old metadata keys.
-6. **Context budgeting (RAG step 1)**: F7 and E3, with ranked and capped mistakes and only the last-N report log entries sent. Record prompt-token deltas.
-7. **LangSmith**: a staging deployment, tracing on in `local`/`staging` only with the production startup guard, metadata in `generate_structured`, the `evals/` package with datasets, deterministic evaluators and the `aevaluate` runner, and a nightly workflow. Docs: new `docs/tech_requirements/evals.md`.
-8. **Duplication and code quality (Part G)**, last, on top of the code Part F already changed. Behavior stays identical; the PR-0 API tests and the PR-7 evals guarantee it.
+7. **Context budgeting (RAG step 1)**: F7 and E3, with ranked and capped mistakes and only the last-N report log entries sent. Record prompt-token deltas.
+8. **LangSmith**: a staging deployment, tracing on in `local`/`staging` only with the production startup guard, metadata in `generate_structured`, the `evals/` package with datasets, deterministic evaluators and the `aevaluate` runner, and a nightly workflow. Docs: new `docs/tech_requirements/evals.md`.
+9. **Duplication and code quality (Part G)**, last, on top of the code Part F already changed. Behavior stays identical; the PR-0 API tests and the PR-7 evals guarantee it.
    - **8a, rename**: D13. All Gemini-named identifiers, settings and env vars get agnostic names, with the env aliases kept for one release. Update `.env.example`, CI, hosting secrets and the docs. It's a separate PR, with the alias removal as a follow-up.
    - **8b, backend dedup**:
      - D1–D5 (`services/queries.py`, `pace_snapshot`, `get_owned`, `uuid.UUID` path params → 422);
@@ -431,6 +443,7 @@ Every PR follows the same rule: write a failing regression test first, then the 
 **Later, data-driven:** pgvector RAG step 2, only if the evals from PR 7 show the selective-context version missing relevant history.
 
 Decisions made (2026-11-01):
+
 - **A2**: Listening is out (PR 5b).
 - **D5**: malformed ids → 422 through `uuid.UUID` path params (PR 8b).
 - **D9**: drop `partner_session` and the practice-partner fields (PR 5b).

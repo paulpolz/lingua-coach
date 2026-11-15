@@ -179,6 +179,7 @@ Indexed on `(user_id, created_at)`. Written with `INSERT … ON CONFLICT (user_i
 
 - `chat_sessions`: `type` (`onboarding` | `lesson`), `lesson_id` (nullable). Unique partial indexes allow one onboarding session per user and one session per `(user_id, lesson_id)`; session creation is an `INSERT … ON CONFLICT DO NOTHING` against them.
 - `chat_messages`: `session_id`, `role` (`user` | `assistant`), `content` (the learner-facing reply), `metadata` JSONB (`TurnMetadata`: `corrections`, `tips`, `plan_updates`, `suggest_finish`, `course_roadmap_draft`, `practiced`, `timing`; rows from before may carry the retired `lesson_plan` / `task_update`). Indexed on `(session_id, created_at)`. Message timestamps also measure active lesson minutes, and assistant `practiced` lists feed the session summary, so both are read at finish before the rows are deleted.
+- The agent's own history is a LangGraph thread in this same database, `thread_id` = `chat_sessions.id`. `AsyncPostgresSaver.setup()` creates those tables on process start. They are not Alembic migrations and they are not the transcript. `GET …/messages`, the finish session summary, and `active_minutes` read `chat_messages` only. Tool messages stay on the thread. Accept and finish delete the chat rows and the session and leave the thread (`adelete_thread` is not called).
 
 ### `user_reports`
 

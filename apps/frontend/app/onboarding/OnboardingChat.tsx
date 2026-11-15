@@ -12,7 +12,7 @@ import {
   type DisplayMessage,
 } from "@/lib/chat";
 import { isTimeBudgetRequired } from "@/lib/lessons";
-import { useChatTurn } from "@/lib/use-chat-turn";
+import { PENDING_ASSISTANT_ID, useChatTurn } from "@/lib/use-chat-turn";
 import ChatComposer from "@/components/ChatComposer";
 import ChatMessageBubble from "@/components/ChatMessageBubble";
 import Button from "@/components/ui/Button";
@@ -51,10 +51,12 @@ function toDisplayMessages(messages: ChatMessage[]): DisplayMessage[] {
   }));
 }
 
-/** The latest `course_roadmap_draft` is the active plan; earlier drafts are superseded. */
+/** The latest stored `course_roadmap_draft` is the active plan; earlier drafts are superseded. */
 function findActivePlan(messages: DisplayMessage[]): ActivePlan | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
+    // The structured draft is copied onto the placeholder while the turn is still in flight.
+    if (message.isStreaming) continue;
     const draft = message.role === "assistant" ? message.metadata?.course_roadmap_draft : null;
     if (draft) return { sourceMessageId: message.id, roadmap: draft };
   }
@@ -104,6 +106,9 @@ export default function OnboardingChat({
       prevPlanSourceIdRef.current = null;
       return;
     }
+    // The in-flight bubble keeps a placeholder id until `done`. Treating that
+    // swap as a new plan would flash "Updated" on the first roadmap.
+    if (sourceId === PENDING_ASSISTANT_ID) return;
     if (prevPlanSourceIdRef.current && prevPlanSourceIdRef.current !== sourceId) {
       setJustUpdated(true);
       const timeout = window.setTimeout(() => setJustUpdated(false), 2000);

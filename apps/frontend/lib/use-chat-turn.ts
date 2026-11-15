@@ -3,10 +3,11 @@
 import { useAuth } from "@clerk/nextjs";
 import { useCallback, useState } from "react";
 
-import { sendChatMessage, type DisplayMessage } from "@/lib/chat";
+import { sendChatTurn, type DisplayMessage } from "@/lib/chat";
 import { waitForToken } from "@/lib/wait-for-token";
 
-const STREAMING_ID = "streaming-assistant";
+/** In-flight coach bubble. Replaced with the stored message id on `done`. */
+export const PENDING_ASSISTANT_ID = "streaming-assistant";
 const GENERIC_ERROR = "Something went wrong, try again.";
 
 export interface SendOptions {
@@ -19,8 +20,10 @@ export interface SendOptions {
  * flag, the error line, and retry of the last failed message.
  *
  * A send shows the learner bubble and an empty coach bubble (typing dots)
- * right away; the stored reply replaces the coach bubble in one step. A failed
- * send removes the coach bubble and keeps the content (`lastFailed`) for `retry`.
+ * right away. Stream deltas fill that bubble; metadata arrives with the
+ * structured reply; `done` swaps in the stored message id. The JSON fallback
+ * (streaming disabled) still fills the bubble once. A failed send removes the
+ * coach bubble and keeps the content (`lastFailed`) for `retry`.
  */
 export function useChatTurn(sessionId: string | null, initialMessages: DisplayMessage[] = []) {
   const { getToken } = useAuth();
@@ -40,11 +43,11 @@ export function useChatTurn(sessionId: string | null, initialMessages: DisplayMe
       setMessages((prev) => [
         ...prev,
         { id: `local-user-${Date.now()}`, role: "user", content, hidden: options.hidden === true },
-        { id: STREAMING_ID, role: "assistant", content: "", isStreaming: true },
+        { id: PENDING_ASSISTANT_ID, role: "assistant", content: "", isStreaming: true },
       ]);
 
       const fail = (message: string) => {
-        setMessages((prev) => prev.filter((item) => item.id !== STREAMING_ID));
+        setMessages((prev) => prev.filter((item) => item.id !== PENDING_ASSISTANT_ID));
         setSendError(message || GENERIC_ERROR);
         setLastFailed({ content, options });
         return false;
@@ -52,12 +55,22 @@ export function useChatTurn(sessionId: string | null, initialMessages: DisplayMe
 
       try {
         const token = await waitForToken(getToken);
-        const data = await sendChatMessage(token, sessionId, content);
+        const data = await sendChatTurn(token, sessionId, content, {
+          onUpdate(update) {
+            setMessages((prev) =>
+              prev.map((item) =>
+                item.id === PENDING_ASSISTANT_ID
+                  ? { ...item, content: update.content, metadata: update.metadata }
+                  : item
+              )
+            );
+          },
+        });
         if (!data.content?.trim()) return fail(GENERIC_ERROR);
 
         setMessages((prev) =>
           prev.map((item) =>
-            item.id === STREAMING_ID
+            item.id === PENDING_ASSISTANT_ID
               ? { id: data.message_id, role: "assistant", content: data.content, metadata: data.metadata }
               : item
           )

@@ -6,14 +6,12 @@ accepted roadmap, profile, last five lesson summaries, and mistakes, never chat 
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.enums import JobStatus, LearningPlanStatus, LessonStatus
@@ -21,9 +19,10 @@ from app.models.job import Job
 from app.models.learning_plan import LearningPlan
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
-from app.schemas.llm import LessonCurriculum
+from app.services.agents.curriculum import TASK, curriculum_agent
+from app.services.agents.runner import LLMError, metered_agent_run, public_detail
+from app.services.agents.tools import AgentContext
 from app.services.lesson_timing import target_minutes
-from app.services.llm_usage import metered_structured_call
 from app.services.memory import (
     CONDENSED_PRIOR_LESSONS,
     FULL_PRIOR_LESSONS,
@@ -31,13 +30,7 @@ from app.services.memory import (
     prior_lesson_line,
     rank_mistakes,
 )
-from app.services.prompt_assembly import (
-    generation_user_prompt,
-    lesson_generation_system_instruction,
-    log_context_tokens,
-)
 from app.services.queries import get_profile, stale_generation_cutoff
-from app.services.structured_llm import ChatTurn, LLMError, public_detail
 
 logger = get_logger(__name__)
 
@@ -97,7 +90,7 @@ async def run_lesson_generation_job(*, job_id: uuid.UUID, lesson_id: uuid.UUID, 
         await db.commit()
 
 
-def _plan_focus(plan: LearningPlan | None) -> str:
+def plan_focus(plan: LearningPlan | None) -> str:
     """Focus words for mistake ranking: the current milestone and block theme."""
     roadmap = (plan.roadmap if plan else None) or {}
     index = plan.current_milestone_index if plan else 0
@@ -107,7 +100,8 @@ def _plan_focus(plan: LearningPlan | None) -> str:
     return " ".join(str(part) for part in parts if part)
 
 
-async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> tuple[dict, int]:
+async def build_generation_context(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> dict:
+    """Roadmap, profile, recent lessons, and ranked mistakes for the curriculum tool."""
     plan = (
         (
             await db.execute(
@@ -137,12 +131,10 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         .scalars()
         .all()
     )
-    mistakes = rank_mistakes(open_mistakes, _plan_focus(plan), datetime.now(UTC), k=GENERATION_MISTAKES)
-
-    minutes = target_minutes(profile)
-    context = {
+    mistakes = rank_mistakes(open_mistakes, plan_focus(plan), datetime.now(UTC), k=GENERATION_MISTAKES)
+    return {
         "lesson_number": lesson_number,
-        "target_minutes": minutes,
+        "target_minutes": target_minutes(profile),
         "roadmap": plan.roadmap if plan else None,
         "current_milestone_index": plan.current_milestone_index if plan else 0,
         "learner_profile": {
@@ -182,20 +174,25 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
             for m in mistakes
         ],
     }
-    system_instruction = lesson_generation_system_instruction(
-        profile.native_language if profile else None, profile.target_language if profile else None
-    )
-    prompt = generation_user_prompt(context)
-    log_context_tokens("lesson_json", {key: json.dumps(value, default=str) for key, value in context.items()})
 
-    curriculum = await metered_structured_call(
+
+async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int) -> tuple[dict, int]:
+    profile = await get_profile(db, user_id)
+    minutes = target_minutes(profile)
+    curriculum = await metered_agent_run(
         db,
         user_id,
         "lesson_json",
-        model_id=settings.llm_model_lesson,
-        schema=LessonCurriculum,
-        system_instruction=system_instruction,
-        history=[ChatTurn(role="user", text=prompt)],
+        agent=curriculum_agent(),
+        user_text=TASK,
+        context=AgentContext(
+            user_id=user_id,
+            db=db,
+            call_type="lesson_json",
+            native_language=profile.native_language if profile else None,
+            target_language=profile.target_language if profile else None,
+            lesson_number=lesson_number,
+        ),
         trace_metadata={"lesson_number": lesson_number},
     )
     return curriculum.model_dump(), minutes
