@@ -8,13 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import JobStatus, LessonStatus
 from app.models.job import Job
+from app.services.agents.catalog import curriculum_agent
 from app.services.lesson_generation import run_lesson_generation_job
 from tests.factories import make_lesson, make_mistake, make_plan, make_profile, make_user
-from tests.fake_llm import FakeLLM
+from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM
+from tests.integration.test_llm_usage_limits import _events
 from tests.samples import curriculum
 
 
 async def test_lesson_job_stores_model_dump(db: AsyncSession, fake_llm: FakeLLM, background_sessions: None) -> None:
+    assert curriculum_agent().graph.checkpointer is None
     user = await make_user(db)
     await make_profile(db, user)
     await make_plan(db, user)
@@ -39,6 +42,11 @@ async def test_lesson_job_stores_model_dump(db: AsyncSession, fake_llm: FakeLLM,
     # D9: the always-null partner_session field is gone from the schema.
     assert "partner_session" not in dumped
     assert lesson.payload["target_minutes"] == 15
+    assert fake_llm.modes == ["ainvoke"]
+    events = await _events(db)
+    assert len(events) == 1
+    assert events[0].call_type == "lesson_json" and events[0].status == "ok"
+    assert events[0].input_tokens == RAW_INPUT_TOKENS
 
 
 async def test_failed_job_stores_a_generic_error(

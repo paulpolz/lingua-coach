@@ -70,11 +70,10 @@ cd apps/frontend && npm install && npm run dev
 | `DATABASE_URL` | local Postgres | `postgresql+asyncpg://…`; Compose overrides it with the `postgres` host |
 | `CLERK_SECRET_KEY` | empty | Clerk backend key |
 | `CLERK_JWT_ISSUER` | empty | Exact issuer. Required unless `APP_ENV=local`; locally, empty accepts `https://*.clerk.accounts.dev` |
-| `LLM_PROVIDER` | `google` | The only implemented provider (Gemini via `langchain-google-genai`) |
-| `LLM_API_KEY` | empty | Required for any coach reply |
+| `LLM_API_KEY` | empty | Required for any coach reply. Gemini via `init_chat_model`, provider `google_genai` |
 | `LLM_MODEL_CHAT` | `gemini-3.5-flash-lite` | Chat model |
 | `LLM_MODEL_LESSON` | `gemini-3.5-flash-lite` | Lesson and report JSON model |
-| `LLM_TIMEOUT_SECONDS` | `120` | Per-call timeout; twice this marks a stuck generation as failed |
+| `LLM_TIMEOUT_SECONDS` | `120` | Timeout around a whole agent run (`ainvoke` or `astream`). Twice this marks a stuck generation as failed |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins; also the allowed values of a token's `azp` claim |
 | `CHAT_RATE_LIMIT_PER_HOUR` | `60` | Per-user chat messages |
 | `LESSON_START_RATE_LIMIT_PER_DAY` | `2` | Per-user lesson starts |
@@ -82,7 +81,8 @@ cd apps/frontend && npm install && npm run dev
 | `LLM_INPUT_TPM_LIMIT` | `250000` | Global LLM input tokens per minute |
 | `LLM_RPD_LIMIT` | `500` | Global LLM requests per day |
 | `MAX_MESSAGE_CHARS` | `4000` | Longest learner message |
-| `CHAT_CONTEXT_MESSAGES` | `10` | Turns sent to the LLM per chat call |
+| `CHAT_CONTEXT_MESSAGES` | `10` | Newest learner turns kept on each model request. The LangGraph thread itself is not trimmed |
+| `CHAT_STREAM_REPLY_FALLBACK` | `true` | If the stream produced no plain-text token, send one `token` whose `delta` is the structured reply's `content` |
 | `PACE_WINDOW_HOURS` | `24` | Pace window for new profiles |
 | `LESSON_IDLE_CAP_MINUTES` | `5` | Longest gap between lesson messages that counts as practice time |
 | `SKILLS_DIR` | `apps/backend/skills` | Skill markdown location |

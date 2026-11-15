@@ -68,7 +68,7 @@ function writeStoredSessionId(lessonId: string, id: string | null): void {
 }
 
 /**
- * Lesson chat: create/resume the lesson session, one JSON post per turn
+ * Lesson chat: create/resume the lesson session, one turn at a time
  * (`useChatTurn`), a pinned time card, and Stop/Finish controls.
  */
 export default function LessonChat({ lessonId, lesson }: LessonChatProps) {

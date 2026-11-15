@@ -10,6 +10,7 @@ from app.models.chat import ChatMessage
 from app.models.enums import ChatMessageRole
 from app.models.profile import Profile
 from app.schemas.llm import OnboardingReply
+from tests.chat_turn import post_turn
 from tests.factories import make_chat_session, make_user
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, SchemaMismatch
 from tests.integration.test_llm_usage_limits import _events
@@ -29,7 +30,7 @@ async def test_onboarding_reply_keeps_content_and_roadmap_draft(
     draft = roadmap()
     fake_llm.push(OnboardingReply(content="  Here is your plan.  ", course_roadmap=draft))
 
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "I want to travel."})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "I want to travel.")
 
     assert response.status_code == 200, response.text
     assert fake_llm.calls[-1].schema is OnboardingReply
@@ -50,13 +51,16 @@ async def test_schema_error_completes_usage_as_error_and_skips_assistant_row(
     session = await make_chat_session(db, user)
     fake_llm.push(SchemaMismatch())
 
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "Hello"})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "Hello")
 
-    assert response.status_code == 502
+    assert response.status_code == 200
     assert response.json()["code"] == "LLM_SCHEMA_ERROR"
     events = await _events(db)
+    assert len(events) == 1
     assert events[0].status == "error"
-    assert events[0].input_tokens == RAW_INPUT_TOKENS
+    # The graph raises before a completed AIMessage reaches the runner, so the estimate stays.
+    assert events[0].input_tokens != RAW_INPUT_TOKENS
+    assert events[0].input_tokens > 0
     assert [m.role for m in await _messages(db)] == [ChatMessageRole.user]
 
 
@@ -71,7 +75,7 @@ async def test_out_of_range_minutes_from_the_model_are_saved_as_unknown(
         OnboardingReply.model_validate({"content": "How many minutes per lesson?", "learner_profile": profile})
     )
 
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "3 minutes"})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "3 minutes")
 
     assert response.status_code == 200
     db.expire_all()

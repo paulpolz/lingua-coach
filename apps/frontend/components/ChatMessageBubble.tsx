@@ -76,6 +76,7 @@ export default function ChatMessageBubble({ message }: { message: DisplayMessage
         ) : null}
 
         <div
+          aria-busy={message.isStreaming ? true : undefined}
           className={`px-3.5 py-2.5 text-sm leading-[22px] ${
             isUser
               ? "rounded-[16px_4px_16px_16px] bg-learner text-learner-fg"

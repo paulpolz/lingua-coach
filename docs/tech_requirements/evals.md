@@ -16,8 +16,8 @@ flowchart LR
   datasets --> offline
 ```
 
-- **Tracing** is on in `local` and `staging` (`LANGSMITH_TRACING=true`, one project per environment) and never in production: the app refuses to start with `APP_ENV=production` and tracing on. Staging holds only test accounts, so no learner data reaches LangSmith. Each LLM call is a run named after its call type (`chat`, `lesson_json`, `report`) with tags `[call_type, env:<APP_ENV>]` and metadata (`lesson_number` or `session_type`, `user_id_hash`). The quota step (`metered_structured_call`) is a parent run.
-- **Offline experiments** run a dataset through the production prompt builders against the real model and score the outputs.
+- **Tracing** is on in `local` and `staging` (`LANGSMITH_TRACING=true`, one project per environment) and never in production: the app refuses to start with `APP_ENV=production` and tracing on (`Settings._check_deployment_safety` also rejects the legacy `LANGCHAIN_TRACING_V2=true`). Staging holds only test accounts, so no learner data reaches LangSmith. Traces contain full prompts—do not weaken the production guard. In the app, `metered_agent_run` and `metered_agent_stream` are the `@traceable` parents. Trace inputs omit `db`, `user_id`, `before_call`, `context`, and `agent`. The agent config sets `run_name` to the call type with tags `[call_type, env:<APP_ENV>]` and metadata `call_type`, `model`, and `user_id_hash` (16-character SHA-256, not the raw user id), plus `lesson_number` or `session_type` when the caller has them. Prompt text is not trace metadata.
+- **Offline experiments** run a dataset through the same agent factories as the app, against the real model, and score the outputs.
 - **CI**: [`.github/workflows/evals.yml`](../../.github/workflows/evals.yml) runs every dataset nightly and on `workflow_dispatch`. A run fails when any evaluator's mean score drops below `--min-score` (default 0.9). It is never part of the PR gate: it is nondeterministic and costs money.
 
 ## Datasets
@@ -58,8 +58,8 @@ uv run python -m evals.run --dataset report_patch --min-score 0.8
 uv run pytest -m eval                                        # the same, as a pytest (skipped without keys)
 ```
 
-The runner calls `generate_structured` directly with the same system instructions and prompt builders as the app (no database, no quota rows). Compare two prompt versions by running the dataset on each branch and opening both experiments side by side in LangSmith.
+The runner calls [`invoke_agent`](../../apps/backend/app/services/agents/runner.py) on the same agent factories as the app: same bootstrap (human message, then one tool turn), `asyncio.timeout(LLM_TIMEOUT_SECONDS)`, and `structured_response` validation, but **no** `reserve_llm_call` / `complete` row and **no** checkpointer (`thread_id` omitted). Dataset history is passed as the user text. Context tools run against an empty eval session that supplies the profile and, for reports, a lesson stub. Persist only validated `model_dump()` output in production; evals score the parsed schema the same way. Compare two prompt versions by running the dataset on each branch and opening both experiments side by side in LangSmith.
 
 ## Status
 
-Implemented: tracing metadata and the production guard, the datasets' seed files, deterministic evaluators, the runner, the nightly workflow. Not yet done (needs accounts and infrastructure): the staging deployment itself, the LangSmith project setup, LLM-as-judge evaluators in the UI, and a first baseline experiment. [rag.md](./rag.md) stage 2 is gated on these evals.
+Implemented: tracing metadata and the production guard, the datasets' seed files, deterministic evaluators, the runner, the nightly workflow. Not yet done (needs accounts and infrastructure): the staging deployment itself, the LangSmith project setup, LLM-as-judge evaluators in the UI, and a first baseline experiment.

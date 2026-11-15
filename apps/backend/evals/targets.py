@@ -1,49 +1,136 @@
-"""Eval targets: build the production prompt for one dataset example and make one LLM call.
+"""Eval targets: one agent run per dataset example.
 
-No database and no quota rows: evals call `generate_structured` directly, with the same
-system instructions and prompt builders the app uses.
+No quota row. Calls the same agent factories as the app. Seed examples have no
+learner database, so context tools see `_EvalSession` instead of `db=None`.
+The prompts assembled from the dataset stay the user text.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import uuid
 from datetime import date
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
-from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.models.lesson import Lesson
+from app.models.profile import Profile
 from app.schemas.chat import TurnTiming
-from app.schemas.llm import LessonCurriculum, LessonReply, OnboardingReply, ReportPatch
-from app.services.prompt_assembly import (
-    generation_user_prompt,
-    lesson_context_block,
-    lesson_generation_system_instruction,
-    lesson_system_instruction,
-    onboarding_system_instruction,
-    report_system_instruction,
-    report_user_prompt,
+from app.services.agents.catalog import (
+    CURRICULUM_TASK,
+    REPORT_TASK,
+    curriculum_agent,
+    lesson_agent,
+    onboarding_agent,
+    report_agent,
 )
-from app.services.structured_llm import ChatTurn, LLMError, generate_structured
+from app.services.agents.factory import CoachAgent
+from app.services.agents.runner import LLMError, invoke_agent, run_config
+from app.services.agents.tools import AgentContext
+from app.services.prompt_assembly import generation_user_prompt, lesson_context_block, report_user_prompt
 
-Target = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+# Stable ids for trace metadata. Evals do not read or write a user row.
+_EVAL_USER = uuid.UUID(int=0)
+_EVAL_LESSON = uuid.UUID(int=1)
 
 
-def _history(inputs: dict[str, Any]) -> list[ChatTurn]:
-    return [ChatTurn(role=t["role"], text=t["text"]) for t in inputs.get("history", [])]
+class _EvalResult:
+    """The slice of a SQLAlchemy result the context tools actually use."""
+
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def scalars(self) -> _EvalResult:
+        return self
+
+    def all(self) -> list[object]:
+        return list(self._rows)
+
+    def first(self) -> object | None:
+        return self._rows[0] if self._rows else None
+
+    def scalar_one_or_none(self) -> object | None:
+        if len(self._rows) > 1:
+            raise RuntimeError("eval session returned more than one row")
+        return self._rows[0] if self._rows else None
 
 
-async def _call(
-    schema: type[BaseModel], system: str, history: list[ChatTurn], call_type: str, model_id: str
-) -> dict[str, Any]:
+class _EvalSession:
+    """Empty learner state, plus the profile and lesson the tools require to return.
+
+    Curriculum calls `target_minutes`, which raises without a profile. Report tools
+    raise without a lesson. This is the test seam: it is not a second pedagogy path.
+    """
+
+    def __init__(self) -> None:
+        self.profile = SimpleNamespace(
+            native_language="ru",
+            target_language="en",
+            goal_outcome="Travel",
+            target_level="A2",
+            level_strengths=None,
+            level_weaknesses=None,
+            time_budget={"minutes_per_session": 15},
+            focus=None,
+            constraints=None,
+            grammar_mastery=None,
+            vocabulary_summary=None,
+        )
+        self.lesson = SimpleNamespace(
+            id=_EVAL_LESSON,
+            lesson_number=1,
+            payload={"session_summary": {}},
+            accomplished_at=None,
+            pace_status=None,
+        )
+
+    async def execute(self, statement: object, *_args: object, **_kwargs: object) -> _EvalResult:
+        descriptions = getattr(statement, "column_descriptions", None) or []
+        entity = descriptions[0].get("entity") if descriptions else None
+        if entity is Profile:
+            return _EvalResult([self.profile])
+        return _EvalResult([])
+
+    async def get(self, model: type, ident: object) -> object | None:
+        if model is Lesson and ident == _EVAL_LESSON:
+            return self.lesson
+        return None
+
+
+_EVAL_DB = _EvalSession()
+
+
+def _history_text(inputs: dict[str, Any]) -> str:
+    return "\n".join(f"{turn['role']}: {turn['text']}" for turn in inputs.get("history", []))
+
+
+def _context(inputs: dict[str, Any], *, call_type: str, onboarding: bool) -> AgentContext:
+    return AgentContext(
+        user_id=_EVAL_USER,
+        db=cast(AsyncSession, _EVAL_DB),
+        call_type=call_type,
+        native_language=inputs.get("native"),
+        target_language=inputs.get("target"),
+        onboarding=onboarding,
+        lesson_id=_EVAL_LESSON if call_type == "report" else None,
+        session_summary=inputs.get("session_summary"),
+    )
+
+
+async def _call(agent: CoachAgent, user_text: str, context: AgentContext) -> dict[str, Any]:
     try:
-        parsed = await generate_structured(
-            model_id=model_id,
-            schema=schema,
-            system_instruction=system,
-            history=history,
-            call_type=call_type,
-            trace_metadata={"eval": True},
+        parsed = await invoke_agent(
+            agent,
+            user_text=user_text,
+            context=context,
+            config=run_config(
+                call_type=agent.call_type,
+                model_id=agent.model_id,
+                user_id=_EVAL_USER,
+                thread_id=None,
+                trace_metadata={"eval": True},
+            ),
         )
     except LLMError as exc:
         return {"parsed": None, "error": exc.code}
@@ -51,29 +138,29 @@ async def _call(
 
 
 async def onboarding_turn(inputs: dict[str, Any]) -> dict[str, Any]:
-    system = onboarding_system_instruction(inputs.get("native"), inputs.get("target"))
-    return await _call(OnboardingReply, system, _history(inputs), "chat", settings.llm_model_chat)
+    text = _history_text(inputs) or "Begin the interview."
+    return await _call(onboarding_agent(None), text, _context(inputs, call_type="chat", onboarding=True))
 
 
 async def lesson_turn(inputs: dict[str, Any]) -> dict[str, Any]:
-    mistakes = "\n".join(f"  - {m['pattern_type']}: {m['example_text']}" for m in inputs.get("mistakes", []))
+    mistakes = "\n".join(f"  - {item['pattern_type']}: {item['example_text']}" for item in inputs.get("mistakes", []))
     timing = TurnTiming(active_minutes=inputs["active_minutes"], target_minutes=inputs["target_minutes"])
-    context = lesson_context_block(inputs["curriculum"], None, mistakes or "  (none)", timing)
-    system = lesson_system_instruction(inputs.get("native"), inputs["target"])
-    history = [ChatTurn(role="user", text=context), *_history(inputs)]
-    return await _call(LessonReply, system, history, "chat", settings.llm_model_chat)
+    block = lesson_context_block(inputs["curriculum"], None, mistakes or "  (none)", timing)
+    history = _history_text(inputs)
+    text = f"{block}\n\n{history}" if history else block
+    return await _call(lesson_agent(None), text, _context(inputs, call_type="chat", onboarding=False))
 
 
 async def curriculum(inputs: dict[str, Any]) -> dict[str, Any]:
-    system = lesson_generation_system_instruction(inputs.get("native"), inputs.get("target"))
     prompt = generation_user_prompt(inputs["context"])
     return await _call(
-        LessonCurriculum, system, [ChatTurn(role="user", text=prompt)], "lesson_json", settings.llm_model_lesson
+        curriculum_agent(),
+        f"{CURRICULUM_TASK}\n\n{prompt}",
+        _context(inputs, call_type="lesson_json", onboarding=False),
     )
 
 
 async def report_patch(inputs: dict[str, Any]) -> dict[str, Any]:
-    system = report_system_instruction(inputs.get("native"), inputs.get("target"))
     prompt = report_user_prompt(
         lesson_number=inputs["lesson_number"],
         finished_on=date.fromisoformat(inputs["finished_on"]),
@@ -82,10 +169,14 @@ async def report_patch(inputs: dict[str, Any]) -> dict[str, Any]:
         pace_status=inputs.get("pace_status"),
         reports=inputs["reports"],
     )
-    return await _call(ReportPatch, system, [ChatTurn(role="user", text=prompt)], "report", settings.llm_model_lesson)
+    return await _call(
+        report_agent(),
+        f"{REPORT_TASK}\n\n{prompt}",
+        _context(inputs, call_type="report", onboarding=False),
+    )
 
 
-TARGETS: dict[str, Target] = {
+TARGETS: dict[str, Any] = {
     "onboarding_turns": onboarding_turn,
     "lesson_turns": lesson_turn,
     "curriculum_gen": curriculum,

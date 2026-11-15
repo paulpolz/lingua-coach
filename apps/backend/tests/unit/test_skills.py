@@ -5,18 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import settings
-from app.services.skills import get_system_instruction
+from app.services.skills import load_skill
 
 
-def test_lesson_instruction_is_the_exercise_tutor_only() -> None:
-    text = get_system_instruction("lesson")
-    assert text.startswith("# Exercise Tutor")
-    assert "vocabulary_practice_formats" not in text
-
-
-def test_onboarding_instruction_joins_interviewer_and_composer() -> None:
-    text = get_system_instruction("onboarding")
-    assert text.index("# Onboarding Interviewer") < text.index("# Course Composer")
+def test_each_skill_file_loads() -> None:
+    assert load_skill("exercise_tutor").startswith("# Exercise Tutor")
+    assert "vocabulary_practice_formats" not in load_skill("exercise_tutor")
+    assert load_skill("onboarding_interviewer").startswith("# Onboarding Interviewer")
+    assert load_skill("course_composer").startswith("# Course Composer")
+    assert load_skill("report_writer").startswith("# Report Writer")
 
 
 def test_retired_skill_file_is_gone() -> None:

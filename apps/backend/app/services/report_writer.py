@@ -9,22 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.enums import UserReportType
 from app.models.lesson import Lesson
-from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.models.user import User
 from app.models.user_report import UserReport
-from app.schemas.llm import ReportPatch
-from app.services.llm_usage import metered_structured_call
-from app.services.prompt_assembly import report_system_instruction, report_user_prompt
+from app.services.agents.catalog import REPORT_TASK, report_agent
+from app.services.agents.runner import metered_agent_run
+from app.services.agents.tools import AgentContext
 from app.services.queries import get_profile
 from app.services.report_ops import apply_report_op, is_log_section
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
-from app.services.structured_llm import ChatTurn
 
 logger = get_logger(__name__)
 
@@ -89,38 +86,23 @@ async def _update(
     profile: Profile | None,
     now: datetime,
 ) -> None:
-    rows = (await db.execute(select(UserReport).where(UserReport.user_id == user.id))).scalars().all()
-    bodies = {t.value: factory() for t, factory in _BLANK.items()} | {r.report_type.value: r.body for r in rows}
-
-    mistakes = (await db.execute(select(Mistake).where(Mistake.lesson_id == lesson.id))).scalars().all()
-    native = profile.native_language if profile else None
-    target = profile.target_language if profile else None
-    prompt = report_user_prompt(
-        lesson_number=lesson.lesson_number,
-        finished_on=now.date(),
-        session_summary=session_summary,
-        mistakes=[
-            {
-                "pattern_type": m.pattern_type,
-                "example_text": m.example_text,
-                "correction": m.correction,
-                "occurrence_count": m.occurrence_count,
-            }
-            for m in mistakes
-        ],
-        pace_status=lesson.pace_status.value if lesson.pace_status else None,
-        reports=bodies,
-    )
-    system_instruction = report_system_instruction(native, target)
-
-    patch = await metered_structured_call(
+    patch = await metered_agent_run(
         db,
         user.id,
         "report",
-        model_id=settings.llm_model_lesson,
-        schema=ReportPatch,
-        system_instruction=system_instruction,
-        history=[ChatTurn(role="user", text=prompt)],
+        agent=report_agent(),
+        user_text=REPORT_TASK,
+        context=AgentContext(
+            user_id=user.id,
+            db=db,
+            call_type="report",
+            native_language=profile.native_language if profile else None,
+            target_language=profile.target_language if profile else None,
+            lesson_id=lesson.id,
+            lesson_number=lesson.lesson_number,
+            session_summary=session_summary,
+            finished_at=now,
+        ),
         trace_metadata={"lesson_number": lesson.lesson_number},
     )
     reports = await _locked_reports(db, user.id)

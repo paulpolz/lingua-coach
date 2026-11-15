@@ -10,15 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from app.models.enums import LessonStatus, UserReportType
 from app.models.user_report import UserReport
 from app.schemas.llm import ReportOp, ReportPatch
+from app.services.agents.catalog import report_agent
 from app.services.report_ops import apply_report_op, wrap_section
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
 from app.services.report_writer import _update
 from tests.factories import make_lesson, make_user
-from tests.fake_llm import FakeLLM, LLMCall
+from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, LLMCall
 from tests.integration.test_llm_usage_limits import _events
 
 
 async def test_report_writer_applies_ops_from_model(db: AsyncSession, fake_llm: FakeLLM) -> None:
+    assert report_agent().graph.checkpointer is None
     user = await make_user(db)
     lesson = await make_lesson(db, user, status=LessonStatus.accomplished)
     progress = UserReport(user_id=user.id, report_type=UserReportType.progress, body=blank_progress_markdown())
@@ -47,9 +49,12 @@ async def test_report_writer_applies_ops_from_model(db: AsyncSession, fake_llm: 
     )
 
     assert fake_llm.calls[-1].schema is ReportPatch
+    assert fake_llm.modes == ["ainvoke"]
     assert "Noted the cafe order." in progress.body
     assert "<!-- section:update_log -->" in progress.body
-    assert (await _events(db))[0].status == "ok"
+    events = await _events(db)
+    assert len(events) == 1 and events[0].status == "ok" and events[0].call_type == "report"
+    assert events[0].input_tokens == RAW_INPUT_TOKENS
 
 
 async def test_report_prompt_sends_log_tails_and_rejects_patching_a_log(db: AsyncSession, fake_llm: FakeLLM) -> None:

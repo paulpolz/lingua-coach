@@ -3,7 +3,8 @@
  * metadata objects come from the model as-is, so fields may be missing.
  */
 
-import { ApiError, apiJson } from "@/lib/api";
+import { ApiError, apiFetch, apiJson, toApiError } from "@/lib/api";
+import { ChatStreamError, consumeChatSse } from "@/lib/chat-stream";
 
 // ---------------------------------------------------------------------------
 // Chat sessions + messages
@@ -212,33 +213,77 @@ export function latestAssistantMetadata<K extends keyof ChatMessageMetadata>(
 // Send a chat turn
 // ---------------------------------------------------------------------------
 
-/** `POST /api/v1/chat/sessions/{id}/messages` — `ChatTurnResponse`, status 200. */
+/** Stored coach turn. The stream's `done` event carries `message_id`; content and metadata come from the saved row. */
 export interface ChatTurnResponse {
   message_id: string;
   content: string;
   metadata: ChatMessageMetadata;
 }
 
-/** `POST /api/v1/chat/sessions/{id}/messages` with `{content}`. Returns the JSON body. */
-export async function sendChatMessage(
+export interface ChatTurnListener {
+  /** Coach text so far, and metadata once the structured reply has arrived. */
+  onUpdate?: (update: { content: string; metadata: ChatMessageMetadata }) => void;
+}
+
+/**
+ * `POST /api/v1/chat/sessions/{id}/messages/stream`. HTTP errors, including 429,
+ * are thrown before the body is read. An SSE `error` event is a failure of an open stream.
+ */
+export async function sendChatTurn(
   token: string | null,
   sessionId: string,
-  content: string
+  content: string,
+  listener: ChatTurnListener = {}
 ): Promise<ChatTurnResponse> {
   try {
-    return await apiJson<ChatTurnResponse>(
-      `/api/v1/chat/sessions/${sessionId}/messages`,
-      token,
-      { method: "POST", body: JSON.stringify({ content }) },
-      "Message failed"
-    );
+    const response = await apiFetch(`/api/v1/chat/sessions/${sessionId}/messages/stream`, token, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+    if (!response.ok) throw await toApiError(response, "Message failed");
+    if (!response.body) throw new ChatStreamError("The coach reply was interrupted.", "STREAM_INTERRUPTED");
+
+    const state = await consumeChatSse(response.body, (update) => listener.onUpdate?.(update));
+    return await preferStoredTurn(token, sessionId, {
+      message_id: state.messageId ?? "",
+      content: state.content,
+      metadata: state.metadata,
+    });
   } catch (error) {
-    if (error instanceof ApiError) throw error;
-    // A dropped connection has no HTTP response. The 503 carries the client
-    // message; it is not a backend status.
-    const detail = error instanceof Error && error.message ? error.message : "Could not reach the server.";
-    throw new ApiError(503, detail, "NETWORK_ERROR");
+    if (error instanceof ChatStreamError) throw new ApiError(502, error.message, error.code);
+    throw asNetworkError(error);
   }
+}
+
+/**
+ * The saved row is the transcript: it has `timing` and the suggest-finish gate.
+ * The structured event does not. A failed reload keeps the streamed reply.
+ */
+async function preferStoredTurn(
+  token: string | null,
+  sessionId: string,
+  turn: ChatTurnResponse
+): Promise<ChatTurnResponse> {
+  try {
+    const messages = await getChatMessages(token, sessionId);
+    const stored = messages.find((message) => message.id === turn.message_id && message.role === "assistant");
+    if (!stored?.content.trim()) return turn;
+    return {
+      message_id: stored.id,
+      content: stored.content,
+      metadata: stored.metadata ?? turn.metadata,
+    };
+  } catch {
+    return turn;
+  }
+}
+
+function asNetworkError(error: unknown): ApiError {
+  if (error instanceof ApiError) return error;
+  // A dropped connection has no HTTP response. The 503 carries the client
+  // message; it is not a backend status.
+  const detail = error instanceof Error && error.message ? error.message : "Could not reach the server.";
+  return new ApiError(503, detail, "NETWORK_ERROR");
 }
 
 // ---------------------------------------------------------------------------

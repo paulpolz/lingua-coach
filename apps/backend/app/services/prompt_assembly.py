@@ -1,4 +1,4 @@
-"""Builds Gemini system instructions and context turns. Pedagogy lives in skills/*.md."""
+"""Language policy and the context strings the agent tools return."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from app.models.profile import Profile
 from app.schemas.chat import TurnTiming
 from app.services.llm_usage import estimate_input_tokens
 from app.services.report_ops import trim_log_sections
-from app.services.skills import get_system_instruction, load_skill
 
 logger = get_logger(__name__)
 
@@ -29,22 +28,6 @@ def language_policy(native: str | None, target: str | None, *, onboarding: bool 
         f"Write all learner-facing text in {target or 'en'}. Use the native language only "
         "to anticipate interference. JSON keys stay English."
     )
-
-
-def onboarding_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join([get_system_instruction("onboarding"), language_policy(native, target, onboarding=True)])
-
-
-def lesson_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join([get_system_instruction("lesson"), language_policy(native, target)])
-
-
-def lesson_generation_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join([get_system_instruction("lesson"), language_policy(native, target)])
-
-
-def report_system_instruction(native: str | None, target: str | None) -> str:
-    return "\n\n".join([load_skill("report_writer"), language_policy(native, target)])
 
 
 def log_context_tokens(call_type: str, blocks: Mapping[str, str]) -> None:

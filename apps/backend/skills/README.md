@@ -1,6 +1,6 @@
 # Lingua Coach — Agent Skills
 
-Goal-agnostic coach skills. The backend loads these files at runtime as the Gemini system instruction; they define **what the coach does**. How the backend wires them (contracts, context, persistence) is in [ai-api.md](../../../docs/tech_requirements/ai-api.md).
+Goal-agnostic coach skills. A context tool loads the file for the current turn; the agent's own system prompt stays a few lines. The files define **what the coach does**. How the backend wires them (contracts, context, persistence) is in [ai-api.md](../../../docs/tech_requirements/ai-api.md).
 
 | Skill | Loaded for | Role |
 |-------|------------|------|
