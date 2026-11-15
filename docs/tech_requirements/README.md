@@ -4,17 +4,14 @@ How Lingua Coach is built. The learner-facing behavior is in [business_requireme
 
 | Doc | Covers |
 |-----|--------|
-| [backend.md](./backend.md) | FastAPI service, endpoints, request flows, limits, errors |
+| [backend.md](./backend.md) | FastAPI service, endpoints, LangGraph checkpointer, request flows, limits, errors |
 | [frontend.md](./frontend.md) | Next.js routes, screens, API clients |
-| [ai-api.md](./ai-api.md) | Agents, tools, quota, SSE chat, time-boxed lessons |
-| [adr/](./adr/README.md) | Shipped agent decisions: factory, tools, metering, SSE, Postgres checkpointer |
-| [langchain-migration.html](./langchain-migration.html) | Folder map of the shipped agents and the two history stores |
+| [ai-api.md](./ai-api.md) | Agent factory, tools, quota, SSE chat, schemas, time-boxed lessons |
 | [database.md](./database.md) | Postgres tables, JSON shapes, lifecycles |
 | [deployment.md](./deployment.md) | Docker Compose, environment variables, migrations, CI |
 | [hosting.md](./hosting.md) | Where each piece runs and what is external |
-| [rag.md](./rag.md) | Choosing what learner memory goes into each LLM call (stage 1 implemented, stage 2 gated on evals) |
+| [rag.md](./rag.md) | Which learner facts go into each LLM call |
 | [evals.md](./evals.md) | LangSmith tracing, datasets, evaluators, and the nightly eval run |
-| [refinement-plan.md](./refinement-plan.md) | Code review findings, RAG, LangSmith evals, test framework, refinement PRs (backend implemented) |
 
 ## System overview
 

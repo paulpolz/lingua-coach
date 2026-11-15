@@ -33,7 +33,7 @@ flowchart LR
 | PostgreSQL | Compose `postgres`, volume `lingua_pg_data` | This repo |
 | Monitoring | Compose `prometheus`, `loki`, `promtail`, `grafana` (started with the app) | This repo |
 | Authentication | Clerk (Development instance by default) | External, configured with Clerk keys |
-| LLM | Google Gemini API | External, configured with `LLM_API_KEY` (`LLM_PROVIDER=google`) |
+| LLM | Google Gemini API | External, configured with `LLM_API_KEY` |
 | LLM tracing and evals | LangSmith (smith.langchain.com) | External, local and staging only, configured with `LANGSMITH_*` |
 
 ## External accounts needed

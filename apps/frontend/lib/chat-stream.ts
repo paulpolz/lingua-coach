@@ -42,11 +42,6 @@ export function emptyChatSseState(): ChatSseState {
   return { content: "", metadata: {}, messageId: null };
 }
 
-/** Only a disabled stream route falls back to the JSON turn. A 429 stays an HTTP error. */
-export function isStreamingDisabled(status: number, code: string | undefined): boolean {
-  return status === 404 && code === "STREAMING_DISABLED";
-}
-
 export function readSseFrames(buffer: string): { frames: SseFrame[]; rest: string } {
   const parts = buffer.replace(/\r\n/g, "\n").split("\n\n");
   const rest = parts.pop() ?? "";

@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service in [`apps/backend`](../../apps/backend). It authenticates Clerk users, stores learner data in Postgres, runs the coach through four LangChain agents, generates lessons in a background task, and exposes Prometheus metrics. Chat defaults to one JSON response per turn. `CHAT_STREAMING_ENABLED` turns on the SSE route. The agent history is a LangGraph thread; the transcript the UI reads is `chat_messages`. See [ai-api.md](./ai-api.md) and [adr/](./adr/README.md).
+FastAPI service in [`apps/backend`](../../apps/backend). It authenticates Clerk users, stores learner data in Postgres, runs the coach through four LangChain agents, generates lessons in a background task, and exposes Prometheus metrics. A chat turn is one SSE response. The agent history is a LangGraph thread; the transcript the UI reads is `chat_messages`. Agent design, tools, quota, and streaming are in [ai-api.md](./ai-api.md).
 
 ## Layout
 
@@ -21,12 +21,10 @@ apps/backend/
         tools.py           skill and SQL context tools (not retrievers)
         runner.py          metered_agent_run, metered_agent_stream, LLMError
         checkpointer.py    AsyncPostgresSaver for the process
-        onboarding.py      onboarding chat agent
-        lesson_chat.py     lesson chat agent
-        curriculum.py      lesson generation agent (no checkpointer)
-        report.py          report patch agent (no checkpointer)
+        catalog.py         the four agents: prompt, tools, schema, checkpointer
       skills.py            loads skills/*.md
       prompt_assembly.py   language policy, fenced learner text, context strings the tools return
+      chat_turns.py        save a chat turn: profile, mistakes, practice, plan, transcript rows
       memory.py            rank_mistakes, prior-lesson one-liners
       lesson_timing.py     active minutes, lesson target (TIME_BUDGET_REQUIRED)
       lesson_generation.py background job that writes a curriculum; stale-generation reaper
@@ -54,8 +52,7 @@ All routes are under `/api/v1` and, except `health`, require `Authorization: Bea
 | POST | `/auth/sync` | token | Upsert the `users` row for the Clerk user; returns `onboarding_complete` |
 | POST | `/chat/sessions` | synced user | Get or create the onboarding session, or the session for a lesson (`{type, lesson_id?}`) |
 | GET | `/chat/sessions/{id}/messages` | owner | Transcript with per-message metadata |
-| POST | `/chat/sessions/{id}/messages` | owner | Send a message; `200` `ChatTurnResponse` (always available) |
-| POST | `/chat/sessions/{id}/messages/stream` | owner | Same turn as SSE. `404 STREAMING_DISABLED` while `CHAT_STREAMING_ENABLED` is false |
+| POST | `/chat/sessions/{id}/messages/stream` | owner | One coach turn as SSE |
 | POST | `/onboarding/accept` | synced user | Accept a roadmap (`{session_id, course_roadmap}`, roadmap validated as `CourseRoadmap`) |
 | GET | `/profile` | synced user | Profile summary plus schedule and pace |
 | PATCH | `/profile` | synced user | Set the lesson length: `{"time_budget": {"minutes_per_session": 5..180}}`, merged into `time_budget`; returns the profile (`404 NOT_FOUND` without a profile) |
@@ -103,22 +100,33 @@ sequenceDiagram
   participant L as llm_usage
   participant G as Agent
   participant D as Postgres
-  F->>A: POST /chat/sessions/{id}/messages {content}
+  F->>A: POST /chat/sessions/{id}/messages/stream {content}
   A->>A: owner, length, onboarding and lesson checks
   A->>L: per-user chat limit
   A->>A: require app.state.checkpointer
-  A->>D: bootstrap tools when AGENT_BOOTSTRAP_CONTEXT
+  A->>D: bootstrap tools
   A->>L: reserve one chat call
   A->>D: save user message and commit
-  A->>G: ainvoke on thread_id = session id
+  A-->>F: 200 text/event-stream
+  A->>G: astream on thread_id = session id
   G->>D: checkpoint rows as the graph steps
   A->>D: save artifacts + assistant message
-  A-->>F: 200 {message_id, content, metadata}
+  A-->>F: SSE done {message_id}
 ```
 
-`POST …/messages/stream` runs the same checks and the same reserve. The reserve finishes before `StreamingResponse`, because that response commits `200` as soon as the body starts. The body then emits SSE (`Cache-Control: no-cache`, `X-Accel-Buffering: no`). While `CHAT_STREAMING_ENABLED` is false (the default), this route returns `404` `STREAMING_DISABLED` and writes nothing. The JSON route stays up either way. Event order and the reply-text fallback are in [ai-api.md](./ai-api.md#chat-streaming).
+The reserve finishes before `StreamingResponse`, because that response commits `200` as soon as the body starts. The body then emits SSE (`Cache-Control: no-cache`, `X-Accel-Buffering: no`). Event order and the reply-text fallback are in [ai-api.md](./ai-api.md#chat-streaming).
 
-The JSON body is `ChatTurnResponse`: `message_id`, `content`, and `metadata`. `done.message_id` on the stream is that same assistant id. The model’s prior turns come from the LangGraph thread. `GET …/messages` reads `chat_messages` only.
+## LangGraph checkpointer
+
+Chat agents use `AsyncPostgresSaver` from `langgraph-checkpoint-postgres`. The connection URL is `settings.database_url` with `+asyncpg` swapped to plain `postgresql://` (same as Alembic); the saver uses its own psycopg connection, not the SQLAlchemy pool. [`checkpointer.py`](../../apps/backend/app/services/agents/checkpointer.py) opens the saver in the FastAPI lifespan; [`main.py`](../../apps/backend/app/main.py) holds it on `app.state.checkpointer`. `setup()` creates LangGraph's checkpoint tables on boot (idempotent; no hand-written Alembic DDL for that).
+
+`thread_id` is the chat session id (never the user id). Each turn appends one `HumanMessage`; the runner does not reload `chat_messages` into the model input. [`CapContextWindow`](../../apps/backend/app/services/agents/factory.py) caps what the model sees via `wrap_model_call` / `awrap_model_call`—transient `request.override(messages=...)`, not checkpoint deletion. It keeps the newest `CHAT_CONTEXT_MESSAGES` learner turns, including tool messages for those turns; if a cut would split a tool call from its `ToolMessage`, the cut moves back to the previous human message.
+
+**Projection into `chat_messages`:** (1) `before_call` commits the user row before the agent runs. (2) On success, [`chat_turns.py`](../../apps/backend/app/services/chat_turns.py) writes the assistant row (`content` from `structured_response`, `metadata_json` from `TurnMetadata`, not raw checkpoint). (3) On LLM failure, the user row stays and there is no assistant row. (4) `GET …/messages` reads `chat_messages` only; tool transcripts stay in the checkpoint. Curriculum and report agents use `checkpointer=None`.
+
+On accept and finish, the app deletes `chat_messages` and the `chat_sessions` row but does not call `adelete_thread` (checkpoint rows remain until account deletion adds thread cleanup). Knowing a session UUID is not enough to read a thread—the HTTP layer must pass `get_owned` before using `thread_id`.
+
+`done.message_id` is the assistant row id. The model’s prior turns come from the LangGraph thread. `GET …/messages` reads `chat_messages` only, and that row is what the client shows after `done` (it carries `timing` and the suggest-finish gate).
 
 Artifacts saved per session type:
 
@@ -139,18 +147,16 @@ Artifacts saved per session type:
 
 It is stored on the assistant message so the transcript reloads with the same state; the UI restores `timing` from the latest assistant message. Messages written before this change may still carry the retired `lesson_plan` and `task_update` keys; `GET …/messages` returns stored metadata as-is. A blank `content` fails schema validation and never reaches persist.
 
-The user row is committed before the LLM call. LLM failures use the `{detail, code}` body with a fixed learner-safe `detail` per code (the provider's error text is logged, never returned) and save no assistant row:
+The user row is committed before the LLM call. A model failure or `PERSIST_FAILED` is an SSE `error` event on the already-open HTTP 200. `detail` is the learner-safe sentence (`public_detail`, or the persist sentence). The provider's error text is logged, never returned. No assistant row is saved.
 
-| Code | Status |
+| Code | Where |
 |------|--------|
-| `LLM_TIMEOUT` | 504 |
-| `LLM_QUOTA_EXCEEDED` | 429 |
-| `LLM_SCHEMA_ERROR`, `LLM_API_ERROR`, `LLM_CONFIG_ERROR` | 502 |
-| `PERSIST_FAILED` | 500 |
-| `STREAMING_DISABLED` | 404 |
-| `CHECKPOINTER_UNAVAILABLE` | 503 |
+| `LLM_TIMEOUT`, `LLM_QUOTA_EXCEEDED`, `LLM_SCHEMA_ERROR`, `LLM_API_ERROR`, `LLM_CONFIG_ERROR` | SSE `error` |
+| `PERSIST_FAILED` | SSE `error` |
+| `CHECKPOINTER_UNAVAILABLE` | HTTP 503, before the body |
+| `RATE_LIMIT_EXCEEDED`, `LLM_RATE_LIMIT_EXCEEDED` | HTTP 429, before the body |
 
-`PERSIST_FAILED` happens after a valid model, so the usage row stays `ok`. The user row stays; the assistant row does not. On the stream, `LLMError` and `PERSIST_FAILED` are `error` SSE events (`code` and `public_detail`, or the persist sentence). A quota refusal and `CHECKPOINTER_UNAVAILABLE` are HTTP statuses, because they are raised before the response body starts. `STREAMING_DISABLED` is the HTTP 404 above.
+`PERSIST_FAILED` happens after a valid model, so the usage row stays `ok`. The user row stays; the assistant row does not. A quota refusal from the global limiter is also an HTTP status, because `reserve_llm_call` runs before `StreamingResponse`.
 
 ## Onboarding accept
 
@@ -253,7 +259,6 @@ Each agent run is reserved once before it runs (system prompt, new user text, an
 | `UNAUTHORIZED`, `INVALID_TOKEN`, `USER_NOT_SYNCED` | 401 | Auth (see above) |
 | `ONBOARDING_INCOMPLETE` | 403 | Onboarded-only routes |
 | `NOT_FOUND` | 404 | Missing or someone else's resource (well-formed id) |
-| `STREAMING_DISABLED` | 404 | `POST …/messages/stream` while `CHAT_STREAMING_ENABLED` is false |
 | `CHECKPOINTER_UNAVAILABLE` | 503 | Chat turn while the process has no LangGraph saver |
 | `ACTIVE_LESSON_EXISTS` | 409 | Start while a lesson is generating or active (`active_lesson_id`) |
 | `TIME_BUDGET_REQUIRED` | 409 | `POST /lessons/start` for a profile without a lesson length |
@@ -261,7 +266,7 @@ Each agent run is reserved once before it runs (system prompt, new user text, an
 | `LESSON_NOT_ACTIVE` | 409 | Finish or open a chat for a lesson that is not active |
 | `ONBOARDING_INTERVIEW_INCOMPLETE`, `LESSON_ID_REQUIRED`, `EMPTY_MESSAGE`, `MESSAGE_TOO_LONG` | 422 | Business validation |
 | `RATE_LIMIT_EXCEEDED`, `LLM_RATE_LIMIT_EXCEEDED` | 429 | Limits, with `Retry-After` |
-| LLM codes, `PERSIST_FAILED` | 429/502/504/500 | See [Chat turn](#chat-turn) |
+| LLM codes, `PERSIST_FAILED` | SSE `error` on HTTP 200 | See [Chat turn](#chat-turn) |
 - The request-id middleware reads or creates `X-Request-ID`, echoes it on responses, and logs one JSON access line per request (`/metrics` and `/health` are skipped).
 - LLM calls log `llm_call` with call type, model, status, latency, and tokens; prompt builders log `prompt_context` with `context_tokens` per block; rejected report ops log `report_op_rejected`.
 

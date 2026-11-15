@@ -17,13 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.lesson import Lesson
 from app.models.profile import Profile
 from app.schemas.chat import TurnTiming
-from app.services.agents.curriculum import TASK as CURRICULUM_TASK
-from app.services.agents.curriculum import curriculum_agent
+from app.services.agents.catalog import (
+    CURRICULUM_TASK,
+    REPORT_TASK,
+    curriculum_agent,
+    lesson_agent,
+    onboarding_agent,
+    report_agent,
+)
 from app.services.agents.factory import CoachAgent
-from app.services.agents.lesson_chat import lesson_agent
-from app.services.agents.onboarding import onboarding_agent
-from app.services.agents.report import TASK as REPORT_TASK
-from app.services.agents.report import report_agent
 from app.services.agents.runner import LLMError, invoke_agent, run_config
 from app.services.agents.tools import AgentContext
 from app.services.prompt_assembly import generation_user_prompt, lesson_context_block, report_user_prompt

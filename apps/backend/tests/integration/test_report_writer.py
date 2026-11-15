@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from app.models.enums import LessonStatus, UserReportType
 from app.models.user_report import UserReport
 from app.schemas.llm import ReportOp, ReportPatch
-from app.services.agents.report import report_agent
+from app.services.agents.catalog import report_agent
 from app.services.report_ops import apply_report_op, wrap_section
 from app.services.report_seed import blank_errors_log_markdown, blank_progress_markdown
 from app.services.report_writer import _update

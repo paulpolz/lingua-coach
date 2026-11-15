@@ -14,6 +14,7 @@ from app.models.lesson import Lesson
 from app.models.mistake import Mistake
 from app.models.profile import Profile
 from app.schemas.llm import LessonReply, MistakeEntry, PracticeResult
+from tests.chat_turn import post_turn
 from tests.factories import make_chat_session, make_lesson, make_messages, make_mistake, make_profile, make_user
 from tests.fake_llm import FakeLLM, LLMCall
 
@@ -38,7 +39,7 @@ async def test_lesson_turn_returns_typed_metadata_with_timing(
     url, _ = await _lesson_chat(db, minutes=[0, 2, 6])
     fake_llm.push(LessonReply(content="Nice work on the order."))
 
-    response = await client.post(url, json={"content": "I would like a coffee."})
+    response = await post_turn(client, url, "I would like a coffee.")
 
     assert response.status_code == 200, response.text
     assert fake_llm.calls[-1].schema is LessonReply
@@ -55,7 +56,7 @@ async def test_suggest_finish_is_held_back_until_the_time_budget_is_used(
     url, _ = await _lesson_chat(db, minutes=[0, 2.5, 5])
     fake_llm.push(LessonReply(content="All done, great job!", suggest_finish=True))
 
-    response = await client.post(url, json={"content": "done?"})
+    response = await post_turn(client, url, "done?")
 
     assert response.json()["metadata"]["suggest_finish"] is False
     db.expire_all()
@@ -69,7 +70,7 @@ async def test_suggest_finish_passes_in_the_last_minute(
     url, _ = await _lesson_chat(db, minutes=[0, 4, 8, 12, 14])
     fake_llm.push(LessonReply(content="Recap: ...", suggest_finish=True))
 
-    response = await client.post(url, json={"content": "ok"})
+    response = await post_turn(client, url, "ok")
 
     assert response.json()["metadata"]["suggest_finish"] is True
 
@@ -86,8 +87,8 @@ async def test_solid_practice_pushes_review_out_and_closes_only_in_a_second_less
     fake_llm.push(*(LessonReply(content="Correct, no hints!", practiced=[solid]) for _ in range(3)))
 
     # Two solid turns in the same lesson count once.
-    await client.post(url, json={"content": "I went home."})
-    await client.post(url, json={"content": "She went too."})
+    await post_turn(client, url, "I went home.")
+    await post_turn(client, url, "She went too.")
     db.expire_all()
     first = await db.get(Mistake, mistake_id)
     assert first is not None and first.solid_streak == 1 and first.resolved_at is None
@@ -100,7 +101,7 @@ async def test_solid_practice_pushes_review_out_and_closes_only_in_a_second_less
     await db.refresh(user)  # type: ignore[arg-type]
     lesson2 = await make_lesson(db, user, lesson_number=2, payload={"curriculum": {}, "target_minutes": 15})  # type: ignore[arg-type]
     session2 = await make_chat_session(db, user, lesson2)  # type: ignore[arg-type]
-    await client.post(f"/api/v1/chat/sessions/{session2.id}/messages", json={"content": "We went."})
+    await post_turn(client, f"/api/v1/chat/sessions/{session2.id}/messages", "We went.")
     db.expire_all()
     closed = await db.get(Mistake, mistake_id)
     assert closed is not None and closed.resolved_at is not None and closed.next_review_at is None
@@ -120,7 +121,7 @@ async def test_reported_metadata_timing_is_measured_after_the_reply(
 
     fake_llm.push(two_minutes_pass)
 
-    response = await client.post(url, json={"content": "done"})
+    response = await post_turn(client, url, "done")
 
     assert "Time: 12 of 15 min used." in fake_llm.calls[-1].text
     metadata = response.json()["metadata"]
@@ -143,7 +144,7 @@ async def test_pattern_labels_are_stored_in_one_canonical_form(
         )
     )
 
-    await client.post(url, json={"content": "I saw cat and dog"})
+    await post_turn(client, url, "I saw cat and dog")
 
     db.expire_all()
     rows = list((await db.execute(select(Mistake).where(Mistake.user_id == user_id))).scalars())
@@ -165,7 +166,7 @@ async def test_a_new_mistake_reopens_a_closed_pattern(
         )
     )
 
-    await client.post(url, json={"content": "I saw cat"})
+    await post_turn(client, url, "I saw cat")
 
     db.expire_all()
     reopened = await db.get(Mistake, closed_id)
@@ -190,7 +191,7 @@ async def test_shaky_result_resets_the_streak_and_solid_grammar_updates_mastery(
         )
     )
 
-    response = await client.post(url, json={"content": "Yesterday went I home."})
+    response = await post_turn(client, url, "Yesterday went I home.")
 
     assert [p["result"] for p in response.json()["metadata"]["practiced"]] == ["shaky", "solid"]
     db.expire_all()
@@ -217,9 +218,9 @@ async def test_duplicate_pattern_in_one_reply_creates_one_mistake(
         LessonReply(content="Again."),
     )
 
-    assert (await client.post(url, json={"content": "I go yesterday, she eat"})).status_code == 200
+    assert (await post_turn(client, url, "I go yesterday, she eat")).status_code == 200
     # A second turn must not crash on MultipleResultsFound.
-    assert (await client.post(url, json={"content": "ok"})).status_code == 200
+    assert (await post_turn(client, url, "ok")).status_code == 200
 
     db.expire_all()
     found = list((await db.execute(select(Mistake).where(Mistake.user_id == user_id))).scalars())
@@ -240,7 +241,7 @@ async def test_legacy_lesson_without_target_falls_back_to_the_profile(
     session = await make_chat_session(db, user, lesson)
     fake_llm.push(LessonReply(content="Hi"))
 
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "hi"})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "hi")
 
     assert response.status_code == 200
     assert response.json()["metadata"]["timing"] == {"active_minutes": 0, "target_minutes": 20}
@@ -262,7 +263,7 @@ async def test_one_reply_moves_a_pattern_at_most_one_step(
         )
     )
 
-    await client.post(url, json={"content": "I went."})
+    await post_turn(client, url, "I went.")
 
     db.expire_all()
     still_open = await db.get(Mistake, mistake_id)

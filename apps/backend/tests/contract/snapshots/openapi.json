@@ -202,62 +202,6 @@
         "title": "ChatSessionResponse",
         "type": "object"
       },
-      "ChatTurnResponse": {
-        "properties": {
-          "content": {
-            "title": "Content",
-            "type": "string"
-          },
-          "message_id": {
-            "title": "Message Id",
-            "type": "string"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/TurnMetadata"
-          }
-        },
-        "required": [
-          "message_id",
-          "content",
-          "metadata"
-        ],
-        "title": "ChatTurnResponse",
-        "type": "object"
-      },
-      "Correction": {
-        "properties": {
-          "correction": {
-            "title": "Correction",
-            "type": "string"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "span": {
-            "title": "Span",
-            "type": "string"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "span",
-          "correction",
-          "type"
-        ],
-        "title": "Correction",
-        "type": "object"
-      },
       "CourseRoadmap": {
         "description": "String values are in the learning language; keys stay English.",
         "properties": {
@@ -925,40 +869,6 @@
         "title": "OnboardingAcceptResponse",
         "type": "object"
       },
-      "PracticeResult": {
-        "properties": {
-          "aspect": {
-            "enum": [
-              "grammar",
-              "vocabulary",
-              "review"
-            ],
-            "title": "Aspect",
-            "type": "string"
-          },
-          "item": {
-            "description": "review: the mistake pattern_type exactly as listed; grammar: the point; vocabulary: the word.",
-            "title": "Item",
-            "type": "string"
-          },
-          "result": {
-            "description": "solid: done correctly, ideally without help; shaky: wrong or needed help.",
-            "enum": [
-              "solid",
-              "shaky"
-            ],
-            "title": "Result",
-            "type": "string"
-          }
-        },
-        "required": [
-          "aspect",
-          "item",
-          "result"
-        ],
-        "title": "PracticeResult",
-        "type": "object"
-      },
       "ProfileResponse": {
         "properties": {
           "goal_summary": {
@@ -1201,89 +1111,6 @@
         "title": "TimeBudgetUpdate",
         "type": "object"
       },
-      "TurnMetadata": {
-        "description": "Stored on every assistant message and returned with the turn. Every key is always\npresent; each branch sets only what differs from the defaults.",
-        "properties": {
-          "corrections": {
-            "items": {
-              "$ref": "#/components/schemas/Correction"
-            },
-            "title": "Corrections",
-            "type": "array"
-          },
-          "course_roadmap_draft": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CourseRoadmap"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "plan_updates": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Plan Updates"
-          },
-          "practiced": {
-            "items": {
-              "$ref": "#/components/schemas/PracticeResult"
-            },
-            "title": "Practiced",
-            "type": "array"
-          },
-          "suggest_finish": {
-            "default": false,
-            "title": "Suggest Finish",
-            "type": "boolean"
-          },
-          "timing": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TurnTiming"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "tips": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tips",
-            "type": "array"
-          }
-        },
-        "title": "TurnMetadata",
-        "type": "object"
-      },
-      "TurnTiming": {
-        "properties": {
-          "active_minutes": {
-            "title": "Active Minutes",
-            "type": "integer"
-          },
-          "target_minutes": {
-            "title": "Target Minutes",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "active_minutes",
-          "target_minutes"
-        ],
-        "title": "TurnTiming",
-        "type": "object"
-      },
       "UserReportOut": {
         "properties": {
           "body": {
@@ -1499,63 +1326,6 @@
           }
         ],
         "summary": "List Chat Messages",
-        "tags": [
-          "chat"
-        ]
-      },
-      "post": {
-        "description": "Non-streaming turn. Kept while `CHAT_STREAMING_ENABLED` is the rollback switch.",
-        "operationId": "post_chat_message_api_v1_chat_sessions__session_id__messages_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Session Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatMessageCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatTurnResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Post Chat Message",
         "tags": [
           "chat"
         ]

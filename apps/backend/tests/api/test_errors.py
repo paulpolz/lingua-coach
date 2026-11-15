@@ -13,6 +13,7 @@ from app.models.enums import JobStatus
 from app.models.job import Job
 from app.schemas.llm import LessonReply
 from app.services.agents.runner import LLMError
+from tests.chat_turn import post_turn
 from tests.conftest import Auth
 from tests.factories import make_chat_session, make_lesson, make_profile, make_user, roadmap_dict
 from tests.fake_llm import FakeLLM, SchemaMismatch
@@ -22,25 +23,25 @@ RAW_SECRET = "upstream said: key=AIza-secret-123 project=internal"
 
 
 @pytest.mark.parametrize(
-    ("failure", "status", "code"),
+    ("failure", "code"),
     [
-        (TimeoutError(RAW_SECRET), 504, "LLM_TIMEOUT"),
-        (RuntimeError(f"RESOURCE_EXHAUSTED {RAW_SECRET}"), 429, "LLM_QUOTA_EXCEEDED"),
-        (RuntimeError(RAW_SECRET), 502, "LLM_API_ERROR"),
-        (LLMError(RAW_SECRET, code="LLM_CONFIG_ERROR"), 502, "LLM_CONFIG_ERROR"),
-        (SchemaMismatch(), 502, "LLM_SCHEMA_ERROR"),
+        (TimeoutError(RAW_SECRET), "LLM_TIMEOUT"),
+        (RuntimeError(f"RESOURCE_EXHAUSTED {RAW_SECRET}"), "LLM_QUOTA_EXCEEDED"),
+        (RuntimeError(RAW_SECRET), "LLM_API_ERROR"),
+        (LLMError(RAW_SECRET, code="LLM_CONFIG_ERROR"), "LLM_CONFIG_ERROR"),
+        (SchemaMismatch(), "LLM_SCHEMA_ERROR"),
     ],
 )
-async def test_llm_failures_map_to_http_without_leaking_raw_text(
-    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, failure: object, status: int, code: str
+async def test_llm_failures_are_sse_errors_without_leaking_raw_text(
+    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, failure: object, code: str
 ) -> None:
     user = await make_user(db, onboarding_complete=False)
     session = await make_chat_session(db, user)
     fake_llm.push(failure)  # type: ignore[arg-type]
 
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "Hi"})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "Hi")
 
-    assert response.status_code == status
+    assert response.status_code == 200
     body = response.json()
     assert body["code"] == code
     assert "secret" not in response.text
@@ -53,7 +54,7 @@ MALFORMED = [
     ("post", "/api/v1/lessons/not-a-uuid/stop"),
     ("post", "/api/v1/lessons/not-a-uuid/finish"),
     ("get", "/api/v1/chat/sessions/not-a-uuid/messages"),
-    ("post", "/api/v1/chat/sessions/not-a-uuid/messages"),
+    ("post", "/api/v1/chat/sessions/not-a-uuid/messages/stream"),
     ("get", "/api/v1/jobs/not-a-uuid"),
 ]
 
@@ -102,7 +103,7 @@ async def test_someone_elses_resources_are_404(client: httpx.AsyncClient, db: As
     assert missing.status_code == 404
 
 
-async def test_persist_failure_is_500_persist_failed(
+async def test_persist_failure_is_an_sse_error(
     client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user = await make_user(db)
@@ -114,10 +115,10 @@ async def test_persist_failure_is_500_persist_failed(
     async def broken(*_args: object, **_kwargs: object) -> None:
         raise SQLAlchemyError("disk full")
 
-    monkeypatch.setattr("app.api.v1.chat._upsert_mistakes", broken)
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "hi"})
+    monkeypatch.setattr("app.services.chat_turns._upsert_mistakes", broken)
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "hi")
 
-    assert response.status_code == 500
+    assert response.status_code == 200
     assert response.json()["code"] == "PERSIST_FAILED"
     events = await _events(db)
     assert len(events) == 1 and events[0].status == "ok"

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import JobStatus, LessonStatus
 from app.models.job import Job
-from app.services.agents.curriculum import curriculum_agent
+from app.services.agents.catalog import curriculum_agent
 from app.services.lesson_generation import run_lesson_generation_job
 from tests.factories import make_lesson, make_mistake, make_plan, make_profile, make_user
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM

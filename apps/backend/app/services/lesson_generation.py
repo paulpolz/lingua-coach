@@ -19,7 +19,7 @@ from app.models.job import Job
 from app.models.learning_plan import LearningPlan
 from app.models.lesson import Lesson
 from app.models.mistake import Mistake
-from app.services.agents.curriculum import TASK, curriculum_agent
+from app.services.agents.catalog import CURRICULUM_TASK, curriculum_agent
 from app.services.agents.runner import LLMError, metered_agent_run, public_detail
 from app.services.agents.tools import AgentContext
 from app.services.lesson_timing import target_minutes
@@ -184,7 +184,7 @@ async def _generate(db: AsyncSession, *, user_id: uuid.UUID, lesson_number: int)
         user_id,
         "lesson_json",
         agent=curriculum_agent(),
-        user_text=TASK,
+        user_text=CURRICULUM_TASK,
         context=AgentContext(
             user_id=user_id,
             db=db,

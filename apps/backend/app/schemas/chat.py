@@ -53,9 +53,3 @@ class TurnMetadata(BaseModel):
     course_roadmap_draft: CourseRoadmap | None = None
     practiced: list[PracticeResult] = Field(default_factory=list)
     timing: TurnTiming | None = None
-
-
-class ChatTurnResponse(BaseModel):
-    message_id: str
-    content: str
-    metadata: TurnMetadata

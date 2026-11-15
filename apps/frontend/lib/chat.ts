@@ -4,7 +4,7 @@
  */
 
 import { ApiError, apiFetch, apiJson, toApiError } from "@/lib/api";
-import { ChatStreamError, consumeChatSse, isStreamingDisabled } from "@/lib/chat-stream";
+import { ChatStreamError, consumeChatSse } from "@/lib/chat-stream";
 
 // ---------------------------------------------------------------------------
 // Chat sessions + messages
@@ -213,7 +213,7 @@ export function latestAssistantMetadata<K extends keyof ChatMessageMetadata>(
 // Send a chat turn
 // ---------------------------------------------------------------------------
 
-/** `POST /api/v1/chat/sessions/{id}/messages` — `ChatTurnResponse`, status 200. */
+/** Stored coach turn. The stream's `done` event carries `message_id`; content and metadata come from the saved row. */
 export interface ChatTurnResponse {
   message_id: string;
   content: string;
@@ -225,28 +225,9 @@ export interface ChatTurnListener {
   onUpdate?: (update: { content: string; metadata: ChatMessageMetadata }) => void;
 }
 
-/** `POST /api/v1/chat/sessions/{id}/messages` with `{content}`. Returns the JSON body. */
-export async function sendChatMessage(
-  token: string | null,
-  sessionId: string,
-  content: string
-): Promise<ChatTurnResponse> {
-  try {
-    return await apiJson<ChatTurnResponse>(
-      `/api/v1/chat/sessions/${sessionId}/messages`,
-      token,
-      { method: "POST", body: JSON.stringify({ content }) },
-      "Message failed"
-    );
-  } catch (error) {
-    throw asNetworkError(error);
-  }
-}
-
 /**
- * Prefer the stream. A 404 `STREAMING_DISABLED` (the flag defaults off) posts the
- * JSON turn instead. Any other HTTP error, including 429, is thrown before the
- * body is read. SSE `error` events are failures of an open stream, not that HTTP error.
+ * `POST /api/v1/chat/sessions/{id}/messages/stream`. HTTP errors, including 429,
+ * are thrown before the body is read. An SSE `error` event is a failure of an open stream.
  */
 export async function sendChatTurn(
   token: string | null,
@@ -259,11 +240,6 @@ export async function sendChatTurn(
       method: "POST",
       body: JSON.stringify({ content }),
     });
-    if (response.status === 404) {
-      const error = await toApiError(response, "Message failed");
-      if (isStreamingDisabled(error.status, error.code)) return sendChatMessage(token, sessionId, content);
-      throw error;
-    }
     if (!response.ok) throw await toApiError(response, "Message failed");
     if (!response.body) throw new ChatStreamError("The coach reply was interrupted.", "STREAM_INTERRUPTED");
 

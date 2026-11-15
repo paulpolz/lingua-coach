@@ -8,11 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.schemas.llm import LessonCurriculum, LessonReply, OnboardingReply, ReportPatch
-from app.services.agents.curriculum import curriculum_agent
+from app.services.agents.catalog import curriculum_agent, lesson_agent, onboarding_agent, report_agent
 from app.services.agents.factory import _cached_model
-from app.services.agents.lesson_chat import lesson_agent
-from app.services.agents.onboarding import onboarding_agent
-from app.services.agents.report import report_agent
 from app.services.agents.runner import LLMError, metered_agent_run
 from app.services.agents.tools import AgentContext, language_policy_tool
 from tests.factories import make_lesson, make_profile, make_user

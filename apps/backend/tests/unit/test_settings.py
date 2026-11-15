@@ -41,11 +41,6 @@ def test_unknown_app_env_fails_at_startup() -> None:
         Settings(_env_file=None, app_env="prod", clerk_jwt_issuer=ISSUER)  # type: ignore[arg-type]
 
 
-def test_only_google_is_a_valid_provider() -> None:
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, llm_provider="openai")  # type: ignore[arg-type]
-
-
 def test_env_file_keys_for_other_libraries_are_ignored(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("LANGSMITH_API_KEY=lsv2_test\nLANGSMITH_PROJECT=lingua-coach-local\nLLM_MODEL_CHAT=m\n")

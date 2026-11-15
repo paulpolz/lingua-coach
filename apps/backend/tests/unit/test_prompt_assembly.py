@@ -9,7 +9,6 @@ from app.schemas.chat import TurnTiming
 from app.services.prompt_assembly import (
     generation_user_prompt,
     lesson_context_block,
-    lesson_system_instruction,
     mistake_lines,
 )
 
@@ -39,10 +38,6 @@ def test_generation_prompt_sizes_the_lesson_to_the_budget() -> None:
     prompt = generation_user_prompt({"target_minutes": 10})
     assert "target_minutes (10)" in prompt
     assert "slots" not in prompt
-
-
-def test_lesson_system_instruction_ends_with_the_language_policy() -> None:
-    assert lesson_system_instruction("ru", "de").rstrip().endswith("JSON keys stay English.")
 
 
 def test_report_prompt_fences_reports_and_mistakes() -> None:

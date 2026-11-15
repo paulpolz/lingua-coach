@@ -153,8 +153,6 @@ async def bootstrap_messages(agent: CoachAgent[Any], ctx: AgentContext, user_tex
     14 Nov 2026), so the human message leads and the synthetic tool turn follows it.
     """
     messages: list = [HumanMessage(content=user_text)]
-    if not settings.agent_bootstrap_context:
-        return messages
     calls = []
     tool_messages = []
     for spec in agent.tools:

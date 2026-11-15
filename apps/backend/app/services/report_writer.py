@@ -16,7 +16,7 @@ from app.models.lesson import Lesson
 from app.models.profile import Profile
 from app.models.user import User
 from app.models.user_report import UserReport
-from app.services.agents.report import TASK, report_agent
+from app.services.agents.catalog import REPORT_TASK, report_agent
 from app.services.agents.runner import metered_agent_run
 from app.services.agents.tools import AgentContext
 from app.services.queries import get_profile
@@ -91,7 +91,7 @@ async def _update(
         user.id,
         "report",
         agent=report_agent(),
-        user_text=TASK,
+        user_text=REPORT_TASK,
         context=AgentContext(
             user_id=user.id,
             db=db,

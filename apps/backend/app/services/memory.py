@@ -1,7 +1,6 @@
-"""Stage-1 retrieval (docs/tech_requirements/rag.md): pick the learner memory that fits
-this call instead of sending everything. Plain SQL and Python; no embeddings.
+"""Pick the learner memory that fits this call. Plain SQL and Python; no embeddings.
 
-Stage 2 (pgvector) is deferred until evals show stage 1 missing relevant history.
+See docs/tech_requirements/rag.md.
 """
 
 from __future__ import annotations

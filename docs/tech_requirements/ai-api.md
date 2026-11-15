@@ -1,21 +1,21 @@
 # AI integration
 
-The coach is four LangChain agents on Google Gemini (`init_chat_model("google_genai:{model}")`). Pedagogy stays in [`apps/backend/skills/`](../../apps/backend/skills/README.md) and is loaded by tools. Each system prompt is a few lines: the role, "call the tools for this turn before answering", and one learner-facing result. Response shapes stay the Pydantic models in [`schemas/llm.py`](../../apps/backend/app/schemas/llm.py). Settings stay provider-agnostic (`LLM_*`); `LLM_PROVIDER=google` is the only provider implemented.
+The coach is four LangChain agents on Google Gemini (`init_chat_model("google_genai:{model}")`), defined together in [`catalog.py`](../../apps/backend/app/services/agents/catalog.py). Pedagogy stays in [`apps/backend/skills/`](../../apps/backend/skills/README.md) and is loaded by tools. Each system prompt is a few lines: the role, "call the tools for this turn before answering", and one learner-facing result. Response shapes stay the Pydantic models in [`schemas/llm.py`](../../apps/backend/app/schemas/llm.py).
 
-The decisions are in [adr/](./adr/README.md). This migration did not add a retriever, embeddings, or pgvector. Open mistakes are still chosen by `memory.rank_mistakes`, called from a tool.
+This stack does not use a retriever, embeddings, or pgvector. Open mistakes are still chosen by `memory.rank_mistakes`, called from a tool.
 
 ## Call types
 
 | Call type | Trigger | Agent | Model setting | Output | Invoke |
 |-----------|---------|-------|---------------|--------|--------|
-| `chat` | Every onboarding message | `onboarding_agent` | `LLM_MODEL_CHAT` | `OnboardingReply` | SSE, or `ainvoke` when streaming is off |
-| `chat` | Every lesson message | `lesson_agent` | `LLM_MODEL_CHAT` | `LessonReply` | SSE, or `ainvoke` when streaming is off |
+| `chat` | Every onboarding message | `onboarding_agent` | `LLM_MODEL_CHAT` | `OnboardingReply` | SSE |
+| `chat` | Every lesson message | `lesson_agent` | `LLM_MODEL_CHAT` | `LessonReply` | SSE |
 | `lesson_json` | Lesson generation job | `curriculum_agent` | `LLM_MODEL_LESSON` | `LessonCurriculum` | `ainvoke` |
 | `report` | Background task after lesson finish | `report_agent` | `LLM_MODEL_LESSON` | `ReportPatch` | `ainvoke` |
 
-[`build_agent`](../../apps/backend/app/services/agents/factory.py) caches one chat model per model id (`max_retries=0`, temperature unset, no client timeout). An empty `LLM_API_KEY` raises `LLMError` with `LLM_CONFIG_ERROR` before any provider call. Structured output is `ProviderStrategy(schema)`. A spike on 14 Nov 2026 (`gemini-3.5-flash-lite`) showed that strategy, with tools bound, puts a validated model on the `updates` stream. `ToolStrategy` is not used. A schema failure is not retried.
+[`build_agent`](../../apps/backend/app/services/agents/factory.py) caches one chat model per model id (`max_retries=0`, temperature unset, no client timeout), wraps `ProviderStrategy(schema)`, and attaches `CapContextWindow`. An empty `LLM_API_KEY` raises `LLMError` with `LLM_CONFIG_ERROR` before any provider call. `ResponseFormat` is only a type alias—do not pass a bare schema class (that can auto-select `ToolStrategy` and trigger a retry). A spike on 14 Nov 2026 (`gemini-3.5-flash-lite`) showed `ProviderStrategy` with tools bound puts a validated model on the `updates` stream. Schema failures are not retried and there is no repair call. Do not use `ChatGoogleGenerativeAI` / `with_structured_output`, `create_react_agent`, or retry middleware. `structured_llm.py` is gone; `LLMError` and `public_detail` live in [`runner.py`](../../apps/backend/app/services/agents/runner.py). The API key is only `settings.llm_api_key`.
 
-Chat agents receive the process `AsyncPostgresSaver`. Curriculum and report agents pass `checkpointer=None`. The only timeout is `asyncio.timeout(LLM_TIMEOUT_SECONDS)` (default 120) around the whole `ainvoke` or `astream`. The run config sets `recursion_limit` to 15.
+Chat agents receive the process `AsyncPostgresSaver` ([backend.md](./backend.md#langgraph-checkpointer)). Curriculum and report agents pass `checkpointer=None`. The only timeout is `asyncio.timeout(LLM_TIMEOUT_SECONDS)` (default 120) around the whole `ainvoke` or `astream`. The run config sets `recursion_limit` to 15.
 
 Each run requires `structured_response` to be an instance of the schema. Callers then persist `model_dump()`. Unknown keys are ignored (`extra="ignore"`).
 
@@ -23,13 +23,12 @@ Each run requires `structured_response` to be an instance of the schema. Callers
 
 One reservation covers the whole agent run. Tool calls and later model steps do not reserve again.
 
-- The JSON chat route uses [`metered_agent_run`](../../apps/backend/app/services/agents/runner.py).
-- The SSE route awaits [`metered_agent_stream`](../../apps/backend/app/services/agents/runner.py), including the reserve, before it returns `StreamingResponse`. A quota refusal is the HTTP status. The iterator yields `StreamItem`s. [`chat.py`](../../apps/backend/app/api/v1/chat.py) encodes SSE and writes the assistant row.
+- Chat awaits [`metered_agent_stream`](../../apps/backend/app/services/agents/runner.py), including the reserve, before it returns `StreamingResponse`. A quota refusal is the HTTP status. The iterator yields `StreamItem`s. [`chat.py`](../../apps/backend/app/api/v1/chat.py) encodes SSE. [`chat_turns.py`](../../apps/backend/app/services/chat_turns.py) writes the assistant row.
 - Curriculum and report use `metered_agent_run`.
 
 Bootstrap tool calls run before `reserve_llm_call`, so the estimate can include their text. The estimate is `estimate_input_tokens` of the system prompt, the new user text, and those tool results (character length divided by 4). After the run, `complete` stores the summed `usage_metadata["input_tokens"]` from completed `AIMessage`s that belong to this run. Token chunks are not summed, and messages already on the thread are not summed. If no usage arrived, `input_tokens=None` and the row keeps the estimate. The `llm_call` log and Prometheus also record the summed output tokens.
 
-On a chat turn, `before_call` commits the user `ChatMessage` after the reserve and before the model runs.
+On a chat turn, `before_call` commits the user `ChatMessage` after the reserve and before the model runs. Usage rows store counts and ids, not prompt text. The reserve is quota control, not authorization—the route or job still owns the session or lesson.
 
 Failures become `LLMError`. `public_detail` is the learner-safe sentence:
 
@@ -66,14 +65,14 @@ flowchart LR
 
 - Skill files are read once from `SKILLS_DIR` and cached by `load_skill`. A skill tool returns that markdown unchanged. Skills are not pasted into `system_prompt`, and they are not joined with `---` separators.
 - [`prompt_assembly.py`](../../apps/backend/app/services/prompt_assembly.py) still builds the language policy and the context strings the tools return. It does not append an output contract.
-- **What stays in a skill.** A skill says how to teach and decide. Payload shapes live on the models in [`schemas/llm.py`](../../apps/backend/app/schemas/llm.py): their `Field(description=…)` texts are part of the JSON schema the model reads on every call, so constraints such as "null on a clarifying question" or "themes only, no URLs" sit next to the field they constrain. Persistence lives in the routers; context strings live in `prompt_assembly.py` and are returned by tools. `extra="ignore"`, so unknown keys (including retired ones in old JSONB rows) are dropped.
+- **What stays in a skill.** A skill says how to teach and decide. Payload shapes live on the models in [`schemas/llm.py`](../../apps/backend/app/schemas/llm.py): their `Field(description=…)` texts are part of the JSON schema the model reads on every call, so constraints such as "null on a clarifying question" or "themes only, no URLs" sit next to the field they constrain. Saving a turn lives in `chat_turns.py`; context strings live in `prompt_assembly.py` and are returned by tools. `extra="ignore"`, so unknown keys (including retired ones in old JSONB rows) are dropped.
 - **Language policy.** During onboarding, before both languages are known, the coach starts in English, asks for the native and then the target language, and then switches. Everywhere else all learner-facing text is in the target language (default `en`), the native language is used only to anticipate interference, and JSON keys stay English. The `language_policy` tool reads native, target, and the onboarding flag from `AgentContext`.
 
 ## Context per call
 
-`AGENT_BOOTSTRAP_CONTEXT` defaults to true. The runner executes that agent's tools once and sends the user `HumanMessage` first, then one `AIMessage` with the matching `tool_calls` and the `ToolMessage`s. Gemini rejects a function-call turn that does not follow a user turn (spike, 14 Nov 2026). When the flag is false, the model calls the tools itself. There is one path.
+The runner always executes that agent's tools once before the model call. The user `HumanMessage` goes first, then one `AIMessage` with the matching `tool_calls` and the `ToolMessage`s. Gemini rejects a function-call turn that does not follow a user turn (spike, 14 Nov 2026), so there is no switch for the other order.
 
-Chat history for the model is the LangGraph thread (`thread_id` is the chat session id). The run adds the new user message and, when the flag is on, the bootstrap tool turn. It does not read `chat_messages` back into the model input. `CapContextWindow` keeps the newest `CHAT_CONTEXT_MESSAGES` learner turns on the model request (default 10), including that turn's assistant reply and tool messages. If the cut would split a tool call from its `ToolMessage`, the cut moves back to the previous human message. Checkpoint rows are left in place. The UI reads `chat_messages`.
+Chat history for the model is the LangGraph thread (`thread_id` is the chat session id). The run adds the new user message and the bootstrap tool turn. It does not read `chat_messages` back into the model input. `CapContextWindow` keeps the newest `CHAT_CONTEXT_MESSAGES` learner turns on the model request (default 10), including that turn's assistant reply and tool messages. If the cut would split a tool call from its `ToolMessage`, the cut moves back to the previous human message. Checkpoint rows are left in place. The UI reads `chat_messages`.
 
 | Call | Tools | User text |
 |------|-------|-----------|
@@ -82,7 +81,15 @@ Chat history for the model is the LangGraph thread (`thread_id` is the chat sess
 | Lesson generation | `load_exercise_tutor`, `language_policy`, `fetch_ranked_mistakes`, `fetch_generation_context` | `Generate the next lesson curriculum.` |
 | Report update | `load_report_writer`, `language_policy`, `fetch_report_context` | `Patch the reports for the lesson that just finished.` |
 
-No tool takes `user_id`, `session_id`, or `lesson_id`. Those ids sit on `AgentContext`, which the route or job already authorized. `ToolRuntime` injects that context and hides it from the model.
+No tool takes `user_id`, `session_id`, or `lesson_id`. Those ids sit on `AgentContext`, which the route or job already authorized. `ToolRuntime` injects that context and hides it from the model. Do not use retrievers, `VectorStore`, `InjectedState`, or model-written SQL; tools call existing service functions only.
+
+```python
+agent.ainvoke(
+    {"messages": [{"role": "user", "content": user_text}]},
+    context=AgentContext(user_id=..., lesson_id=..., session_id=..., call_type=...),
+    config={"configurable": {"thread_id": str(session_id)}, "recursion_limit": 15},
+)
+```
 
 What the context tools return:
 
@@ -97,10 +104,7 @@ Closed mistakes (`resolved_at` set) are not candidates.
 
 ## Chat streaming
 
-`CHAT_STREAMING_ENABLED` defaults to false.
-
-- While it is false, `POST /api/v1/chat/sessions/{id}/messages/stream` returns `404` `STREAMING_DISABLED`. `POST …/messages` always calls `metered_agent_run` and returns `ChatTurnResponse`. The client tries the stream first and posts JSON only for that 404 code. Other HTTP errors, including `429`, are not retried as JSON.
-- While it is true, the stream route emits `text/event-stream`. Order: zero or more `token` and `tool_start` / `tool_end`, then one `structured`, then `done`. `error` replaces `done`.
+Chat has one turn: `POST /api/v1/chat/sessions/{id}/messages/stream` returns `text/event-stream`. There is no JSON turn and no flag that disables the stream. [`metered_agent_stream`](../../apps/backend/app/services/agents/runner.py) uses `astream(..., stream_mode=["messages", "updates"], version="v2")` so each chunk is `{"type", "ns", "data"}`. Do not use `stream_mode="values"`, `model.stream`, or a second model call to turn JSON into prose. Order: zero or more `token` and `tool_start` / `tool_end`, then one `structured`, then `done`. `error` replaces `done`. `error.detail` is learner-safe only (no provider body or tool payloads). Quota refusals and a missing checkpointer are HTTP statuses, because they are raised before the body starts. A model failure after the body starts is an `error` event on an HTTP 200.
 
 | Event | Data |
 |-------|------|
@@ -113,6 +117,8 @@ Closed mistakes (`resolved_at` set) are not candidates.
 A `token` is emitted only when `langgraph_node` is `model` and `content` is a non-empty string. Schema JSON arrives as content blocks and is not forwarded. `CHAT_STREAM_REPLY_FALLBACK` defaults to true: if no plain-string token arrived, the route emits one `token` whose `delta` is `reply.content`, then `structured`. The client uses `structured` for corrections, tips, the roadmap draft, practiced items, and `suggest_finish`. `timing` and the suggest-finish time gate are applied when the assistant row is saved. After `done`, the client reloads that row.
 
 Curriculum and report do not stream. Learning-plan and lesson-summary writes stay inside `_persist_turn`. They are not extra endpoints. A missing process checkpointer is `503` `CHECKPOINTER_UNAVAILABLE`, raised before the reserve on both chat routes.
+
+Client: [`apps/frontend/lib/chat-stream.ts`](../../apps/frontend/lib/chat-stream.ts) and `sendChatTurn` / `useChatTurn` in the frontend chat module.
 
 ## Response models
 

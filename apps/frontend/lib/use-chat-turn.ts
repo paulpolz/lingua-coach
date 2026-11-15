@@ -21,8 +21,7 @@ export interface SendOptions {
  *
  * A send shows the learner bubble and an empty coach bubble (typing dots)
  * right away. Stream deltas fill that bubble; metadata arrives with the
- * structured reply; `done` swaps in the stored message id. The JSON fallback
- * (streaming disabled) still fills the bubble once. A failed send removes the
+ * structured reply; `done` swaps in the stored message id. A failed send removes the
  * coach bubble and keeps the content (`lastFailed`) for `retry`.
  */
 export function useChatTurn(sessionId: string | null, initialMessages: DisplayMessage[] = []) {

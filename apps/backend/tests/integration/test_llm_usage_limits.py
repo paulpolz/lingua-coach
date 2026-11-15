@@ -17,6 +17,7 @@ from app.config import settings
 from app.core.errors import APIError
 from app.models.llm_usage import LlmUsageEvent
 from app.services.llm_usage import reserve_llm_call
+from tests.chat_turn import post_turn
 from tests.factories import make_chat_session, make_user
 
 
@@ -81,7 +82,7 @@ async def test_user_chat_limit_is_429_rate_limit_exceeded(
     monkeypatch.setattr(settings, "chat_rate_limit_per_hour", 2)
     await _usage(db, user.id, "chat", 2, age_seconds=600)
 
-    response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages", json={"content": "hi"})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session.id}/messages", "hi")
 
     assert response.status_code == 429
     assert response.json()["code"] == "RATE_LIMIT_EXCEEDED"

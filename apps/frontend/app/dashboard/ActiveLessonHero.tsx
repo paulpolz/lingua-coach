@@ -1,6 +1,8 @@
 import Button from "@/components/ui/Button";
 import type { Lesson } from "@/lib/lessons";
 
+import DeskHero from "./DeskHero";
+
 /**
  * Resume card for an active lesson. The goal plus a short grammar/vocab
  * preview tell the learner what's waiting; the lesson chat itself shows
@@ -35,10 +37,7 @@ export default function ActiveLessonHero({
   ].filter((line): line is string => Boolean(line));
 
   return (
-    <div className="flex flex-col items-start gap-4">
-      <h1 className="text-[22px] font-[590] leading-7 tracking-[-0.03em] text-foreground">
-        Resume lesson {lesson.lesson_number}?
-      </h1>
+    <DeskHero title={`Resume lesson ${lesson.lesson_number}?`}>
       {details.length > 0 ? (
         <div className="flex flex-col gap-1">
           {details.map((line) => (
@@ -71,6 +70,6 @@ export default function ActiveLessonHero({
           {isFinishing ? "Finishing…" : "Finish lesson"}
         </Button>
       </div>
-    </div>
+    </DeskHero>
   );
 }

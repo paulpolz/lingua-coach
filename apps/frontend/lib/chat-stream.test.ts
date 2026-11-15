@@ -6,7 +6,6 @@ import {
   ChatStreamError,
   consumeChatSse,
   emptyChatSseState,
-  isStreamingDisabled,
   metadataFromStructured,
   readSseFrames,
 } from "./chat-stream.ts";
@@ -14,14 +13,6 @@ import {
 function frame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
-
-describe("isStreamingDisabled", () => {
-  it("is only the stream route's 404", () => {
-    assert.equal(isStreamingDisabled(404, "STREAMING_DISABLED"), true);
-    assert.equal(isStreamingDisabled(404, "NOT_FOUND"), false);
-    assert.equal(isStreamingDisabled(429, "LLM_RATE_LIMIT_EXCEEDED"), false);
-  });
-});
 
 describe("readSseFrames", () => {
   it("parses a full turn and leaves a partial frame buffered", () => {

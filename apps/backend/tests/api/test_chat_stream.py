@@ -1,8 +1,6 @@
-"""SSE chat turns. The JSON route stays available when streaming is off."""
+"""SSE chat turns."""
 
 from __future__ import annotations
-
-import json
 
 import httpx
 import pytest
@@ -17,26 +15,11 @@ from app.models.enums import ChatMessageRole
 from app.models.llm_usage import LlmUsageEvent
 from app.schemas.llm import LessonReply, OnboardingReply
 from app.services.agents.tools import language_policy_tool
+from tests.chat_turn import parse_sse, post_turn
 from tests.factories import make_chat_session, make_lesson, make_profile, make_user
 from tests.fake_llm import RAW_INPUT_TOKENS, FakeLLM, LLMCall, ToolRound
 from tests.integration.test_llm_usage_limits import _events as usage_rows
 from tests.integration.test_llm_usage_limits import _usage
-
-
-def parse_sse(body: str) -> list[tuple[str, dict]]:
-    parsed: list[tuple[str, dict]] = []
-    for block in body.split("\n\n"):
-        if not block.strip():
-            continue
-        name = "message"
-        data = ""
-        for line in block.splitlines():
-            if line.startswith("event:"):
-                name = line.removeprefix("event:").strip()
-            elif line.startswith("data:"):
-                data += line.removeprefix("data:").strip()
-        parsed.append((name, json.loads(data)))
-    return parsed
 
 
 async def _onboarding(db: AsyncSession) -> str:
@@ -45,38 +28,9 @@ async def _onboarding(db: AsyncSession) -> str:
     return f"/api/v1/chat/sessions/{session.id}/messages"
 
 
-async def test_stream_route_is_404_while_json_returns_the_turn(
+async def test_reply_fallback_emits_one_token_then_structured_then_done(
     client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM
 ) -> None:
-    url = await _onboarding(db)
-    fake_llm.push(OnboardingReply(content="Hello there."))
-
-    json_response = await client.post(url, json={"content": "Hi"})
-    stream_response = await client.post(f"{url}/stream", json={"content": "Hi again"})
-
-    assert json_response.status_code == 200, json_response.text
-    assert json_response.json()["content"] == "Hello there."
-    assert stream_response.status_code == 404
-    assert stream_response.json()["code"] == "STREAMING_DISABLED"
-
-
-async def test_json_turn_still_returns_when_streaming_is_on(
-    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
-    url = await _onboarding(db)
-    fake_llm.push(OnboardingReply(content="Still JSON."))
-
-    response = await client.post(url, json={"content": "Hi"})
-
-    assert response.status_code == 200, response.text
-    assert response.json()["content"] == "Still JSON."
-
-
-async def test_reply_fallback_emits_one_token_then_structured_then_done(
-    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
     url = await _onboarding(db)
     fake_llm.push(OnboardingReply(content="Here is the next question."))
 
@@ -96,7 +50,6 @@ async def test_reply_fallback_emits_one_token_then_structured_then_done(
 async def test_fallback_stays_off_when_the_setting_is_off(
     client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
     monkeypatch.setattr(settings, "chat_stream_reply_fallback", False)
     url = await _onboarding(db)
     fake_llm.push(OnboardingReply(content="No token."))
@@ -107,9 +60,8 @@ async def test_fallback_stays_off_when_the_setting_is_off(
 
 
 async def test_stream_order_is_token_tool_start_tool_end_structured_done(
-    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM
 ) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
     url = await _onboarding(db)
     fake_llm.push(
         ToolRound(
@@ -138,7 +90,6 @@ async def test_stream_order_is_token_tool_start_tool_end_structured_done(
 async def test_stream_rate_limit_returns_429_without_opening_sse(
     client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
     monkeypatch.setattr(settings, "llm_rpm_limit", 1)
     user = await make_user(db, onboarding_complete=False)
     session = await make_chat_session(db, user)
@@ -158,10 +109,7 @@ async def test_stream_rate_limit_returns_429_without_opening_sse(
     assert list((await db.execute(select(ChatMessage))).scalars()) == []
 
 
-async def test_stream_error_replaces_done(
-    client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
+async def test_stream_error_replaces_done(client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM) -> None:
     url = await _onboarding(db)
     fake_llm.push(TimeoutError("upstream secret"))
 
@@ -180,7 +128,6 @@ async def test_stream_error_replaces_done(
 async def test_stream_persist_failure_does_not_mark_the_model_call_as_error(
     client: httpx.AsyncClient, db: AsyncSession, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "chat_streaming_enabled", True)
     user = await make_user(db)
     await make_profile(db, user)
     lesson = await make_lesson(db, user, payload={"curriculum": {}, "target_minutes": 15})
@@ -190,7 +137,7 @@ async def test_stream_persist_failure_does_not_mark_the_model_call_as_error(
     async def broken(*_args: object, **_kwargs: object) -> None:
         raise SQLAlchemyError("disk full")
 
-    monkeypatch.setattr("app.api.v1.chat._upsert_mistakes", broken)
+    monkeypatch.setattr("app.services.chat_turns._upsert_mistakes", broken)
     response = await client.post(f"/api/v1/chat/sessions/{session.id}/messages/stream", json={"content": "hi"})
 
     events = parse_sse(response.text)
@@ -208,7 +155,7 @@ async def test_missing_checkpointer_is_503_and_writes_nothing(
     app.state.checkpointer = None
     fake_llm.push(OnboardingReply(content="should not run"))
 
-    response = await client.post(url, json={"content": "Hi"})
+    response = await post_turn(client, url, "Hi")
 
     assert response.status_code == 503
     assert response.json()["code"] == "CHECKPOINTER_UNAVAILABLE"
@@ -233,7 +180,7 @@ async def test_user_row_is_committed_before_the_model_and_thread_is_the_session(
         return OnboardingReply(content="Noted.")
 
     fake_llm.push(during_call)
-    response = await client.post(f"/api/v1/chat/sessions/{session_id}/messages", json={"content": "I travel."})
+    response = await post_turn(client, f"/api/v1/chat/sessions/{session_id}/messages", "I travel.")
 
     assert response.status_code == 200, response.text
     assert seen["roles"] == ["user"]
@@ -258,8 +205,8 @@ async def test_second_turn_keeps_the_thread_and_does_not_sum_old_tokens(
     first_id, other_id = first.id, other_session.id
     fake_llm.push(OnboardingReply(content="First."), OnboardingReply(content="Second."))
 
-    await client.post(f"/api/v1/chat/sessions/{first_id}/messages", json={"content": "alpha-only-phrase"})
-    await client.post(f"/api/v1/chat/sessions/{first_id}/messages", json={"content": "beta-follow-up"})
+    await post_turn(client, f"/api/v1/chat/sessions/{first_id}/messages", "alpha-only-phrase")
+    await post_turn(client, f"/api/v1/chat/sessions/{first_id}/messages", "beta-follow-up")
 
     assert "alpha-only-phrase" in fake_llm.calls[-1].text
     rows = await usage_rows(db)
@@ -268,7 +215,7 @@ async def test_second_turn_keeps_the_thread_and_does_not_sum_old_tokens(
     assert [row.status for row in rows] == ["ok", "ok"]
 
     fake_llm.push(LessonReply(content="Other."))
-    other = await client.post(f"/api/v1/chat/sessions/{other_id}/messages", json={"content": "unrelated"})
+    other = await post_turn(client, f"/api/v1/chat/sessions/{other_id}/messages", "unrelated")
     assert other.status_code == 200, other.text
     assert "alpha-only-phrase" not in fake_llm.calls[-1].text
     assert fake_llm.calls[-1].config is not None
